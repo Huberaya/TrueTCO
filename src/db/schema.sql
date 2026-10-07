@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS organizations (
 
 CREATE INDEX IF NOT EXISTS idx_organizations_name ON organizations(name);
 
+DROP TRIGGER IF EXISTS trigger_update_organizations_updated_at ON organizations;
+DROP TRIGGER IF EXISTS trigger_update_organizations_updated_at ON organizations;
 CREATE TRIGGER trigger_update_organizations_updated_at
 BEFORE UPDATE ON organizations
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -60,6 +62,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
+DROP TRIGGER IF EXISTS trigger_update_users_updated_at ON users;
 CREATE TRIGGER trigger_update_users_updated_at
 BEFORE UPDATE ON users
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -115,6 +118,7 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(organization_id);
 CREATE INDEX IF NOT EXISTS idx_projects_status ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_projects_category ON projects(category);
 
+DROP TRIGGER IF EXISTS trigger_update_projects_updated_at ON projects;
 CREATE TRIGGER trigger_update_projects_updated_at
 BEFORE UPDATE ON projects
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -145,6 +149,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
 
 CREATE INDEX IF NOT EXISTS idx_suppliers_org ON suppliers(organization_id);
 
+DROP TRIGGER IF EXISTS trigger_update_suppliers_updated_at ON suppliers;
 CREATE TRIGGER trigger_update_suppliers_updated_at
 BEFORE UPDATE ON suppliers
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -174,6 +179,7 @@ CREATE TABLE IF NOT EXISTS supplier_offers (
 CREATE INDEX IF NOT EXISTS idx_offers_project ON supplier_offers(project_id);
 CREATE INDEX IF NOT EXISTS idx_offers_supplier ON supplier_offers(supplier_id);
 
+DROP TRIGGER IF EXISTS trigger_update_supplier_offers_updated_at ON supplier_offers;
 CREATE TRIGGER trigger_update_supplier_offers_updated_at
 BEFORE UPDATE ON supplier_offers
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
@@ -256,6 +262,7 @@ CREATE TABLE IF NOT EXISTS reference_benchmarks (
 CREATE INDEX IF NOT EXISTS idx_benchmarks_org ON reference_benchmarks(organization_id);
 CREATE INDEX IF NOT EXISTS idx_benchmarks_category ON reference_benchmarks(category);
 
+DROP TRIGGER IF EXISTS trigger_update_reference_benchmarks_updated_at ON reference_benchmarks;
 CREATE TRIGGER trigger_update_reference_benchmarks_updated_at
 BEFORE UPDATE ON reference_benchmarks
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
