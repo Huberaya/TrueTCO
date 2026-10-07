@@ -39,6 +39,8 @@ import { EnterpriseLoginModal } from './components/EnterpriseLoginModal';
 import { NewTenantModal } from './components/NewTenantModal';
 import { ErpConnectorsView } from './components/ErpConnectorsView';
 import { AiDocumentParserView } from './components/AiDocumentParserView';
+import { DigitalSignatureView } from './components/DigitalSignatureView';
+import { CsrdTaxonomyView } from './components/CsrdTaxonomyView';
 
 export default function App() {
   const { user, isLoginModalOpen, closeLoginModal } = useAuth();
@@ -491,6 +493,20 @@ export default function App() {
               offers={currentOffers}
               onAddOffer={handleAddOffer}
               onNavigateToComparator={() => setCurrentView('comparator')}
+            />
+          )}
+
+          {currentView === 'digital_signature' && (
+            <DigitalSignatureView
+              project={currentProject}
+              offers={currentOffers}
+            />
+          )}
+
+          {currentView === 'csrd_taxonomy' && (
+            <CsrdTaxonomyView
+              projects={projects}
+              offers={offers}
             />
           )}
         </main>

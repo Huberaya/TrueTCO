@@ -13,6 +13,8 @@ import {
   Award,
   Network,
   Sparkles,
+  Fingerprint,
+  Leaf,
 } from 'lucide-react';
 
 export type NavView =
@@ -29,7 +31,9 @@ export type NavView =
   | 'audit'
   | 'report'
   | 'erp_connectors'
-  | 'ai_parser';
+  | 'ai_parser'
+  | 'digital_signature'
+  | 'csrd_taxonomy';
 
 interface SidebarProps {
   currentView: NavView;
@@ -121,6 +125,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: 'Chantier 8 (Parser IA & FDES)',
       icon: <Sparkles className="w-4 h-4 text-purple-400" />,
       badge: 'IA OCR',
+    },
+    {
+      id: 'digital_signature',
+      label: 'Chantier 9 (Signature eIDAS)',
+      icon: <Fingerprint className="w-4 h-4 text-emerald-400" />,
+      badge: 'eIDAS',
+    },
+    {
+      id: 'csrd_taxonomy',
+      label: 'Chantier 10 (CSRD & Taxonomie)',
+      icon: <Leaf className="w-4 h-4 text-teal-400" />,
+      badge: 'ESRS E1',
     },
   ];
 

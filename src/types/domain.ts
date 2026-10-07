@@ -434,3 +434,89 @@ export interface DocumentParseResult {
   summaryAnalysis: string;
   keyDifferentiators: string[];
 }
+
+/**
+ * =============================================================================
+ * CHANTIER 9 : SIGNATURE ÉLECTRONIQUE CERTIFIÉE (eIDAS & SCELLÉ NUMÉRIQUE)
+ * =============================================================================
+ */
+export type SignatureRole = 'acheteur' | 'rse' | 'finance' | 'direction';
+
+export interface DigitalSignatureRecord {
+  id: string;
+  role: SignatureRole;
+  signerName: string;
+  signerTitle: string;
+  signerEmail: string;
+  signedAt: string;
+  status: 'signe' | 'en_attente' | 'refuse';
+  sha256Hash: string;
+  certificateSerial: string;
+  certificateAuthority: string; // e.g. 'CertEurope / ANSSI eIDAS QES'
+  signatureDataUrl?: string; // handwritten canvas PNG
+  ipAddress: string;
+  auditTrailRef: string;
+  comment?: string;
+}
+
+export interface AdjudicationCertificate {
+  certificateId: string;
+  projectId: string;
+  projectReference: string;
+  winningOfferId: string;
+  winningSupplierName: string;
+  awardedTotalAmount: number;
+  awardedTcoAmount: number;
+  awardedCarbonAvoidedTonnes: number;
+  generatedAt: string;
+  sealedHash: string;
+  signatures: DigitalSignatureRecord[];
+  isFullyExecuted: boolean;
+}
+
+/**
+ * =============================================================================
+ * CHANTIER 10 : REPORTING CSRD (ESRS E1) & TAXONOMIE VERTE EUROPÉENNE
+ * =============================================================================
+ */
+export interface TaxonomyActivityAlignment {
+  activityCode: string; // e.g. '6.5', '3.6', '7.1'
+  activityName: string;
+  category: 'mobilite' | 'equipements' | 'batiment' | 'it_circulaire';
+  capexAmount: number;
+  opexAmount: number;
+  isEligible: boolean;
+  isAligned: boolean; // Satisfies TSC + DNSH + MSS
+  technicalScreeningMet: boolean; // Critères d'examen technique
+  dnshCriteriaMet: boolean; // Do No Significant Harm
+  minimumSafeguardsMet: boolean; // Droits de l'homme et droit social
+  ghgAvoidedTonnes: number;
+}
+
+export interface CsrdExecutiveReport {
+  fiscalYear: number;
+  organizationId: string;
+  organizationName: string;
+  reportingDate: string;
+  totalProcurementCapex: number;
+  totalProcurementOpex: number;
+  
+  // Taxonomie ratios
+  taxonomyEligibleCapexPercent: number; // e.g. 84.5%
+  taxonomyAlignedCapexPercent: number;   // e.g. 72.8%
+  taxonomyEligibleOpexPercent: number;  // e.g. 68.0%
+  taxonomyAlignedOpexPercent: number;    // e.g. 59.4%
+
+  // Indicateurs ESRS E1 Climat
+  totalAvoidedGhgTCO2e: number;
+  internalCarbonPriceEur: number;
+  carbonPriceTrajectoryYear: number;
+  financialSavingsFromCarbonTax: number;
+  scope1AvoidedTCO2e: number;
+  scope2AvoidedTCO2e: number;
+  scope3UpstreamAvoidedTCO2e: number;
+
+  activities: TaxonomyActivityAlignment[];
+  auditorVerificationStatus: 'certifie_sans_reserve' | 'revue_en_cours' | 'conforme_csrd';
+  independentAuditorName: string; // e.g. 'PwC Audit & Sustainability / OTI Agréé'
+}
