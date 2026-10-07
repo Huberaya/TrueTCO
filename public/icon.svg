@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#020617"/>
+      <stop offset="50%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- Background with rounded squircles -->
+  <rect width="512" height="512" rx="112" fill="url(#bgGrad)"/>
+  <rect x="6" y="6" width="500" height="500" rx="106" fill="none" stroke="#1e293b" stroke-width="4"/>
+
+  <!-- Shield / Hexagon outline for Trust & ESG -->
+  <path d="M 256 70 L 396 130 L 396 280 C 396 360 256 430 256 430 C 256 430 116 360 116 280 L 116 130 Z" 
+        fill="#091324" stroke="#334155" stroke-width="6"/>
+
+  <!-- Analytical Bars representing TCO / LCC / Costs -->
+  <rect x="180" y="270" width="34" height="85" rx="6" fill="#475569"/>
+  <rect x="238" y="220" width="36" height="135" rx="6" fill="url(#cyanGrad)"/>
+  <rect x="298" y="165" width="34" height="190" rx="6" fill="url(#emeraldGrad)" filter="url(#glow)"/>
+
+  <!-- Dynamic Trend Curve -->
+  <path d="M 160 290 Q 240 220 340 140" fill="none" stroke="#34d399" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="340" cy="140" r="10" fill="#34d399" filter="url(#glow)"/>
+
+  <!-- TrueTCO Lettering Accent -->
+  <text x="256" y="405" font-family="system-ui, -apple-system, sans-serif" font-weight="800" font-size="34" fill="#f8fafc" text-anchor="middle" letter-spacing="4">
+    <tspan fill="#34d399">TRUE</tspan>TCO
+  </text>
+</svg>

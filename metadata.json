@@ -1,0 +1,7 @@
+{
+  "name": "TrueTCO - Moteur d'Arbitrage Économique & Coût Complet ESG",
+  "description": "Plateforme B2B d'aide à la décision achats, calcul TCO/LCC, valorisation des externalités carbone et arbitrage financier responsable.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
