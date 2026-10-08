@@ -578,9 +578,189 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
     const decision = await api('POST', `/api/projects/${projectId}/decision-runs`, { cookie: otherSession });
     expect([403, 404]).toContain(decision.status);
 
+    // Les simulations probabilistes d'autrui ne sont ni lisibles ni relançables.
+    const simulations = await api<{ items: any[]; total: number }>('GET', `/api/projects/${projectId}/risk-simulations`, {
+      cookie: otherSession,
+    });
+    expect(simulations.status).toBe(200);
+    expect(simulations.body.total).toBe(0);
+    expect(simulations.body.items).toHaveLength(0);
+
     // Le dossier de la PME n'a subi AUCUNE atteinte de ces tentatives.
     const after = await api<{ items: any[] }>('GET', `/api/offers?projectId=${projectId}`, { cookie: session2 });
     expect(after.body.items).toHaveLength(3);
+  });
+
+  it('F4 — simulation probabiliste : hypothèses déclarées, graine enregistrée, résultat rejouable', async () => {
+    const offers = await api<{ items: any[] }>('GET', `/api/offers?limit=200&projectId=${projectId}`, { cookie: session });
+    // Le classement central est demandé pour connaître le gagnant : la simulation
+    // compare le gagnant à un challenger, elle ne décide pas qui gagne.
+    const run = await api<any>('POST', `/api/projects/${projectId}/decision-runs`, { cookie: session });
+    expect(run.status).toBe(201);
+    const winnerId = run.body.ranking[0].offerId;
+    const challengerId = run.body.ranking[1].offerId;
+
+    const simulation = await api<any>('POST', `/api/projects/${projectId}/risk-simulations`, {
+      cookie: session,
+      json: {
+        winnerOfferId: winnerId,
+        challengerOfferId: challengerId,
+        seed: 'reunion-comite-achat-2026-10-08',
+        iterations: 2000,
+        variables: [
+          {
+            parameter: 'energyInflationRate',
+            distribution: 'normal',
+            mean: 0.05,
+            stdDev: 0.02,
+            source: 'Hypothèse du service achats, révision annuelle 2026',
+          },
+          {
+            parameter: 'carbonPricePerTonne',
+            distribution: 'uniform',
+            min: 60,
+            max: 180,
+          },
+        ],
+        correlations: [{ between: ['energyInflationRate', 'carbonPricePerTonne'], rho: 0.6 }],
+      },
+    });
+    expect(simulation.status).toBe(201);
+
+    const result = simulation.body.result;
+    expect(result.engineVersion).toBe('2.0.0');
+    expect(result.methodologyVersion).toMatch(/monte-carlo/);
+    expect(result.seedUsed).toBe('reunion-comite-achat-2026-10-08');
+    expect(result.iterations).toBe(2000);
+
+    // Les quantiles sont ordonnés, et la probabilité d'inversion est bornée.
+    expect(result.delta.p10).toBeLessThanOrEqual(result.delta.p50);
+    expect(result.delta.p50).toBeLessThanOrEqual(result.delta.p90);
+    expect(result.probabilityDecisionReverses).toBeGreaterThanOrEqual(0);
+    expect(result.probabilityDecisionReverses).toBeLessThanOrEqual(1);
+
+    // La convention de signe est écrite : sans elle, l'écart se lit à l'envers.
+    expect(result.delta.signConvention).toMatch(/NÉGATIF signifie que le challenger devient MOINS coûteux/);
+
+    // Les hypothèses sont tracées, avec leur source ou l'absence de source.
+    const energy = result.distributions.find((entry: any) => entry.parameter === 'energyInflationRate');
+    const carbon = result.distributions.find((entry: any) => entry.parameter === 'carbonPricePerTonne');
+    expect(energy.source).toMatch(/service achats/);
+    expect(carbon.source).toBeNull();
+    expect(result.warnings.join(' ')).toMatch(/Aucune source déclarée/);
+
+    // La lecture dit ce que les quantiles SONT, et ce qu'ils ne sont pas.
+    const reading = result.reading.join(' ');
+    expect(reading).toMatch(/quantiles?/i);
+    expect(reading).toMatch(/ce ne sont pas des bornes d’un intervalle de confiance statistique/);
+    expect(reading).not.toMatch(/intervalle de confiance (à|au|de) \d/i);
+
+    // L'action est tracée, avec la graine : la simulation est auditable.
+    const logs = await api<{ items: any[] }>('GET', '/api/audit-logs?limit=200', { cookie: session });
+    const audit = logs.body.items.find((entry: any) => entry.action === 'risk.simulation_run');
+    expect(audit).toBeTruthy();
+    expect(audit.new_value).toMatch(/reunion-comite-achat-2026-10-08/);
+
+    // LECTURE : la simulation enregistrée est relue, avec sa fraîcheur.
+    const stored = await api<any>('GET', `/api/risk-simulations/${simulation.body.simulationId}`, { cookie: session });
+    expect(stored.status).toBe(200);
+    expect(stored.body.freshness.dataChangedSinceSimulation).toBe(false);
+    expect(stored.body.seed).toBe('reunion-comite-achat-2026-10-08');
+
+    // REJEU : à graine et hypothèses identiques, les quantiles sont IDENTIQUES.
+    const replay = await api<any>('POST', `/api/risk-simulations/${simulation.body.simulationId}/replay`, {
+      cookie: session,
+    });
+    expect(replay.status).toBe(200);
+    expect(replay.body.identical).toBe(true);
+    expect(replay.body.differences).toEqual([]);
+    expect(replay.body.result.delta.p50).toBe(result.delta.p50);
+
+    // La liste du dossier expose les simulations passées, et pas seulement la dernière.
+    const list = await api<{ items: any[]; total: number }>(
+      'GET',
+      `/api/projects/${projectId}/risk-simulations`,
+      { cookie: session }
+    );
+    expect(list.status).toBe(200);
+    expect(list.body.total).toBeGreaterThanOrEqual(2); // la simulation et son rejeu
+    expect(list.body.items[0].seed).toBeTruthy();
+  });
+
+  it('F5 — une hypothèse incohérente est REFUSÉE : le produit ne simule pas n’importe quoi', async () => {
+    const offers = await api<{ items: any[] }>('GET', `/api/offers?limit=200&projectId=${projectId}`, { cookie: session });
+    const [first, second] = offers.body.items;
+
+    // 1. Sans graine : résultat non reproductible ⇒ refusé.
+    const withoutSeed = await api<any>('POST', `/api/projects/${projectId}/risk-simulations`, {
+      cookie: session,
+      json: {
+        winnerOfferId: first.id,
+        challengerOfferId: second.id,
+        variables: [{ parameter: 'energyInflationRate', distribution: 'normal', mean: 0.05, stdDev: 0.02 }],
+      },
+    });
+    expect(withoutSeed.status).toBe(400);
+    expect(withoutSeed.body.code).toBe('SEED_REQUIRED');
+    expect(withoutSeed.body.error).toMatch(/auditable/);
+
+    // 2. Aucune variable déclarée : le produit n'invente pas d'incertitude.
+    const withoutVariables = await api<any>('POST', `/api/projects/${projectId}/risk-simulations`, {
+      cookie: session,
+      json: { winnerOfferId: first.id, challengerOfferId: second.id, seed: 'x', variables: [] },
+    });
+    expect(withoutVariables.status).toBe(400);
+    expect(withoutVariables.body.code).toBe('NO_VARIABLES');
+
+    // 3. Corrélations qui se contredisent : refusées, jamais « réparées ».
+    const impossible = await api<any>('POST', `/api/projects/${projectId}/risk-simulations`, {
+      cookie: session,
+      json: {
+        winnerOfferId: first.id,
+        challengerOfferId: second.id,
+        seed: 'x',
+        variables: [
+          { parameter: 'energyInflationRate', distribution: 'normal', mean: 0.05, stdDev: 0.02 },
+          { parameter: 'carbonPricePerTonne', distribution: 'normal', mean: 100, stdDev: 20 },
+          { parameter: 'inflationRate', distribution: 'normal', mean: 0.02, stdDev: 0.005 },
+        ],
+        correlations: [
+          { between: ['energyInflationRate', 'carbonPricePerTonne'], rho: 0.95 },
+          { between: ['carbonPricePerTonne', 'inflationRate'], rho: -0.95 },
+          { between: ['energyInflationRate', 'inflationRate'], rho: 0.95 },
+        ],
+      },
+    });
+    expect(impossible.status).toBe(400);
+    expect(impossible.body.code).toBe('CORRELATION_MATRIX_NOT_POSITIVE_DEFINITE');
+    expect(impossible.body.error).toMatch(/ne modifie jamais une hypothèse à votre place/);
+
+    // 4. Une loi mal paramétrée est refusée avec le paramètre manquant.
+    const malformed = await api<any>('POST', `/api/projects/${projectId}/risk-simulations`, {
+      cookie: session,
+      json: {
+        winnerOfferId: first.id,
+        challengerOfferId: second.id,
+        seed: 'x',
+        variables: [{ parameter: 'discountRate', distribution: 'triangular', min: 0.02, max: 0.09 }],
+      },
+    });
+    expect(malformed.status).toBe(400);
+    expect(malformed.body.error).toMatch(/mode/);
+
+    // 5. Un paramètre inconnu est refusé en listant les paramètres simulables.
+    const unknownParameter = await api<any>('POST', `/api/projects/${projectId}/risk-simulations`, {
+      cookie: session,
+      json: {
+        winnerOfferId: first.id,
+        challengerOfferId: second.id,
+        seed: 'x',
+        variables: [{ parameter: 'prixDuCafe', distribution: 'normal', mean: 1, stdDev: 1 }],
+      },
+    });
+    expect(unknownParameter.status).toBe(400);
+    expect(unknownParameter.body.code).toBe('UNKNOWN_PARAMETER');
+    expect(unknownParameter.body.error).toMatch(/discountRate/);
   });
 
   it('Sécurité — une requête mutante authentifiée par cookie SANS origine est refusée', async () => {

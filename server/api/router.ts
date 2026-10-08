@@ -58,6 +58,12 @@ import { verifyAuditChain } from '../audit';
 import { metricsSnapshot } from '../observability';
 import { checkRunFreshness, listDecisionRuns, replayDecisionRun, runDecision } from '../services/decision';
 import {
+  getRiskSimulation,
+  listRiskSimulations,
+  replayRiskSimulation,
+  runRiskSimulation,
+} from '../services/risk';
+import {
   commitImportBatch,
   getImportBatch,
   listImportBatches,
@@ -689,6 +695,68 @@ export function createApiRouter(deps: ApiDependencies): Router {
       // sans cette information, une décision ancienne paraîtrait à jour.
       const freshness = await checkRunFreshness(db, ctx, rows[0].id);
       res.json({ ...rows[0], freshness });
+    })
+  );
+
+  /**
+   * Simulation probabiliste du risque : « la décision tient-elle ? »
+   *
+   * Les hypothèses d'incertitude sont DÉCLARÉES par l'appelant (loi + paramètres +
+   * source). Le serveur les valide, refuse une matrice de corrélations incohérente,
+   * et enregistre la graine avec le résultat : une simulation non rejouable ne
+   * serait pas auditable. La réponse porte la mention explicite que les quantiles
+   * décrivent la dispersion SIMULÉE, et non un intervalle de confiance statistique.
+   */
+  router.post(
+    '/projects/:projectId/risk-simulations',
+    requireSession({ db }),
+    requirePermission('decision:run'),
+    asyncHandler(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const result = await runRiskSimulation(
+        db,
+        ctxOf(req),
+        requireUuid(req.params.projectId, 'projectId'),
+        {
+          winnerOfferId: String(body.winnerOfferId ?? ''),
+          challengerOfferId: String(body.challengerOfferId ?? ''),
+          seed: body.seed === undefined || body.seed === null ? null : String(body.seed),
+          iterations: body.iterations === undefined || body.iterations === null ? null : Number(body.iterations),
+          variables: body.variables,
+          correlations: body.correlations,
+        },
+        requestMeta(req)
+      );
+      res.status(201).json(result);
+    })
+  );
+
+  router.get(
+    '/projects/:projectId/risk-simulations',
+    requireSession({ db }),
+    requirePermission('decision:read'),
+    asyncHandler(async (req, res) => {
+      const page = parsePagination(req.query);
+      const result = await listRiskSimulations(db, ctxOf(req), requireUuid(req.params.projectId, 'projectId'), page);
+      res.json({ items: result.items, total: result.total, limit: page.limit, offset: page.offset });
+    })
+  );
+
+  router.get(
+    '/risk-simulations/:simulationId',
+    requireSession({ db }),
+    requirePermission('decision:read'),
+    asyncHandler(async (req, res) => {
+      res.json(await getRiskSimulation(db, ctxOf(req), req.params.simulationId));
+    })
+  );
+
+  router.post(
+    '/risk-simulations/:simulationId/replay',
+    requireSession({ db }),
+    requirePermission('decision:run'),
+    asyncHandler(async (req, res) => {
+      res.json(await replayRiskSimulation(db, ctxOf(req), req.params.simulationId));
     })
   );
 
