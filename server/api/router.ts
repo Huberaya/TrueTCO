@@ -212,7 +212,11 @@ export function createApiRouter(deps: ApiDependencies): Router {
       const body = req.body ?? {};
       const email = requireEmail(body.email, 'email');
       const domain = optionalString(body.domain, 'domain', 255);
-      const session = await loginWithDemoIdentity(db, { email, domain: domain ? domain.toLowerCase() : null }, requestMeta(req));
+      const session = await loginWithDemoIdentity(
+        db,
+        { email, domain: domain ? domain.toLowerCase() : null, allowDemoAuth: deps.allowDemoAuth },
+        requestMeta(req)
+      );
 
       res.setHeader('Set-Cookie', serializeSessionCookie(session.token, session.expiresAt, isProd));
       res.json({

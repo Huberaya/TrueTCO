@@ -178,6 +178,43 @@ export function errorHandler(isProd: boolean) {
     // Une erreur portant un statut numérique explicite (HttpError, ou erreur
     // construite par un dépôt avec `code` et `status`) est une erreur MÉTIER :
     // elle doit être renvoyée telle quelle, jamais transformée en 500.
+    // Erreurs de LECTURE DU CORPS de la requête (JSON malformé, corps trop
+    // volumineux, encodage non pris en charge). Elles proviennent du client, pas
+    // du service : les renvoyer en 500 serait faux (l'appelant croirait à une
+    // panne et pourrait réessayer), et laisserait filtrer un message technique.
+    const bodyIssue = err as { type?: unknown; status?: unknown };
+    const bodyIssueType = typeof bodyIssue?.type === 'string' ? bodyIssue.type : '';
+    if (
+      bodyIssueType === 'entity.parse.failed' ||
+      bodyIssueType === 'entity.too.large' ||
+      bodyIssueType === 'entity.verify.failed' ||
+      bodyIssueType === 'encoding.unsupported' ||
+      bodyIssueType === 'charset.unsupported' ||
+      bodyIssueType === 'request.aborted'
+    ) {
+      const status = bodyIssueType === 'entity.too.large' ? 413 : 400;
+      const code =
+        bodyIssueType === 'entity.too.large'
+          ? 'PAYLOAD_TOO_LARGE'
+          : bodyIssueType === 'request.aborted'
+            ? 'REQUEST_ABORTED'
+            : 'INVALID_REQUEST_BODY';
+      const message =
+        bodyIssueType === 'entity.too.large'
+          ? 'Le corps de la requête dépasse la taille maximale acceptée.'
+          : bodyIssueType === 'entity.parse.failed'
+            ? "Le corps de la requête n'est pas un JSON valide : vérifiez la syntaxe et l'encodage."
+            : "Le corps de la requête n'a pas pu être lu.";
+      logger.warn('request.invalid_body', {
+        correlationId,
+        type: bodyIssueType,
+        route: req.originalUrl,
+        status,
+      });
+      res.status(status).json({ error: message, code, correlationId });
+      return;
+    }
+
     const withStatus = err as { status?: unknown; code?: unknown; message?: unknown };
     const hasExplicitStatus =
       typeof withStatus?.status === 'number' && withStatus.status >= 400 && withStatus.status < 600 && typeof withStatus.code === 'string';

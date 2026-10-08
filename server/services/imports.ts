@@ -627,8 +627,26 @@ export async function updateImportMapping(
       overrides[declared] = canonical;
     }
 
-    const declaredMapping = input.mapping ?? batch.column_mapping ?? {};
-    const { headers: cleanMapping, errors } = validateMapping(declaredMapping);
+    // FUSION du mapping, et non remplacement.
+    //
+    // Défaut réel corrigé ici : un envoi partiel (une seule colonne tranchée)
+    // ÉCRASAIT tout le mapping du lot. Les correspondances déjà proposées
+    // disparaissaient, toutes les colonnes redevenaient « non tranchées » et
+    // toutes les lignes basculaient en erreur : trancher une colonne détruisait
+    // l'analyse en cours. Le comportement attendu d'un écran d'arbitrage est
+    // additif. Pour retirer une correspondance, l'appelant transmet la valeur
+    // vide (« ») pour cette colonne ; pour l'écarter nommément, « ignore ».
+    const currentMapping: Record<string, string> = { ...((batch.column_mapping as Record<string, string> | null) ?? {}) };
+    const mergedMapping: Record<string, string> = { ...currentMapping };
+    for (const [header, field] of Object.entries(input.mapping ?? {})) {
+      if (field === undefined || field === null || field === '') {
+        delete mergedMapping[header];
+      } else {
+        mergedMapping[header] = field;
+      }
+    }
+
+    const { headers: cleanMapping, errors } = validateMapping(mergedMapping);
     if (errors.length > 0) {
       throw badRequest('INVALID_MAPPING', `Le mapping est refusé : ${errors.join(' ')}`, { errors });
     }

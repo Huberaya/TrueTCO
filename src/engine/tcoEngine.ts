@@ -112,10 +112,23 @@ const CATEGORY_ALIASES: Record<string, CostCategory> = {
   energie: 'energie_consommables',
   consommables: 'energie_consommables',
   fluides: 'energie_consommables',
+  // Formes d'écriture de la même nature de coût (aucune interprétation ajoutée) :
+  // carburant, électricité, recharge et fluides SONT de l'énergie consommée.
+  carburant: 'energie_consommables',
+  carburants: 'energie_consommables',
+  gazole: 'energie_consommables',
+  gasoil: 'energie_consommables',
+  diesel: 'energie_consommables',
+  essence: 'energie_consommables',
+  electricite: 'energie_consommables',
+  recharge: 'energie_consommables',
   maintenance_reparations: 'maintenance_reparations',
   maintenance: 'maintenance_reparations',
+  entretien: 'maintenance_reparations',
   reparation: 'maintenance_reparations',
   reparations: 'maintenance_reparations',
+  piece_de_rechange: 'maintenance_reparations',
+  pieces_de_rechange: 'maintenance_reparations',
   services: 'maintenance_reparations',
   remplacement_pannes: 'remplacement_pannes',
   remplacement: 'remplacement_pannes',
@@ -219,9 +232,34 @@ export class TCOEngine {
     return TCOEngine.normalizeCategory(raw ?? undefined);
   }
 
+  /**
+   * Ramène un libellé saisi à une CLÉ comparable.
+   *
+   * Défaut réel corrigé ici : « énergie » (avec son accent) n'était pas reconnu
+   * alors que la table d'alias contient « energie ». Un utilisateur francophone
+   * qui écrit correctement le mot recevait une erreur de catégorie inconnue, et
+   * la ligne bloquait l'import. Le repli des diacritiques (é→e, ç→c, ù→u…) et la
+   * normalisation des espaces, apostrophes et tirets en « _ » suppriment ce piège
+   * pour toutes les formes d'écriture, sans ajouter la moindre correspondance
+   * inventée : c'est le MÊME mot, écrit autrement.
+   */
+  private static foldCategoryKey(raw: string): string {
+    return String(raw)
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[’']/g, ' ')
+      // « & » est une conjonction : « Logistique & Douanes » est le même intitulé
+      // que « Logistique / Douanes ».
+      .replace(/&/g, ' ')
+      .replace(/[\s\-./]+/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  }
+
   private static normalizeCategory(raw: string | undefined): CostCategory | null {
     if (!raw) return null;
-    const key = String(raw).trim().toLowerCase();
+    const key = TCOEngine.foldCategoryKey(raw);
     return CATEGORY_ALIASES[key] ?? null;
   }
 

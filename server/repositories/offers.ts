@@ -97,7 +97,8 @@ export async function listOffers(
       `SELECT so.id, so.project_id, so.supplier_id, so.supplier_name, so.offer_reference,
               so.apparent_total, so.currency, so.quantity, so.delivery_lead_time_weeks,
               so.warranty_months, so.expected_lifespan_years, so.technical_suitability_score,
-              so.is_responsible_candidate, so.data_source, so.computed_tco_nominal, so.computed_lcc,
+              so.is_responsible_candidate, so.data_source, so.import_batch_id,
+              so.computed_tco_nominal, so.computed_lcc,
               so.computed_carbon_tonnes, so.computed_confidence, so.engine_version, so.computed_at,
               so.is_demo, so.created_at, so.updated_at,
               (SELECT count(*)::int FROM cost_items ci WHERE ci.offer_id = so.id) AS cost_item_count

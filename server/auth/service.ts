@@ -28,7 +28,26 @@ import { generateToken, hashToken, invitationExpiry, markSessionSeen, sessionExp
 import { badRequest, forbidden, notFound, HttpError } from '../http';
 import { AuditActor, actorFromContext, recordAudit, recordAuditStandalone } from '../audit';
 
-const DEMO_MODE = process.env.TRUETCO_ALLOW_DEMO_AUTH === 'true';
+/**
+ * La connexion de recette (`demo_local`) n'est PAS décidée ici.
+ *
+ * Elle l'était : une constante lue au chargement du module décidait, pendant que
+ * la route d'authentification consultait de son côté les options de
+ * l'application. Les deux pouvaient se contredire — l'application annonçait la
+ * connexion de recette autorisée, et le service répondait 501. Une seule source
+ * de vérité désormais : l'appelant DOIT transmettre explicitement l'autorisation.
+ */
+export function assertDemoAuthAllowed(allowDemoAuth: boolean): void {
+  if (!allowDemoAuth) {
+    throw new HttpError(
+      501,
+      'AUTH_PROVIDER_NOT_CONFIGURED',
+      "Aucun fournisseur d'identité n'est configuré sur cette instance. " +
+        'Renseignez TRUETCO_AUTH_MODE (OIDC/SAML) en production, ou activez explicitement ' +
+        'l’authentification de recette (TRUETCO_ALLOW_DEMO_AUTH) sur un environnement non exposé.'
+    );
+  }
+}
 
 export interface RequestMeta {
   ipAddress?: string | null;
@@ -202,18 +221,10 @@ export async function acceptInvitation(
 // -----------------------------------------------------------------------------
 export async function loginWithDemoIdentity(
   db: Db,
-  input: { email: string; domain?: string | null },
+  input: { email: string; domain?: string | null; allowDemoAuth: boolean },
   meta: RequestMeta
 ): Promise<SessionIssue> {
-  if (!DEMO_MODE) {
-    throw new HttpError(
-      501,
-      'AUTH_PROVIDER_NOT_CONFIGURED',
-      "Aucun fournisseur d'identité n'est configuré sur cette instance. " +
-        "Renseignez TRUETCO_AUTH_MODE (OIDC/SAML) en production, ou activez explicitement " +
-        'TRUETCO_ALLOW_DEMO_AUTH=true sur un environnement de recette non exposé.'
-    );
-  }
+  assertDemoAuthAllowed(input.allowDemoAuth);
 
   const user = await db.systemTx(async (tx) => {
     const rows = await tx.query<{ id: string; organization_id: string; role: UserRole; status: string; email: string }>(

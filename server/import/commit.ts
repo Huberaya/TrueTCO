@@ -154,7 +154,13 @@ export async function commitImport(
     let createdCostItems = 0;
     let createdCarbonItems = 0;
     let createdRiskItems = 0;
-    const skippedRows: number[] = [];
+    // Lignes NON importées. Deux origines : celles écartées explicitement par
+    // l'utilisateur AVANT l'import (excludedRows) et celles qu'il a fallu sauter
+    // (valeur en erreur ou manquante). Défaut corrigé : les lignes écartées
+    // volontairement n'apparaissaient pas dans le résultat du lot, si bien que la
+    // trace de l'import ne disait pas qu'une ligne du fichier avait été laissée de
+    // côté — exactement ce qu'un auditeur cherche à savoir.
+    const skippedRows: number[] = [...(options.excludedRows ?? [])];
     const warnings: string[] = [];
 
     for (const offer of preview.offers) {

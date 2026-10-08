@@ -106,3 +106,53 @@ Ce qui **remplace** ces tests dans l'environnement actuel : `tests/ui.spec.tsx`
 monte réellement les écrans dans un DOM (jsdom) et vérifie le rendu et les règles
 d'honnêteté de l'affichage (import bloqué, recommandation « aucune », intégrité du
 journal). Ce n'est pas équivalent à un navigateur complet — c'est dit ici.
+
+
+---
+
+## Parcours de bout en bout par HTTP (`tests/parcours-api.spec.ts`)
+
+Ces 14 tests pilotent **l'application réelle par HTTP** : même serveur Express, mêmes
+routes, mêmes contrôles d'accès, même base PostgreSQL et **mêmes politiques RLS que la
+production**. Ils jouent le scénario complet d'une PME :
+
+| Étape | Ce qui est vérifié |
+| --- | --- |
+| A1–A3 | inscription d'un organisme, connexion (session par **cookie HttpOnly**, aucun jeton dans le corps de la réponse), refus sans session, création du dossier |
+| C | un fichier contenant un montant illisible (`dix-neuf mille`) est **refusé** ; la ligne fautive est désignée par son numéro ; une ligne sans montant est `MISSING` et **jamais** complétée par 0 € |
+| C2 | correction du fichier, colonne non modélisée (« occurrences par an ») laissée **à trancher**, catégories inconnues **listées** (formation, assurance, frais de raccordement) ; arbitrage humain enregistré ; exclusion explicite d'une ligne ; import |
+| D | provenance ligne à ligne : source du montant, numéro de ligne du fichier d'origine, marqueur d'import ; une valeur sans justificatif reste `unsourced` |
+| F | décision calculée par le serveur, classée sur la VAN du coût complet, avec versions (moteur, méthode), point mort, sensibilité, inversion de décision et montants non sourcés **affichés** |
+| F2 | rejeu de la décision depuis l'instantané : **résultat identique**, empreinte d'entrée SHA-256, information de fraîcheur |
+| A4 | reconnexion depuis une **nouvelle session** : tout est retrouvé côté serveur, rien ne dépend du navigateur |
+| F3 | journal d'audit : actions tracées, chaîne d'intégrité vérifiée, écriture par le client refusée (403) |
+| Cloisonnement | un autre organisme ne voit aucun dossier, aucune offre, aucun lot d'import ; la décision d'autrui est refusée ; les données de la PME sont intactes |
+| Sécurité | requête mutante sans origine → 403 `CSRF_ORIGIN_MISSING` ; origine tierce → 403 `CSRF_ORIGIN_DENIED` ; JSON malformé → 400 sans trace technique ; `/api/metrics` réservé à l'administration de la plateforme |
+
+```bash
+npx vitest run tests/parcours-api.spec.ts
+```
+
+### Défauts réels révélés par ce parcours (corrigés)
+
+1. **Un arbitrage partiel effaçait tout le mapping d'import.** Tramer une seule
+   colonne renvoyait un mapping réduit à cette colonne : les correspondances déjà
+   proposées disparaissaient, toutes les colonnes redevenaient « non tranchées » et
+   les douze lignes basculaient en erreur. Le mapping est désormais **fusionné** ;
+   une correspondance ne se retire qu'avec une valeur vide explicite.
+2. **Les lignes écartées par l'utilisateur n'apparaissaient pas dans le résultat de
+   l'import.** La trace du lot ne disait donc pas qu'une ligne du fichier avait été
+   laissée de côté — précisément ce qu'un auditeur cherche. Elles sont maintenant
+   nommées dans `skippedRows`.
+3. **Les libellés français accentués n'étaient pas reconnus** : « énergie » échouait
+   là où « energie » était accepté, et la ligne bloquait l'import. La normalisation
+   replie désormais les diacritiques (é→e, ç→c, ù→u) et les tirets, espaces et « & » —
+   même mot, autre écriture, aucune correspondance inventée.
+4. **Deux sources de vérité pour l'authentification de recette** : l'application
+   autorisait la connexion pendant qu'une constante lue au chargement du module la
+   refusait (réponse 501). Une seule décision désormais, transmise explicitement.
+5. **Un corps JSON malformé renvoyait 500** (donc « panne du service ») au lieu de
+   400 : la cause est côté client, la réponse le dit maintenant, sans message
+   technique et avec l'identifiant de corrélation du journal.
+6. **Le lot d'origine d'une offre n'était pas exposé** dans la liste des offres : la
+   provenance existait en base mais restait invisible à l'écran. Elle est renvoyée.
