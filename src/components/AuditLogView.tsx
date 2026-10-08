@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { AuditLogEntry, UserRole } from '../types/domain';
+import { ApiError, fetchAuditIntegrity } from '../services/serverData';
 import {
   History,
   User,
@@ -27,27 +28,46 @@ interface AuditLogViewProps {
 export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'finance' | 'esg' | 'visas'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'finance' | 'esg' | 'workflow'>('all');
 
-  // Visa Modal state
-  const [isVisaModalOpen, setIsVisaModalOpen] = useState(false);
-  const [visaRole, setVisaRole] = useState<UserRole>('finance_controleur');
-  const [visaAuthor, setVisaAuthor] = useState('Lucas Bernard');
-  const [visaSubject, setVisaSubject] = useState('Visa Approbation Cadrage Financier & WACC');
-  const [visaJustification, setVisaJustification] = useState(
-    'Vérification formelle conforme : hypothèses de taux WACC 4.5% et trajectoire prix tutélaire Quinet 120€ validées pour la consultation.'
-  );
 
-  // Compute a simulated SHA-256 cryptographic chain hash for CAC verification
-  const auditChainHash = useMemo(() => {
-    let hash = 0x811c9dc5;
-    const str = logs.map((l) => `${l.id}:${l.timestamp}:${l.fieldChanged}:${l.newValue}`).join('|');
-    for (let i = 0; i < str.length; i++) {
-      hash ^= str.charCodeAt(i);
-      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-    return `sha256-e3b0c442${(hash >>> 0).toString(16).padStart(8, '0')}7f1d4a89`;
-  }, [logs]);
+
+  /**
+   * État d'intégrité du journal, VÉRIFIÉ PAR LE SERVEUR.
+   *
+   * L'interface affichait auparavant une empreinte « sha256-… » recalculée dans le
+   * navigateur à partir d'un hachage non cryptographique : elle ressemblait à une
+   * preuve d'intégrité sans en être une. La vérification réelle est faite en base
+   * (chaîne de hachage des entrées) et renvoyée par /api/audit-logs/integrity.
+   */
+  const [integrity, setIntegrity] = useState<{
+    totalEntries: number;
+    firstBrokenId: string | null;
+    firstContentMismatchId: string | null;
+    intact: boolean;
+  } | null>(null);
+  const [integrityError, setIntegrityError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetchAuditIntegrity()
+      .then((result) => {
+        if (!cancelled) setIntegrity(result);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setIntegrity(null);
+          setIntegrityError(
+            error instanceof ApiError
+              ? error.message
+              : "L'état d'intégrité n'a pas pu être vérifié auprès du serveur."
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [logs.length]);
 
   const filteredLogs = logs.filter((log) => {
     const matchesSearch =
@@ -71,36 +91,15 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
         log.fieldChanged.toLowerCase().includes('co2') ||
         log.fieldChanged.toLowerCase().includes('esg') ||
         log.fieldChanged.toLowerCase().includes('ademe');
-    } else if (typeFilter === 'visas') {
+    } else if (typeFilter === 'workflow') {
       matchesType =
-        log.fieldChanged.toLowerCase().includes('visa') ||
+        log.fieldChanged.toLowerCase().includes('workflow') ||
         log.fieldChanged.toLowerCase().includes('approbation') ||
-        log.fieldChanged.toLowerCase().includes('statut');
+        log.fieldChanged.toLowerCase().includes('verrou');
     }
 
     return matchesSearch && matchesRole && matchesType;
   });
-
-  const handleAddVisa = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!onAddLog || !visaJustification.trim()) return;
-
-    const newLog: AuditLogEntry = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      userId: 'u-audit-cac',
-      userName: visaAuthor.trim() || 'Auditeur Légal',
-      userRole: visaRole,
-      entityName: 'Gouvernance & Conformité',
-      fieldChanged: visaSubject.trim() || 'Visa Formel',
-      oldValue: 'En attente de visa',
-      newValue: 'Visa Certifié Conforme',
-      justification: visaJustification.trim(),
-    };
-
-    onAddLog(newLog);
-    setIsVisaModalOpen(false);
-  };
 
   const exportCSV = () => {
     const headers = [
@@ -113,7 +112,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
       'Valeur_Precedente',
       'Nouvelle_Valeur',
       'Justification_Formelle',
-      'Sceau_Integrite_Registre',
+      'Integrite_Verifiee_Par_Serveur',
     ];
     const rows = logs.map((l) => [
       `"${l.id}"`,
@@ -125,7 +124,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
       `"${l.oldValue}"`,
       `"${l.newValue}"`,
       `"${l.justification.replace(/"/g, '""')}"`,
-      `"${auditChainHash}"`,
+      `"${
+        integrity
+          ? integrity.intact
+            ? `intacte (${integrity.totalEntries} entrées chaînées, vérifiées en base)`
+            : `ANOMALIE DETECTEE (première entrée rompue : ${integrity.firstBrokenId ?? 'inconnue'})`
+          : 'non verifiee'
+      }"`,
     ]);
 
     const csvContent =
@@ -136,7 +141,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
     link.setAttribute('href', encodedUri);
     link.setAttribute(
       'download',
-      `journal_audit_certifie_truetco_${new Date().toISOString().split('T')[0]}.csv`
+      `journal_audit_truetco_${new Date().toISOString().split('T')[0]}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -162,24 +167,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
         </div>
 
         <div className="flex items-center gap-2">
-          {onAddLog && (
-            <button
-              onClick={() => setIsVisaModalOpen(true)}
-              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-              title="Apposer un visa formel de contrôle interne"
-            >
-              <Stamp className="w-3.5 h-3.5" />
-              <span>Apposer un Visa Formel</span>
-            </button>
-          )}
-
           <button
             onClick={exportCSV}
             className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-            title="Télécharger l'extrait officiel certifié pour CAC et DAF"
+            title="Télécharger l'extrait du journal (l'intégrité est vérifiée et indiquée dans le fichier)"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Export Légal CAC (CSV)</span>
+            <span>Exporter le journal (CSV)</span>
           </button>
         </div>
       </div>
@@ -192,19 +186,34 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
           </div>
           <div>
             <div className="font-bold text-white flex items-center gap-2">
-              <span>Sceau d'Intégrité Immuable du Journal d'Audit</span>
-              <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded font-mono">
-                CONFORME ARTICLE L. 823-10
-              </span>
+              <span>Intégrité du journal d'audit — vérifiée en base de données</span>
             </div>
             <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-              Chaîne de vérification : <span className="text-emerald-400 select-all">{auditChainHash}</span>
+              {integrity ? (
+                integrity.intact ? (
+                  <>
+                    Chaîne de hachage vérifiée : <span className="text-emerald-400">intacte</span> ·{' '}
+                    {integrity.totalEntries} entrée(s) · aucune rupture détectée.
+                  </>
+                ) : (
+                  <>
+                    <span className="text-rose-400 font-semibold">Anomalie détectée :</span> la chaîne est rompue à
+                    l'entrée {integrity.firstBrokenId ?? 'inconnue'}
+                    {integrity.firstContentMismatchId ? ` (contenu modifié : ${integrity.firstContentMismatchId})` : ''}.
+                  </>
+                )
+              ) : (
+                <span className="text-amber-300">
+                  {integrityError ?? 'Vérification en cours…'}
+                </span>
+              )}
             </div>
           </div>
         </div>
 
         <div className="text-right text-[11px] text-slate-400">
-          <span className="text-slate-300 font-semibold">{logs.length} enregistrements</span> chaînés dans Neon PostgreSQL
+          <span className="text-slate-300 font-semibold">{logs.length} enregistrement(s) affiché(s)</span> · chaînage
+          vérifié par le serveur, jamais par le navigateur
         </div>
       </div>
 
@@ -283,12 +292,12 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
               Carbone & ESG
             </button>
             <button
-              onClick={() => setTypeFilter('visas')}
+              onClick={() => setTypeFilter('workflow')}
               className={`px-2.5 py-1 rounded-md transition-colors ${
-                typeFilter === 'visas' ? 'bg-slate-800 text-purple-400 font-semibold' : 'text-slate-400 hover:text-white'
+                typeFilter === 'workflow' ? 'bg-slate-800 text-purple-400 font-semibold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Visas & Statuts
+              Workflow & statuts
             </button>
           </div>
 
@@ -376,109 +385,14 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
         </div>
       </div>
 
-      {/* Modal: Apposer un Visa Formel */}
-      {isVisaModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
-          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 overflow-hidden">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-800">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-emerald-950/60 border border-emerald-800/60 rounded-lg text-emerald-400">
-                  <Stamp className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">Apposer un Visa Formel</h3>
-                  <p className="text-xs text-slate-400">Enregistrement immuable au registre de contrôle interne</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsVisaModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddVisa} className="py-4 space-y-4 text-xs text-slate-300">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1">Signataire / Auteur *</label>
-                  <input
-                    type="text"
-                    required
-                    value={visaAuthor}
-                    onChange={(e) => setVisaAuthor(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs focus:outline-none focus:border-emerald-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1">Rôle Métier *</label>
-                  <select
-                    value={visaRole}
-                    onChange={(e) => setVisaRole(e.target.value as UserRole)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs focus:outline-none focus:border-emerald-500"
-                  >
-                    <option value="finance_controleur">Finance / DAF</option>
-                    <option value="directeur_achats">Directeur des Achats</option>
-                    <option value="acheteur">Acheteur Référent</option>
-                    <option value="rse_esg">Responsable RSE</option>
-                    <option value="direction_generale">Direction Générale</option>
-                    <option value="admin">Commissaire aux Comptes (CAC)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">Intitulé du Visa *</label>
-                <input
-                  type="text"
-                  required
-                  value={visaSubject}
-                  onChange={(e) => setVisaSubject(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">
-                  Justification Probante & Conclusions du Contrôle *
-                </label>
-                <textarea
-                  rows={4}
-                  required
-                  value={visaJustification}
-                  onChange={(e) => setVisaJustification(e.target.value)}
-                  className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs leading-relaxed focus:outline-none focus:border-emerald-500"
-                  placeholder="Saisissez les constats, les vérifications opérées et la conclusion du visa..."
-                />
-              </div>
-
-              <div className="p-3 bg-sky-950/30 border border-sky-900/60 rounded-xl flex items-start gap-2 text-sky-300 text-[11px]">
-                <AlertCircle className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
-                <span>
-                  Cet enregistrement est irréversible et sera scellé dans la table `audit_logs` de Neon PostgreSQL.
-                </span>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setIsVisaModalOpen(false)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold rounded-lg text-xs transition-colors"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm flex items-center gap-1.5"
-                >
-                  <Stamp className="w-3.5 h-3.5" />
-                  <span>Signer et Sceller le Visa</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/*
+        Aucun bouton « apposer un visa » : le journal d'audit est en LECTURE SEULE
+        côté navigateur. Le serveur refuse toute écriture cliente (POST
+        /api/audit-logs → 403) et n'enregistre que des actions réellement
+        exécutées, avec leur auteur authentifié. Un visa saisi dans l'interface
+        produirait une entrée suggérée mais non enregistrée : c'est exactement le
+        genre de fonctionnalité apparente qui a été retirée.
+      */}
     </div>
   );
 };

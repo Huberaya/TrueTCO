@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { StorageService, TrueTCOBackupPayload } from '../services/storageService';
+import { ApiError, fetchHealth } from '../services/serverData';
 import { Project, SupplierOffer, Supplier, ExternalityReferenceBenchmark, AuditLogEntry } from '../types/domain';
 import { TrueTCOBackupPayloadSchema, formatZodError } from '../schemas/validationSchemas';
 import {
@@ -30,58 +31,12 @@ interface DataBackupModalProps {
   onResetSeed: () => void;
 }
 
-const SQL_TABLES_INFO = [
-  {
-    name: 'organizations',
-    role: 'Racine Multi-Tenant (SIRET, devises, isolation clients)',
-    fields: ['id UUID PK', 'name VARCHAR', 'legal_registration_number', 'default_currency', 'created_at', 'updated_at'],
-  },
-  {
-    name: 'users',
-    role: 'Comptes utilisateurs & Contrôle d\'accès RBAC (Acheteur, DAF, RSE)',
-    fields: ['id UUID PK', 'organization_id FK', 'email', 'full_name', 'role CHECK', 'is_active', 'created_at'],
-  },
-  {
-    name: 'projects',
-    role: 'Consultations d\'achats (12 champs normés, horizon, WACC, inflation)',
-    fields: ['id UUID PK', 'reference UNIQUE', 'name', 'budget_cap', 'planned_volume', 'horizon_years', 'discount_rate', 'status'],
-  },
-  {
-    name: 'suppliers',
-    role: 'Référentiel fournisseurs (Incoterms, délais, MOQ, score ESG, pannes)',
-    fields: ['id UUID PK', 'name', 'country_code', 'incoterm', 'historical_defect_rate', 'warranty_months', 'data_quality_score'],
-  },
-  {
-    name: 'supplier_offers',
-    role: 'Propositions candidates (Prix facial, LCC NPV, TCO global, carbone)',
-    fields: ['id UUID PK', 'project_id FK', 'supplier_id FK', 'apparent_total', 'economic_tco_nominal', 'lifecycle_cost_lcc', 'total_comprehensive_tco'],
-  },
-  {
-    name: 'cost_items',
-    role: 'Ventilation analytique TCO / CBS (15 postes décomposés)',
-    fields: ['id UUID PK', 'offer_id FK', 'category', 'label', 'amount', 'unit', 'source_name', 'source_type', 'confidence_level'],
-  },
-  {
-    name: 'carbon_items',
-    role: 'Bilan d\'émissions ACV Scopes 1, 2, 3 (Monétisation Quinet)',
-    fields: ['id UUID PK', 'offer_id FK', 'scope CHECK', 'lifecycle_phase', 'emissions_per_unit_tonne_co2e', 'total_lifecycle_emissions'],
-  },
-  {
-    name: 'risk_items',
-    role: 'Événements de risques probabilisés P x I (ZFE, ruptures, pénalités)',
-    fields: ['id UUID PK', 'offer_id FK', 'description', 'probability NUMERIC', 'financial_impact NUMERIC', 'source_evidence'],
-  },
-  {
-    name: 'reference_benchmarks',
-    role: 'Référentiel institutionnel des facteurs (ADEME, Quinet, WACC, CRE)',
-    fields: ['id UUID PK', 'name', 'category', 'source', 'value NUMERIC', 'unit', 'valid_until', 'confidence_score'],
-  },
-  {
-    name: 'audit_logs',
-    role: 'Journal d\'audit immuable légal (Horodatage, auteur, justification CAC)',
-    fields: ['id UUID PK', 'organization_id FK', 'timestamp', 'user_name', 'user_role', 'entity_name', 'field_changed', 'old_value', 'new_value', 'justification'],
-  },
-];
+/*
+  Le tableau « SQL_TABLES_INFO » a été retiré : il listait des tables et des
+  colonnes qui n'existent pas dans le schéma réel (par exemple
+  `economic_tco_nominal` ou `total_comprehensive_tco`), ce qui laissait croire à
+  un modèle de données vérifié. Le schéma réel se lit dans src/db/migrations.
+*/
 
 export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   isOpen,
@@ -99,6 +54,39 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const [zodValidationReport, setZodValidationReport] = useState<{ valid: boolean; messages: string[] } | null>(null);
+
+  /**
+   * État réel de la base de données, lu auprès du serveur. Aucune valeur par
+   * défaut : si le serveur ne répond pas, l'interface dit que l'état n'a pas pu
+   * être vérifié au lieu d'afficher une connexion imaginaire.
+   */
+  const [health, setHealth] = useState<{
+    status: string;
+    database: { connected: boolean; driver: string; version: string | null; appRoleAssumed: boolean };
+    versions: { engine: string; methodology: string };
+  } | null>(null);
+  const [healthError, setHealthError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    fetchHealth()
+      .then((result) => {
+        if (!cancelled) {
+          setHealth(result);
+          setHealthError(null);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setHealth(null);
+          setHealthError(error instanceof ApiError ? error.message : "L'état de la base n'a pas pu être vérifié.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -187,7 +175,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
 
   const handleCopySqlPath = () => {
     navigator.clipboard.writeText(
-      'Fichiers DDL créés :\n- src/db/schema.ts (Drizzle ORM)\n- src/db/schema.sql (PostgreSQL DDL 10 tables)\n- src/db/seed.sql (Données de démarrage)\n- src/db/drizzle.config.ts'
+      'Le schéma réel est décrit par les migrations SQL du dépôt : (src/db/migrations). Chaque migration est figée par son empreinte SHA-256 et appliquée au démarrage.'
     );
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
@@ -203,7 +191,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             <div>
               <h3 className="text-base font-bold text-white">Base de Données & Données Métier</h3>
               <p className="text-xs text-slate-400">
-                Persistance locale, portabilité des dossiers et architecture PostgreSQL Drizzle.
+                Données de DÉMONSTRATION locales (aucune session serveur) et état réel de la base côté serveur.
               </p>
             </div>
           </div>
@@ -235,7 +223,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             }`}
           >
             <FileCode2 className="w-3.5 h-3.5 text-sky-400" />
-            Schéma SQL & Drizzle ORM (10 Tables)
+            État de la base de données
           </button>
 
           <button
@@ -331,7 +319,45 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
           </div>
         )}
 
-        {/* TAB 2: SCHEMA & DRIZZLE ORM */}
+        {/* Onglet 2 : état RÉEL de la base de données.
+            L'onglet précédent affichait un schéma de tables fabriqué (colonnes qui
+            n'existent pas), un nom d'hôte d'instance inventé et la mention
+            « données Neon PostgreSQL connectées » alors qu'aucune connexion n'était
+            vérifiée. Seul l'état renvoyé par /api/health est affiché ici. */}
+        {activeTab === 'schema' && (
+          <div className="space-y-3 text-xs">
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
+              <div className="font-bold text-white flex items-center gap-1.5">
+                <Database className="w-4 h-4 text-emerald-400" />
+                État de la base de données (vérifié auprès du serveur)
+              </div>
+              {health ? (
+                <div className="text-[11px] text-slate-300 space-y-0.5 font-mono">
+                  <div>
+                    connectée : {health.database.connected ? 'oui' : 'non'} · moteur : {health.database.driver}
+                  </div>
+                  <div>version : {health.database.version ?? 'inconnue'}</div>
+                  <div>rôle applicatif assumé (RLS actif) : {health.database.appRoleAssumed ? 'oui' : 'non'}</div>
+                  <div>
+                    moteur de calcul : {health.versions.engine} · méthodologie : {health.versions.methodology}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-[11px] text-amber-300">
+                  {healthError ?? 'État de la base non disponible : aucune session serveur active.'}
+                </div>
+              )}
+            </div>
+
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-[11px] text-slate-400 leading-relaxed">
+              Les données de production vivent dans PostgreSQL, sur le serveur. Elles ne sont ni sauvegardées ni
+              restaurées depuis ce navigateur : une sauvegarde locale ne protégerait pas les données du serveur et
+              donnerait une fausse assurance. La sauvegarde de la base relève de l'exploitation (voir DEPLOYMENT.md).
+              L'onglet « Sauvegarde locale » ne concerne que les données de DÉMONSTRATION affichées sans session.
+            </div>
+          </div>
+        )}
+
         {activeTab === 'schema' && (
           <div className="space-y-3 text-xs max-h-[360px] overflow-y-auto pr-1">
             {/* Neon Connection Status Banner */}
@@ -342,14 +368,16 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                   <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
                 </span>
                 <div>
-                  <div className="font-semibold text-emerald-300 text-xs">Instance Neon PostgreSQL Connectée & Migrée</div>
+                  <div className="font-semibold text-emerald-300 text-xs">
+                    {health?.database.connected ? 'Base de données connectée' : 'Base de données non vérifiée'}
+                  </div>
                   <div className="text-[10px] text-slate-400 font-mono">
-                    ep-summer-mouse-b2kmuvkr · 10 tables actives & contraintes FK synchronisées
+                    {health ? `${health.database.driver} · ${health.database.version ?? 'version inconnue'}` : 'aucune session serveur'}
                   </div>
                 </div>
               </div>
-              <span className="text-[10px] px-2 py-0.5 bg-emerald-900/80 text-emerald-200 border border-emerald-700/60 rounded font-mono font-semibold">
-                NEON LIVE
+              <span className="text-[10px] px-2 py-0.5 bg-slate-800 text-slate-200 border border-slate-700 rounded font-mono font-semibold">
+                {health?.database.driver?.toUpperCase() ?? 'HORS LIGNE'}
               </span>
             </div>
 
@@ -357,10 +385,10 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               <div>
                 <span className="font-bold text-white flex items-center gap-1.5">
                   <Layers className="w-4 h-4 text-emerald-400" />
-                  Modèle Relationnel PostgreSQL & Drizzle ORM
+                  Où vivent réellement les données
                 </span>
                 <span className="text-[11px] text-slate-400 block mt-0.5">
-                  Fichiers sources synchronisés : <code>src/db/schema.ts</code> & <code>src/db/schema.sql</code>.
+                  Les tables sont créées par les migrations SQL du dépôt ; l'API en publie l'état via /api/health.
                 </span>
               </div>
               <button
@@ -372,34 +400,23 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {SQL_TABLES_INFO.map((tbl) => (
-                <div
-                  key={tbl.name}
-                  className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl space-y-1.5 hover:border-slate-700 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-sky-400 text-xs">{tbl.name}</span>
-                    <span className="text-[10px] text-slate-500 font-mono">{tbl.fields.length} champs</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-snug">{tbl.role}</p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {tbl.fields.slice(0, 4).map((f) => (
-                      <span
-                        key={f}
-                        className="text-[9px] font-mono px-1.5 py-0.5 bg-slate-900 text-slate-400 rounded border border-slate-800"
-                      >
-                        {f}
-                      </span>
-                    ))}
-                    {tbl.fields.length > 4 && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 text-slate-500">
-                        +{tbl.fields.length - 4}...
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-[11px] text-slate-300 leading-relaxed space-y-1.5">
+              <div className="font-semibold text-white">Où vivent réellement les données</div>
+              <p>
+                Les dossiers, offres, postes de coût, émissions, risques, exécutions de décision, lots d'import et le
+                journal d'audit sont stockés dans PostgreSQL, côté serveur, sous isolation par organisation (Row Level
+                Security). L'interface ne détient qu'un cache d'affichage.
+              </p>
+              <p>
+                Le schéma réel se lit dans le dépôt : <code className="font-mono text-slate-200">src/db/migrations/</code>
+                . Chaque migration appliquée est enregistrée avec son empreinte SHA-256 ; une migration déjà appliquée et
+                modifiée après coup empêche le démarrage, afin que deux environnements ne puissent pas diverger en
+                silence.
+              </p>
+              <p className="text-slate-400">
+                Aucune sauvegarde ni restauration des données de production n'est possible depuis le navigateur — cette
+                opération relève de l'exploitation de la base (voir DEPLOYMENT.md).
+              </p>
             </div>
           </div>
         )}
@@ -494,7 +511,8 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
 
         <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs">
           <span className="text-slate-500 text-[11px]">
-            Conforme norme ISO 20400 & Piste d'audit fiable (Article L. 123-14 du Code de Commerce)
+            Le journal d'audit est tenu par le serveur, chaîné par empreinte et vérifiable via l'API. Aucune conformité
+            réglementaire n'est revendiquée ici : elle dépend d'un audit externe.
           </span>
           <button
             onClick={onClose}

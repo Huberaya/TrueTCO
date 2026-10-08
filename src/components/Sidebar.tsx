@@ -1,5 +1,7 @@
 import React from 'react';
 import {
+  FileSpreadsheet,
+  Gavel,
   LayoutDashboard,
   FolderKanban,
   Building2,
@@ -33,7 +35,9 @@ export type NavView =
   | 'erp_connectors'
   | 'ai_parser'
   | 'digital_signature'
-  | 'csrd_taxonomy';
+  | 'csrd_taxonomy'
+  | 'import_center'
+  | 'decision';
 
 interface SidebarProps {
   currentView: NavView;
@@ -49,14 +53,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const navItems: { id: NavView; label: string; icon: React.ReactNode; badge?: string | number }[] = [
     {
       id: 'chantier1',
-      label: 'Chantier 1 (Moteur TCO)',
+      label: 'Moteur de calcul',
       icon: <Scale className="w-4 h-4 text-emerald-400" />,
-      badge: 'Validé',
     },
     {
       id: 'dashboard',
       label: 'Dashboard Exécutif',
       icon: <LayoutDashboard className="w-4 h-4" />,
+    },
+    {
+      id: 'decision',
+      label: 'Décision d\'arbitrage',
+      icon: <Gavel className="w-4 h-4 text-emerald-400" />,
+      badge: 'Signature produit',
+    },
+    {
+      id: 'import_center',
+      label: 'Centre d\'import',
+      icon: <FileSpreadsheet className="w-4 h-4 text-emerald-400" />,
+      badge: 'XLSX / CSV',
     },
     {
       id: 'comparator',
@@ -65,78 +80,68 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'multicriteria',
-      label: 'Matrice 360° (Scoring)',
+      label: 'Matrice multicritère',
       icon: <Award className="w-4 h-4 text-emerald-400" />,
-      badge: 'Nouveau',
     },
     {
       id: 'breakeven',
-      label: 'Point Mort (Break-Even)',
+      label: 'Point mort',
       icon: <TrendingUp className="w-4 h-4" />,
     },
     {
       id: 'scenarios',
-      label: 'Simulateur Scénarios',
+      label: 'Scénarios',
       icon: <GitFork className="w-4 h-4" />,
     },
     {
       id: 'sensitivity',
-      label: 'Analyse Sensibilité',
+      label: 'Sensibilité',
       icon: <Activity className="w-4 h-4" />,
     },
     {
       id: 'projects',
       label: 'Chantier 3 (Appels d\'Offres)',
       icon: <FolderKanban className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
     },
     {
       id: 'suppliers',
-      label: 'Chantier 4 (Fournisseurs & ESG)',
+      label: 'Fournisseurs & ESG',
       icon: <Building2 className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
     },
     {
       id: 'externalities',
-      label: 'Chantier 5 (Référentiels ADEME)',
+      label: 'Référentiels ESG',
       icon: <Database className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
     },
     {
       id: 'audit',
-      label: 'Chantier 5 (Audit & Visas CAC)',
+      label: "Journal d'audit",
       icon: <History className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
     },
     {
       id: 'report',
-      label: 'Chantier 6 (Dossier Comex)',
+      label: 'Dossier de décision',
       icon: <FileCheck className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
     },
     {
       id: 'erp_connectors',
-      label: 'Chantier 7 (Connecteurs ERP)',
+      label: 'Connecteurs ERP',
       icon: <Network className="w-4 h-4 text-sky-400" />,
-      badge: 'e-Proc',
     },
     {
       id: 'ai_parser',
-      label: 'Chantier 8 (Parser IA & FDES)',
+      label: 'Extraction documentaire',
       icon: <Sparkles className="w-4 h-4 text-purple-400" />,
-      badge: 'IA OCR',
     },
     {
       id: 'digital_signature',
-      label: 'Chantier 9 (Signature eIDAS)',
+      label: 'Signature électronique',
       icon: <Fingerprint className="w-4 h-4 text-emerald-400" />,
-      badge: 'eIDAS',
     },
     {
       id: 'csrd_taxonomy',
-      label: 'Chantier 10 (CSRD & Taxonomie)',
+      label: 'CSRD & Taxonomie',
       icon: <Leaf className="w-4 h-4 text-teal-400" />,
-      badge: 'ESRS E1',
     },
   ];
 

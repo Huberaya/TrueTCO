@@ -32,7 +32,9 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     ...init,
     credentials: 'same-origin',
     headers: {
-      ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      // Un FormData doit laisser le navigateur poser lui-même la frontière
+      // multipart : forcer « application/json » casserait l'envoi de fichiers.
+      ...(typeof init.body === 'string' ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers ?? {}),
     },
   });
@@ -330,4 +332,349 @@ export async function fetchAuditIntegrity(): Promise<{
 // -----------------------------------------------------------------------------
 export async function fetchVersions(): Promise<{ engineVersion: string; methodologyVersion: string }> {
   return api('/api/versions');
+}
+
+// -----------------------------------------------------------------------------
+// Décision — calcul exécuté par le serveur (le navigateur ne calcule plus rien)
+// -----------------------------------------------------------------------------
+export interface DecisionParameterSweep {
+  parameter: string;
+  label: string;
+  unit: string;
+  range: { min: number; max: number; step: number };
+  currentValue: number;
+  direction: 'au_dessus' | 'en_dessous' | 'aucun' | 'non_monotone' | 'aucun_effet';
+  isReachable: boolean;
+  nearestThreshold: number | null;
+  intervals: { from: number; to: number }[];
+  marginToThreshold: number | null;
+  deltaAtBounds: { min: number; max: number };
+  statement: string;
+  dataChanged?: boolean;
+}
+
+export interface DecisionRunResult {
+  runId: string;
+  projectId: string;
+  engineVersion: string;
+  methodologyVersion: string;
+  inputVersion: number;
+  calculatedAt: string;
+  inputFingerprint: string;
+  currency: string;
+  horizonYears: number;
+  discountRate: number;
+  completeness: {
+    totalCostItems: number;
+    validCostItems: number;
+    unsourcedCostItems: number;
+    estimatedCostItems: number;
+    missingCostItems: number;
+    erroredCostItems: number;
+    demoCostItems: number;
+    coveragePercent: number;
+    verdict: string;
+  };
+  ranking: {
+    rank: number;
+    offerId: string;
+    offerReference: string;
+    supplierName: string;
+    apparentTotal: number;
+    totalComprehensiveTCO: number;
+    lifecycleCostLCC: number;
+    carbonTonnes: number;
+    confidenceScore: number;
+    isApparentCheapest: boolean;
+  }[];
+  recommendedOfferId: string | null;
+  recommendation: {
+    status: 'ferme' | 'conditionnel' | 'indetermine';
+    offerId: string | null;
+    reason: string;
+    conditions: string[];
+    economicAdvantage: {
+      vsSecondBestNpv: number | null;
+      vsWorstNpv: number | null;
+      vsCheapestApparentNpv: number | null;
+      apparentCheapestOfferId: string | null;
+    };
+  };
+  breakEven: unknown;
+  sensitivity: unknown;
+  inversion: { parameters: DecisionParameterSweep[]; winner: string; challenger: string; note: string } | null;
+  warnings: string[];
+  results: {
+    perOffer: {
+      offerId: string;
+      offerReference: string;
+      supplierName: string;
+      totalComprehensiveTCO: number;
+      lifecycleCostLCC: number;
+      monthlyEquivalentCost: number;
+      costPerUnit: number;
+      carbonTonnes: number;
+      confidenceScore: number;
+      breakdown: { category: string; amount: number; share: number; quality: string }[];
+      warnings: { severity: string; message: string }[];
+    }[];
+    warnings: string[];
+  };
+}
+
+export interface DecisionRunSummary {
+  id: string;
+  project_id: string;
+  engine_version: string;
+  methodology_version: string;
+  input_version: number;
+  input_fingerprint: string | null;
+  recommended_offer_id: string | null;
+  created_at: string;
+  results: DecisionRunResult | null;
+}
+
+/** Lance un calcul de décision côté serveur et renvoie le résultat persisté. */
+export async function runDecisionOnServer(projectId: string): Promise<DecisionRunResult> {
+  return api<DecisionRunResult>(`/api/projects/${projectId}/decision-runs`, { method: 'POST' });
+}
+
+export async function fetchDecisionRuns(projectId: string): Promise<DecisionRunSummary[]> {
+  const data = await api<{ items: DecisionRunSummary[] }>(`/api/projects/${projectId}/decision-runs?limit=50`);
+  return data.items;
+}
+
+export interface DecisionRunDetail extends DecisionRunSummary {
+  freshness: {
+    dataChangedSinceRun: boolean;
+    engineChangedSinceRun: boolean;
+    engineVersionStored: string;
+    engineVersionCurrent: string;
+    currentFingerprint: string | null;
+    storedFingerprint: string;
+    explanation: string;
+  };
+}
+
+export async function fetchDecisionRun(runId: string): Promise<DecisionRunDetail> {
+  return api<DecisionRunDetail>(`/api/decision-runs/${runId}`);
+}
+
+export async function replayDecisionRun(runId: string): Promise<{
+  identical: boolean;
+  differences: string[];
+  engineVersionStored: string;
+  engineVersionCurrent: string;
+  note: string;
+}> {
+  return api(`/api/decision-runs/${runId}/replay`, { method: 'POST' });
+}
+
+// -----------------------------------------------------------------------------
+// Centre d'import
+// -----------------------------------------------------------------------------
+export interface ImportPreviewSummary {
+  score: number;
+  confidenceInSourceData: number;
+  explanation: string;
+  dimensions: { key: string; label: string; earned: number; max: number; detail: string }[];
+}
+
+export interface ImportRowView {
+  rowNumber: number;
+  cells: string[];
+  status: 'VALID' | 'WARNING' | 'ERROR' | 'MISSING' | 'UNSOURCED' | 'ESTIMATED' | 'DEMO';
+  reasons: string[];
+}
+
+export interface ImportPreview {
+  mode: 'costs' | 'carbon' | 'risks';
+  source: {
+    fileName: string;
+    format: 'xlsx' | 'csv';
+    sheetName: string | null;
+    availableSheets?: { name: string; rowCount: number; columnCount: number }[] | null;
+    delimiter?: string | null;
+    encoding: string;
+    encodingGuessed: boolean;
+    sha256: string;
+  };
+  headers: string[];
+  rowCount: number;
+  mapping: Record<string, string>;
+  unmappedColumns: string[];
+  ambiguousColumns: { header: string; candidates: string[]; note: string }[];
+  unknownColumns: { header: string; candidates: string[]; note: string }[];
+  missingRequired: { field: string; label: string; why: string }[];
+  summary: {
+    totalRows: number;
+    includedRows: number;
+    statusCounts: Record<string, number>;
+    totalAmount: number;
+    offersCount: number;
+    totalByCurrency: { currency: string; amount: number }[];
+  };
+  offers: {
+    key: string;
+    reference: string | null;
+    supplierName: string | null;
+    currency: string | null;
+    total: number;
+    rows: ImportRowView[];
+    totalsByCategory: { category: string; amount: number; rows: number }[];
+    statusCounts: Record<string, number>;
+    dataQualityScore: number;
+    blockers: string[];
+    warnings: string[];
+  }[];
+  unknownCategoryValues: { declared: string; occurrences: number; rows: number[] }[];
+  offersWithoutReference: string[];
+  rows: ImportRowView[];
+  duplicates: { rowNumber: number; duplicateOf: number; label: string }[];
+  parseIssues: { rowNumber: number; kind: string; message: string }[];
+  dataQuality: ImportPreviewSummary;
+  blocking: { code: string; message: string; rows?: number[] }[];
+  canCommit: boolean;
+  nextActions: string[];
+}
+
+export interface ImportUploadResult {
+  batchId: string;
+  documentId: string;
+  mode: 'costs' | 'carbon' | 'risks';
+  format: 'xlsx' | 'csv';
+  sheetName: string | null;
+  availableSheets: { name: string; rowCount: number; columnCount: number }[] | null;
+  encoding: string;
+  encodingGuessed: boolean;
+  delimiter: string | null;
+  sha256: string;
+  sizeBytes: number;
+  headers: string[];
+  rowCount: number;
+  mapping: { applied: Record<string, string>; missingRequired: { field: string; label: string; why: string }[] };
+  preview: ImportPreview;
+  notes: string[];
+}
+
+export interface ImportBatchView {
+  batch: {
+    id: string;
+    project_id: string;
+    status: string;
+    mode: string | null;
+    format: string;
+    row_count: number;
+    imported_offers: number;
+    error_count: number;
+    data_quality_score: number | null;
+    source_file_name: string | null;
+    source_sheet_name: string | null;
+    source_sha256: string | null;
+    committed_at: string | null;
+    created_at: string;
+  };
+  document: { id: string; original_filename: string; scan_status: string; scan_details: string } | null;
+  mapping: Record<string, string>;
+  mode: 'costs' | 'carbon' | 'risks';
+  preview: ImportPreview;
+  rows: ImportRowView[];
+  rowsTotal?: number;
+}
+
+export interface ImportCommitResult {
+  result: {
+    createdOffers: { id: string; reference: string; supplierName: string; costItemCount: number; total: number }[];
+    createdCostItems: number;
+    createdCarbonItems: number;
+    createdRiskItems: number;
+    skippedRows: number[];
+    statusCounts: Record<string, number>;
+    dataQualityScore: number;
+    warnings: string[];
+  };
+  preview: ImportPreview;
+}
+
+/**
+ * Téléversement d'un fichier d'import. Le fichier part en multipart ; aucune
+ * analyse n'est envoyée depuis le navigateur : le serveur relit le fichier.
+ */
+export async function uploadImportFile(
+  projectId: string,
+  file: File,
+  options: { mode: 'costs' | 'carbon' | 'risks'; sheetName?: string | null; allowDuplicateContent?: boolean }
+): Promise<ImportUploadResult> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('mode', options.mode);
+  if (options.sheetName) form.append('sheetName', options.sheetName);
+  if (options.allowDuplicateContent) form.append('allowDuplicateContent', 'true');
+  return api<ImportUploadResult>(`/api/projects/${projectId}/imports`, { method: 'POST', body: form });
+}
+
+export async function fetchImportBatch(batchId: string, limit = 500): Promise<ImportBatchView> {
+  return api<ImportBatchView>(`/api/imports/${batchId}?limit=${limit}`);
+}
+
+export async function updateImportBatch(
+  batchId: string,
+  payload: {
+    mapping?: Record<string, string>;
+    excludedRows?: number[];
+    categoryOverrides?: Record<string, string>;
+    offerReferences?: Record<string, string>;
+    sheetName?: string | null;
+    mode?: 'costs' | 'carbon' | 'risks';
+  }
+): Promise<ImportBatchView> {
+  return api<ImportBatchView>(`/api/imports/${batchId}`, { method: 'PATCH', body: JSON.stringify(payload) });
+}
+
+export async function commitImportBatch(batchId: string): Promise<ImportCommitResult> {
+  return api<ImportCommitResult>(`/api/imports/${batchId}/commit`, { method: 'POST' });
+}
+
+/** Champs proposés à l'utilisateur pour le rapprochement des colonnes. */
+export const IMPORT_TARGET_FIELDS: { key: string; label: string }[] = [
+  { key: 'offerReference', label: "Référence de l'offre" },
+  { key: 'supplierName', label: 'Fournisseur' },
+  { key: 'label', label: 'Libellé du poste' },
+  { key: 'category', label: 'Catégorie de coût' },
+  { key: 'amount', label: 'Montant (total du poste)' },
+  { key: 'unitPrice', label: 'Prix unitaire' },
+  { key: 'quantity', label: 'Quantité' },
+  { key: 'currency', label: 'Devise' },
+  { key: 'sourceName', label: 'Source du montant' },
+  { key: 'recurring', label: 'Coût récurrent annuel' },
+  { key: 'yearOccurrences', label: 'Années d’occurrence' },
+  { key: 'inflationType', label: 'Indexation' },
+  { key: 'confidence', label: 'Confiance déclarée (%)' },
+  { key: 'qualityStatus', label: 'Statut de qualité' },
+  { key: 'notes', label: 'Notes / formule' },
+  { key: 'lifespanYears', label: 'Durée de vie (années)' },
+  { key: 'leadTimeWeeks', label: 'Délai de livraison (semaines)' },
+  { key: 'warrantyMonths', label: 'Garantie (mois)' },
+  { key: 'carbonTonnes', label: 'Émissions (tCO2e)' },
+  { key: 'carbonFactorSource', label: 'Source du facteur d’émission' },
+  { key: 'carbonScope', label: 'Périmètre (scope)' },
+  { key: 'carbonLifecyclePhase', label: 'Phase du cycle de vie' },
+  { key: 'riskDescription', label: 'Description du risque' },
+  { key: 'riskCategory', label: 'Catégorie de risque' },
+  { key: 'riskProbability', label: 'Probabilité de risque' },
+  { key: 'riskImpact', label: 'Impact financier du risque' },
+];
+
+// -----------------------------------------------------------------------------
+// État réel du serveur et de sa base de données
+// -----------------------------------------------------------------------------
+export interface HealthStatus {
+  status: string;
+  database: { connected: boolean; driver: string; version: string | null; appRoleAssumed: boolean };
+  versions: { engine: string; methodology: string };
+}
+
+/** État publié par le serveur : moteur de base, version, RLS, versions de calcul. */
+export async function fetchHealth(): Promise<HealthStatus> {
+  return api<HealthStatus>('/api/health');
 }

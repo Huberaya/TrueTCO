@@ -15,6 +15,8 @@ import { Project, SupplierOffer, Supplier, ExternalityReferenceBenchmark, AuditL
 import { Header } from './components/Header';
 import { Sidebar, NavView } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
+import { DecisionView } from './components/DecisionView';
+import { ImportCenterView } from './components/ImportCenterView';
 import { Chantier1View } from './components/Chantier1View';
 import { ComparatorView } from './components/ComparatorView';
 import { MulticriteriaView } from './components/MulticriteriaView';
@@ -51,7 +53,7 @@ import { DigitalSignatureView } from './components/DigitalSignatureView';
 import { CsrdTaxonomyView } from './components/CsrdTaxonomyView';
 
 export default function App() {
-  const { user, isLoginModalOpen, closeLoginModal } = useAuth();
+  const { user, isLoginModalOpen, closeLoginModal, permissions } = useAuth();
   const { currentTenant, isNewTenantModalOpen, closeNewTenantModal } = useTenant();
   const [projects, setProjects] = useState<Project[]>(() => StorageService.getProjects());
   const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
@@ -74,6 +76,13 @@ export default function App() {
   // un changement de rôle doit être effectué par un administrateur, pas par
   // l'utilisateur lui-même.
   const activeRole: UserRole = (user?.role ?? 'lecteur') as UserRole;
+
+  /**
+   * Droits déclarés par le serveur. Ils servent UNIQUEMENT à ne pas proposer une
+   * action qui sera refusée : la décision d'autoriser revient toujours à l'API,
+   * qui vérifie le rôle enregistré en base.
+   */
+  const can = React.useCallback((permission: string) => permissions.includes(permission), [permissions]);
   const [currentView, setCurrentView] = useState<NavView>('chantier1');
 
   // Modals state
@@ -403,6 +412,25 @@ export default function App() {
               onNavigate={setCurrentView}
               onUpdateProject={handleUpdateProject}
               onDuplicateProject={handleDuplicateProject}
+            />
+          )}
+
+          {currentView === 'decision' && (
+            <DecisionView
+              projectId={currentProject?.id ?? null}
+              projectName={currentProject?.name ?? 'aucun dossier sélectionné'}
+              currency={currentProject?.currency ?? 'EUR'}
+              canRunDecision={can('decision:run')}
+            />
+          )}
+
+          {currentView === 'import_center' && (
+            <ImportCenterView
+              projectId={currentProject?.id ?? null}
+              projectName={currentProject?.name ?? 'aucun dossier sélectionné'}
+              projectCurrency={currentProject?.currency ?? 'EUR'}
+              canImport={can('import:write')}
+              onImported={() => void loadFromServer()}
             />
           )}
 
