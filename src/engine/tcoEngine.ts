@@ -141,6 +141,33 @@ const CATEGORY_ALIASES: Record<string, CostCategory> = {
   demantelement: 'fin_de_vie_recyclage',
   valeur_residuelle: 'valeur_residuelle',
   valeur_de_revente: 'valeur_residuelle',
+  // --- Alias internationaux (anglais) -------------------------------------
+  // Les devis, catalogues fournisseurs et systèmes ERP produisent des libellés
+  // anglais. Seuls les termes NON AMBIGUS sont rapprochés : « opex », « services »
+  // ou « training » recouvrent plusieurs natures de coût différentes et ne sont
+  // donc volontairement PAS traduits — ils seront arbitrés par l'utilisateur lors
+  // de l'import, jamais devinés par le moteur.
+  capex_total: 'acquisition',
+  purchase: 'acquisition',
+  logistics: 'logistique_douanes',
+  freight: 'logistique_douanes',
+  customs: 'logistique_douanes',
+  commissioning: 'installation_mise_en_service',
+  energy: 'energie_consommables',
+  consumables: 'energie_consommables',
+  utilities: 'energie_consommables',
+  maintenance_cost: 'maintenance_reparations',
+  repairs: 'maintenance_reparations',
+  breakdown: 'remplacement_pannes',
+  downtime: 'indisponibilite_operationnelle',
+  compliance: 'couts_administratifs_conformite',
+  admin: 'couts_administratifs_conformite',
+  carbon: 'externalite_carbone',
+  end_of_life: 'fin_de_vie_recyclage',
+  recycling: 'fin_de_vie_recyclage',
+  residual_value: 'valeur_residuelle',
+  resale_value: 'valeur_residuelle',
+  deployment: 'deploiement',
 };
 
 /** Catégories positionnées en Année 0 lorsqu'elles ne sont pas récurrentes. */
@@ -166,7 +193,13 @@ const SOURCE_DISPERSION: Record<DataSourceType, number> = {
   manquante: 0.5,
 } as unknown as Record<DataSourceType, number>;
 
-interface BuildOptions {
+/**
+ * Surcharges d'hypothèses acceptées par le moteur. Exposé publiquement : c'est
+ * la base des analyses de sensibilité, du calcul d'inversion de décision et des
+ * scénarios. Toute surcharge est explicitement fournie par l'appelant ; le moteur
+ * ne modifie jamais `project` ni `offer`.
+ */
+export interface BuildOptions {
   discountRate?: number;
   carbonPricePerTonne?: number;
   inflationRate?: number;
@@ -176,6 +209,16 @@ interface BuildOptions {
 }
 
 export class TCOEngine {
+  /**
+   * Normalise une catégorie de coût déclarée (y compris ses alias : « energie »,
+   * « transport », « maintenance »…) vers la catégorie canonique du moteur.
+   * Exposé publiquement : c'est le point unique de traduction utilisé par l'API,
+   * l'import et l'interface — un vocabulaire unique pour tout le produit.
+   */
+  public static normalizeCostCategory(raw: string | undefined | null): CostCategory | null {
+    return TCOEngine.normalizeCategory(raw ?? undefined);
+  }
+
   private static normalizeCategory(raw: string | undefined): CostCategory | null {
     if (!raw) return null;
     const key = String(raw).trim().toLowerCase();

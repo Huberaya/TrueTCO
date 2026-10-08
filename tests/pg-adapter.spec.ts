@@ -122,8 +122,21 @@ describe('PgDb (pilote de production)', () => {
     expect(status.appRoleAssumed).toBe(true);
     expect(status.databaseVersion).toBeTruthy();
 
-    const applied = await pgDb!.systemTx((tx) => tx.query<{ version: string }>(`SELECT version FROM schema_migrations ORDER BY version`));
-    expect(applied.map((m) => m.version)).toEqual(['0001', '0002', '0003']);
+    // Le test ne fige pas la liste : il exige que TOUTES les migrations présentes
+    // sur le disque soient appliquées, et dans l'ordre. Une nouvelle migration
+    // oubliée en production fait donc échouer le test, sans qu'il faille le
+    // modifier à chaque livraison — et sans qu'un numéro puisse être oublié.
+    const fs = await import('fs/promises');
+    const path = await import('path');
+    const files = (await fs.readdir(path.resolve(process.cwd(), 'src/db/migrations')))
+      .filter((name) => name.endsWith('.sql'))
+      .sort();
+    const expectedVersions = files.map((name) => name.slice(0, 4));
+
+    const applied = await pgDb!.systemTx((tx) =>
+      tx.query<{ version: string; checksum: string }>(`SELECT version, checksum FROM schema_migrations ORDER BY version`)
+    );
+    expect(applied.map((m) => m.version)).toEqual(expectedVersions);
   });
 
   it('T-PG-02 : le cloisonnement RLS se comporte de façon identique avec le pilote de production', async () => {

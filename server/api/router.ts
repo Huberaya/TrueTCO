@@ -51,9 +51,10 @@ import {
   updateProject,
 } from '../repositories/projects';
 import { createSupplier, listSuppliers } from '../repositories/suppliers';
-import { createOffer, deleteOffer, getOffer, listOffers } from '../repositories/offers';
+import { COST_CATEGORIES, createOffer, deleteOffer, getOffer, listOffers, normalizeCostCategoryInput } from '../repositories/offers';
 import { listAuditLogs } from '../repositories/auditLogs';
 import { verifyAuditChain } from '../audit';
+import { checkRunFreshness, listDecisionRuns, replayDecisionRun, runDecision } from '../services/decision';
 import { asyncHandler, badRequest, forbidden, notFound, parsePagination, requireCurrency, requireEmail, requireEnum, requireNumber, requireString, requireUuid, optionalString, optionalNumber, HttpError } from '../http';
 
 export interface ApiDependencies {
@@ -526,8 +527,17 @@ export function createApiRouter(deps: ApiDependencies): Router {
       const costItems = body.costItems.map((raw: any, index: number) => {
         const item = raw ?? {};
         const label = requireString(item.label, `costItems[${index}].label`, { min: 2, max: 255 });
+        const declared = requireString(item.category, `costItems[${index}].category`, { min: 2, max: 100 });
+        const normalized = normalizeCostCategoryInput(declared);
+        if (!normalized) {
+          throw badRequest(
+            'INVALID_COST_CATEGORY',
+            `Catégorie de coût inconnue « ${declared} » (poste « ${label} »). Catégories autorisées : ${COST_CATEGORIES.join(', ')}. ` +
+              'Les libellés usuels sont acceptés ; toute autre valeur doit être rapprochée explicitement.'
+          );
+        }
         return {
-          category: requireString(item.category, `costItems[${index}].category`, { min: 2, max: 100 }).toLowerCase(),
+          category: normalized.category,
           label,
           amount: requireNumber(item.amount, `costItems[${index}].amount`, { min: -1_000_000_000, max: 1_000_000_000 }),
           currency: item.currency ? requireCurrency(item.currency, `costItems[${index}].currency`) : undefined,
@@ -541,6 +551,7 @@ export function createApiRouter(deps: ApiDependencies): Router {
           isRecurringYearly: Boolean(item.isRecurringYearly),
           yearlyInflationType: item.yearlyInflationType ?? null,
           yearOccurrences: Array.isArray(item.yearOccurrences) ? item.yearOccurrences : null,
+          declaredCategory: declared,
           calculationFormula: optionalString(item.calculationFormula, `costItems[${index}].calculationFormula`, 1000),
           explanationNotes: optionalString(item.explanationNotes, `costItems[${index}].explanationNotes`, 2000),
           isDemo: Boolean(item.isDemo),
@@ -580,6 +591,75 @@ export function createApiRouter(deps: ApiDependencies): Router {
     asyncHandler(async (req, res) => {
       await deleteOffer(db, ctxOf(req), requireUuid(req.params.offerId, 'offerId'), requestMeta(req));
       res.status(204).end();
+    })
+  );
+
+  // ---------------------------------------------------------------------------
+  // Décision : exécution du moteur côté serveur (Phase 1, clôture)
+  // ---------------------------------------------------------------------------
+  /**
+   * Lance l'analyse décisionnelle du dossier : TCO/LCC de chaque offre,
+   * classement, recommandation, point mort, sensibilité et inversion de décision.
+   * Le calcul est exécuté par le serveur et enregistré (reproductibilité).
+   */
+  router.post(
+    '/projects/:projectId/decision-runs',
+    requireSession({ db }),
+    requirePermission('decision:run'),
+    asyncHandler(async (req, res) => {
+      const result = await runDecision(db, requireUuid(req.params.projectId, 'projectId'), {
+        ctx: ctxOf(req),
+        meta: requestMeta(req),
+        trigger: 'manuel',
+      });
+      res.status(201).json(result);
+    })
+  );
+
+  router.get(
+    '/projects/:projectId/decision-runs',
+    requireSession({ db }),
+    requirePermission('decision:read'),
+    asyncHandler(async (req, res) => {
+      const page = parsePagination(req.query);
+      const result = await listDecisionRuns(db, ctxOf(req), requireUuid(req.params.projectId, 'projectId'), page);
+      res.json({ items: result.items, total: result.total, limit: page.limit, offset: page.offset });
+    })
+  );
+
+  /**
+   * Rejeu d'une exécution passée à partir du snapshot d'entrées enregistré :
+   * vérifie que le résultat est exactement reproductible. Un écart est signalé.
+   */
+  router.post(
+    '/decision-runs/:runId/replay',
+    requireSession({ db }),
+    requirePermission('decision:run'),
+    asyncHandler(async (req, res) => {
+      const result = await replayDecisionRun(db, ctxOf(req), requireUuid(req.params.runId, 'runId'));
+      res.json(result);
+    })
+  );
+
+  router.get(
+    '/decision-runs/:runId',
+    requireSession({ db }),
+    requirePermission('decision:read'),
+    asyncHandler(async (req, res) => {
+      const ctx = ctxOf(req);
+      const rows = await db.asOrganization(ctx.organization.id, (tx) =>
+        tx.query<any>(
+          `SELECT id, project_id, engine_version, methodology_version, input_version, assumptions,
+                  factor_versions, results, recommended_offer_id, input_fingerprint, created_at
+             FROM decision_runs WHERE id = $1`,
+          [requireUuid(req.params.runId, 'runId')]
+        )
+      );
+      if (rows.length === 0) throw notFound('Exécution de décision introuvable.');
+      // Le client doit savoir si le dossier a évolué depuis cette décision :
+      // sans cette information, une décision ancienne paraîtrait à jour.
+      const freshness = await checkRunFreshness(db, ctx, rows[0].id);
+      res.json({ ...rows[0], freshness });
     })
   );
 

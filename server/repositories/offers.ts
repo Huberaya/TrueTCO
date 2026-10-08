@@ -17,24 +17,33 @@ import { HttpError, badRequest, notFound } from '../http';
 export const QUALITY_STATUSES = ['valid', 'warning', 'estimated', 'unsourced', 'missing', 'error', 'demo'] as const;
 export type QualityStatus = (typeof QUALITY_STATUSES)[number];
 
-export const COST_CATEGORIES = [
-  'acquisition',
-  'installation',
-  'maintenance',
-  'energy',
-  'consumables',
-  'operations',
-  'training',
-  'downtime',
-  'risk',
-  'environmental',
-  'residual',
-  'financing',
-  'other',
-] as const;
+import { RECOGNIZED_COST_CATEGORIES, TCOEngine } from '../../src/engine/tcoEngine';
+
+/**
+ * Catégories de coût : LA liste du moteur de calcul, sans duplication.
+ *
+ * Un vocabulaire unique évite un défaut réel : deux listes divergentes feraient
+ * entrer en base des catégories que le moteur ne saurait pas allouer, et le poste
+ * serait compté comme « non alloué » — le montant resterait juste, mais l'analyse
+ * par nature de coût serait perdue sans que personne ne s'en aperçoive.
+ *
+ * Les alias (« energie », « transport », « maintenance »…) sont acceptés en
+ * entrée et ramenés à la catégorie canonique au moment de l'enregistrement.
+ */
+export const COST_CATEGORIES = RECOGNIZED_COST_CATEGORIES;
+
+/** Ramène une catégorie déclarée à sa forme canonique, ou signale l'inconnue. */
+export function normalizeCostCategoryInput(raw: string): { category: string; wasAlias: boolean } | null {
+  const normalized = TCOEngine.normalizeCostCategory(raw);
+  if (!normalized) return null;
+  return { category: normalized, wasAlias: normalized !== raw.trim().toLowerCase() };
+}
 
 export interface CostItemInput {
+  /** Catégorie canonique du moteur (celle qui est stockée et utilisée au calcul). */
   category: string;
+  /** Libellé tel que fourni par l'appelant, conservé pour la traçabilité. */
+  declaredCategory?: string;
   label: string;
   amount: number;
   currency?: string;
@@ -166,10 +175,13 @@ export async function createOffer(db: Db, ctx: AuthContext, input: OfferInput, m
     );
 
     for (const item of input.costItems) {
-      if (!COST_CATEGORIES.includes(item.category as any)) {
+      const normalization = normalizeCostCategoryInput(item.category);
+      if (!normalization) {
         throw badRequest(
           'INVALID_COST_CATEGORY',
-          `Catégorie de coût inconnue « ${item.category} ». Catégories autorisées : ${COST_CATEGORIES.join(', ')}.`
+          `Catégorie de coût inconnue « ${item.category} ». Catégories autorisées : ${COST_CATEGORIES.join(', ')}. ` +
+            'Les libellés usuels (« energie », « transport », « maintenance »…) sont acceptés et ramenés à leur catégorie canonique ; ' +
+            "toute autre valeur doit être rapprochée explicitement, jamais devinée."
         );
       }
       const status: QualityStatus =
@@ -179,12 +191,14 @@ export async function createOffer(db: Db, ctx: AuthContext, input: OfferInput, m
         `INSERT INTO cost_items (
             organization_id, offer_id, category, label, amount, currency, unit, quantity, unit_price,
             quality_status, source_name, source_type, confidence_level, is_recurring_yearly,
-            yearly_inflation_type, year_occurrences, calculation_formula, explanation_notes, is_demo
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+            yearly_inflation_type, year_occurrences, calculation_formula, explanation_notes, is_demo,
+            declared_category
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
         [
           ctx.organization.id,
           offer.id,
-          item.category,
+          // Catégorie canonique du moteur : c'est elle qui garantit l'allocation.
+          normalization.category,
           item.label,
           item.amount,
           item.currency ?? input.currency ?? 'EUR',
@@ -201,6 +215,7 @@ export async function createOffer(db: Db, ctx: AuthContext, input: OfferInput, m
           item.calculationFormula ?? null,
           item.explanationNotes ?? null,
           item.isDemo ?? false,
+          item.declaredCategory ?? normalization.category,
         ]
       );
     }
