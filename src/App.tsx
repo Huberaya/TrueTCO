@@ -36,9 +36,11 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 import { StorageService, TrueTCOBackupPayload } from './services/storageService';
 import {
   ApiError,
+  createOfferOnServer,
   createProjectOnServer,
   createSupplierOnServer,
   fetchAuditLogsFromServer,
+  fetchOffersFromServer,
   fetchProjectsFromServer,
   fetchSuppliersFromServer,
   updateProjectOnServer,
@@ -126,6 +128,40 @@ export default function App() {
     void loadFromServer();
   }, [loadFromServer]);
 
+  /**
+   * Offres du dossier courant : elles sont lues depuis l'API, comme les dossiers.
+   *
+   * Elles étaient auparavant conservées dans le navigateur, avec un avertissement
+   * à la création (« enregistrement serveur prévu en Phase 3 »). Cet avertissement
+   * disparaît : ce qui est affiché est ce qui est enregistré, pour la session en
+   * cours comme pour toutes les suivantes. Les offres de démonstration ne restent
+   * affichées que lorsqu'aucune session n'est ouverte, et l'interface le dit déjà
+   * (`dataSource === 'cache-local'`).
+   */
+  useEffect(() => {
+    if (!user || dataSource !== 'serveur' || !currentProjectId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const serverOffers = await fetchOffersFromServer(user.organizationId, user.id, user.fullName, currentProjectId);
+        if (cancelled) return;
+        setOffers((previous) => [
+          // Les offres des autres dossiers déjà chargées sont conservées : changer
+          // de dossier ne doit pas faire disparaître l'écran précédent.
+          ...previous.filter((offer) => offer.projectId !== currentProjectId),
+          ...serverOffers,
+        ]);
+      } catch (err) {
+        if (cancelled) return;
+        const message = err instanceof ApiError ? `${err.message} (${err.code})` : 'Les offres du dossier n’ont pas pu être chargées.';
+        setServerError(message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, dataSource, currentProjectId]);
+
   // Sync state to local storage on changes
   useEffect(() => {
     StorageService.saveProjects(projects);
@@ -189,17 +225,32 @@ export default function App() {
   };
 
   /**
-   * Les offres et leurs postes de coût : l'enregistrement serveur exige la
-   * correspondance entre le modèle métier de l'interface et les tables
-   * `supplier_offers` / `cost_items`. Cette correspondance est réalisée avec le
-   * branchement du moteur de calcul (Phase 3) : d'ici là, l'offre reste locale et
-   * l'interface l'indique. Aucune écriture partielle n'est envoyée au serveur.
+   * Enregistrement d'une offre et de ses postes de coût.
+   *
+   * L'écriture est faite par le serveur, qui journalise l'action. En cas d'échec,
+   * l'état affiché n'est PAS modifié : l'utilisateur voit l'erreur exacte plutôt
+   * qu'une offre qui paraîtrait enregistrée. Après succès, les offres sont RELUES
+   * depuis le serveur : l'écran affiche ce qui est en base, y compris les statuts
+   * de qualité déduits par le serveur, et non ce que le navigateur croit avoir
+   * envoyé.
    */
-  const handleAddOffer = (newOffer: SupplierOffer) => {
-    setOffers((prev) => [...prev, newOffer]);
-    setServerError(
-      "Cette offre est conservée localement : l'enregistrement serveur des offres et de leurs postes de coût sera branché avec le moteur de calcul (Phase 3). Aucune donnée n'a été écrite en base."
-    );
+  const handleAddOffer = async (newOffer: SupplierOffer) => {
+    if (!user || dataSource !== 'serveur') {
+      setOffers((prev) => [...prev, newOffer]);
+      setServerError(
+        "Aucune session serveur ouverte : cette offre n'est conservée que dans le navigateur et sera perdue à la fermeture. Connectez-vous pour l'enregistrer."
+      );
+      return;
+    }
+    try {
+      await createOfferOnServer(newOffer, currentProjectId);
+      const refreshed = await fetchOffersFromServer(user.organizationId, user.id, user.fullName, currentProjectId);
+      setOffers((prev) => [...prev.filter((offer) => offer.projectId !== currentProjectId), ...refreshed]);
+      setServerError(null);
+    } catch (err) {
+      const message = err instanceof ApiError ? `${err.message} (${err.code})` : 'Erreur inattendue du serveur.';
+      setServerError(message);
+    }
   };
 
   const handleUpdateProject = async (updated: Project) => {

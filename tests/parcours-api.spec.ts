@@ -25,6 +25,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Server } from 'http';
 import type { AddressInfo } from 'net';
 import { createApp } from '../server/app';
+import { mapOffer } from '../src/engine/mapping';
 import { createTestDb } from '../server/db/testing';
 import type { Db } from '../server/db/types';
 
@@ -423,7 +424,7 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
     // La confiance DÉCLARÉE dans le fichier (70 %) est conservée telle quelle —
     // c'est une donnée du fichier, pas une appréciation du produit. Elle est
     // plafonnée à 0 par le moteur pour tout poste non sourcé (voir
-    // server/engine/mapping.ts) : une donnée sans justificatif ne peut pas
+    // src/engine/mapping.ts) : une donnée sans justificatif ne peut pas
     // améliorer la confiance d'un résultat.
     expect(training.confidence_level).toBe(70);
   });
@@ -602,6 +603,115 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
     // Aucun dossier n'a été créé par ces tentatives.
     const projects = await api<{ items: any[] }>('GET', '/api/projects', { cookie: session });
     expect(projects.body.items.map((project: any) => project.reference)).not.toContain('TCO-CSRF');
+  });
+
+  it('A5 — une offre saisie dans l’interface est enregistrée puis RELUE avec ses statuts serveur', async () => {
+    // Ce test reproduit exactement le trajet du formulaire : l'offre est envoyée
+    // par l'API, puis RELUE comme le fait l'écran (liste + détail par offre), et
+    // convertie par la MÊME fonction que celle utilisée par le navigateur
+    // (`mapOffer`, partagée). Si les deux conversions divergeaient, ce test
+    // échouerait.
+    const created = await api<any>('POST', '/api/offers', {
+      cookie: session,
+      json: {
+        projectId,
+        supplierName: 'Atelier Reconditionnement Ouest',
+        offerReference: 'OFF-ARC-2026',
+        apparentTotal: 174000,
+        quantity: 48,
+        currency: 'EUR',
+        deliveryLeadTimeWeeks: 6,
+        warrantyMonths: 24,
+        expectedLifespanYears: 8,
+        technicalSuitabilityScore: 75,
+        isResponsibleCandidate: true,
+        dataSource: 'manual',
+        costItems: [
+          {
+            label: 'Rétrofit des 48 utilitaires',
+            category: 'acquisition',
+            amount: 174000,
+            sourceName: 'Devis ARC-2026-17',
+            confidenceLevel: 85,
+            isRecurringYearly: false,
+          },
+          {
+            label: 'Énergie (électricité)',
+            category: 'Énergie',
+            amount: 31500,
+            sourceName: 'Contrat recharge ARC',
+            confidenceLevel: 80,
+            isRecurringYearly: true,
+            yearOccurrences: [1, 2, 3, 4, 5, 6, 7, 8],
+          },
+          {
+            label: 'Maintenance annuelle',
+            category: 'entretien',
+            amount: 12400,
+            isRecurringYearly: true,
+            yearOccurrences: [1, 2, 3, 4, 5, 6, 7, 8],
+          },
+        ],
+      },
+    });
+    expect(created.status).toBe(201);
+
+    // Relecture : liste puis détail, avec la conversion partagée du moteur.
+    const list = await api<{ items: any[] }>('GET', `/api/offers?limit=200&projectId=${projectId}`, { cookie: session });
+    expect(list.body.items).toHaveLength(4);
+    const row = list.body.items.find((offer: any) => offer.offer_reference === 'OFF-ARC-2026');
+    expect(row).toBeTruthy();
+    expect(row.data_source).toBe('manual');
+
+    const detail = await api<any>('GET', `/api/offers/${row.id}`, { cookie: session });
+    const mapped = mapOffer(
+      {
+        offer: detail.body.offer,
+        costItems: detail.body.costItems,
+        carbonItems: detail.body.carbonItems,
+        riskItems: detail.body.riskItems,
+      },
+      { organizationId: 'test', userId: 'test', userName: 'test', now: '2026-10-08T00:00:00.000Z' }
+    );
+
+    // Les libellés d'écriture accentués et usuels ont été ramenés à des catégories
+    // RÉELLES du moteur, sans qu'aucun poste ne soit perdu.
+    expect(mapped.offer.costItems).toHaveLength(3);
+    const energy = mapped.offer.costItems.find((item) => /nergie/i.test(item.label));
+    const maintenance = mapped.offer.costItems.find((item) => /Maintenance/i.test(item.label));
+    expect(energy).toBeTruthy();
+    expect(maintenance).toBeTruthy();
+    expect(energy!.category).toBe('energie_consommables');
+    expect(maintenance!.category).toBe('maintenance_reparations');
+
+    // La provenance est conservée, et le poste sans source n'est pas présenté comme
+    // vérifié : il est « manquante », donc exclu de la confiance du résultat.
+    expect(energy!.amount.sourceName).toBe('Contrat recharge ARC');
+    expect(maintenance!.amount.sourceType).toBe('manquante');
+    expect(maintenance!.amount.confidenceLevel).toBe(0);
+
+    // Une catégorie réellement inconnue est REFUSÉE avec la liste des valeurs
+    // autorisées : le produit ne rapproche pas par ressemblance.
+    const rejected = await api<any>('POST', '/api/offers', {
+      cookie: session,
+      json: {
+        projectId,
+        supplierName: 'Fournisseur Test',
+        offerReference: 'OFF-REFUSEE',
+        apparentTotal: 1000,
+        costItems: [{ label: 'Poste inventé', category: 'coût imaginaire', amount: 1000 }],
+      },
+    });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.code).toBe('INVALID_COST_CATEGORY');
+    expect(rejected.body.error).toMatch(/acquisition/); // la liste autorisée est donnée
+
+    // Le dossier compte désormais quatre offres dans la décision : la nouvelle y
+    // entre sans ressaisie, avec ses propres données.
+    const run = await api<any>('POST', `/api/projects/${projectId}/decision-runs`, { cookie: session });
+    expect(run.status).toBe(201);
+    expect(run.body.ranking).toHaveLength(4);
+    expect(run.body.ranking.map((entry: any) => entry.offerReference)).toContain('OFF-ARC-2026');
   });
 
   it('Intégrité — un corps JSON malformé est rejeté proprement, sans trace technique', async () => {

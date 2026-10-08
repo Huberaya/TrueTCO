@@ -27,7 +27,7 @@ import { AuthContext } from '../auth/types';
 import { TCO_ENGINE_VERSION, TCO_METHODOLOGY, TCOEngine } from '../../src/engine/tcoEngine';
 import { analyseDecisionReversal, ReversalAnalysis } from '../../src/engine/decisionReversal';
 import { TCOCalculationResult, BreakEvenAnalysis, SensitivityDriver, SupplierOffer } from '../../src/types/domain';
-import { CarbonRow, CostItemRow, MappingContext, OfferRow, ProjectRowInput, RiskRow, mapOffer, mapProject } from '../engine/mapping';
+import { CarbonRow, CostItemRow, MappingContext, OfferRow, ProjectRowInput, RiskRow, mapOffer, mapProject } from '../../src/engine/mapping';
 
 export const METHODOLOGY_VERSION = process.env.TRUETCO_METHODOLOGY_VERSION ?? '2026.1';
 

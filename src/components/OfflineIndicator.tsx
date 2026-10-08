@@ -23,7 +23,7 @@ export const OfflineIndicator: React.FC = () => {
         <WifiOff className="w-3.5 h-3.5 text-amber-400" />
         <span className="font-semibold">Mode Hors-Ligne Actif</span>
         <span className="text-[11px] text-amber-300/80 border-l border-amber-700/60 pl-2 hidden sm:inline">
-          Dossier & calculs 100% locaux
+          Copie en cache — peut être périmée
         </span>
       </div>
 
@@ -34,7 +34,11 @@ export const OfflineIndicator: React.FC = () => {
             Fonctionnement Déconnecté
           </div>
           <p className="text-[11px] text-slate-400 leading-normal">
-            Le Service Worker et le stockage local maintiennent l'intégralité du moteur financier TCO et de vos dossiers sans coupure.
+            L'application et le moteur de calcul restent disponibles : le moteur s'exécute dans le
+            navigateur et les dernières données chargées y sont conservées. En revanche, ces données sont
+            une <strong className="text-amber-200">copie datée</strong> de la base : elles peuvent avoir
+            changé depuis, et aucune modification faite hors ligne n'est enregistrée. Les décisions, les
+            imports et le journal d'audit exigent une connexion au serveur.
           </p>
           <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
             <CheckCircle2 className="w-3 h-3" />

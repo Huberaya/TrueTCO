@@ -13,7 +13,8 @@
  *    couverte est signalée comme telle, elle n'est jamais devinée.
  */
 
-import { AuditLogEntry, HorizonYears, ProcurementCategory, Project, ProjectStatus, Supplier, UserRole } from '../types/domain';
+import { AuditLogEntry, HorizonYears, ProcurementCategory, Project, ProjectStatus, Supplier, SupplierOffer, UserRole } from '../types/domain';
+import { CarbonRow, CostItemRow, OfferRow, RiskRow, mapOffer } from '../engine/mapping';
 
 export class ApiError extends Error {
   constructor(
@@ -677,4 +678,129 @@ export interface HealthStatus {
 /** État publié par le serveur : moteur de base, version, RLS, versions de calcul. */
 export async function fetchHealth(): Promise<HealthStatus> {
   return api<HealthStatus>('/api/health');
+}
+
+
+// -----------------------------------------------------------------------------
+// Offres et postes de coût
+// -----------------------------------------------------------------------------
+/**
+ * Lecture des offres d'un dossier depuis l'API.
+ *
+ * La conversion lignes PostgreSQL → modèle métier est celle du moteur de calcul
+ * (`src/engine/mapping.ts`), utilisée à l'identique par le serveur pour produire la
+ * décision. Conséquence directe et voulue : l'écran et la décision ne peuvent pas
+ * diverger. Si une valeur est exclue du calcul (poste en erreur, montant manquant),
+ * elle l'est aussi à l'écran, pour la même raison.
+ *
+ * Coût réseau : une requête pour la liste, puis une par offre pour charger ses
+ * postes. Les détails sont chargés en parallèle, avec un plafond pour ne pas
+ * saturer un serveur modeste quand un dossier compte beaucoup d'offres.
+ */
+export async function fetchOffersFromServer(
+  organizationId: string,
+  userId: string,
+  userName: string,
+  projectId: string
+): Promise<SupplierOffer[]> {
+  if (!projectId) return [];
+  const list = await api<{ items: OfferRow[] }>(`/api/offers?limit=200&projectId=${encodeURIComponent(projectId)}`);
+  const rows = list.items ?? [];
+  if (rows.length === 0) return [];
+
+  const details = await mapWithConcurrency(rows, 4, (row) =>
+    api<{ offer: OfferRow; costItems: CostItemRow[]; carbonItems: CarbonRow[]; riskItems: RiskRow[] }>(
+      `/api/offers/${encodeURIComponent(row.id)}`
+    )
+  );
+
+  const context = { organizationId, userId, userName, now: new Date().toISOString() };
+  return details.map((detail) => {
+    const mapped = mapOffer(
+      {
+        offer: detail.offer,
+        costItems: detail.costItems ?? [],
+        carbonItems: detail.carbonItems ?? [],
+        riskItems: detail.riskItems ?? [],
+      },
+      context
+    );
+    return mapped.offer;
+  });
+}
+
+/** Exécute `task` sur chaque élément, avec au plus `limit` tâches simultanées. */
+async function mapWithConcurrency<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await task(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
+/**
+ * Enregistrement d'une offre et de ses postes de coût.
+ *
+ * Rien n'est inventé au passage :
+ *  - la catégorie transmise est celle écrite par l'utilisateur ; le serveur la
+ *    ramène à sa forme canonique et REFUSE une catégorie inconnue (code
+ *    `INVALID_COST_CATEGORY`) plutôt que de la deviner ;
+ *  - la provenance (`sourceName`) et la date sont conservées : un poste sans source
+ *    est enregistré `unsourced` avec une confiance nulle côté serveur ;
+ *  - la réponse est relue depuis le serveur, source de vérité, et non reconstruite
+ *    à partir de ce qui a été envoyé.
+ */
+export async function createOfferOnServer(offer: SupplierOffer, projectId: string): Promise<SupplierOffer> {
+  const created = await api<{ offer: OfferRow }>('/api/offers', {
+    method: 'POST',
+    body: JSON.stringify({
+      projectId,
+      supplierId: isUuid(offer.supplierId) ? offer.supplierId : null,
+      supplierName: offer.supplierName,
+      offerReference: offer.offerReference,
+      apparentTotal: offer.apparentTotal,
+      quantity: offer.quantity > 0 ? Math.round(offer.quantity) : 1,
+      // La devise suit le code ISO du dossier ; un libellé non ISO (« € ») n'est
+      // pas transmis : le serveur applique alors la devise du dossier plutôt que de
+      // recevoir une valeur qu'il refuserait.
+      currency: isCurrencyCode(offer.apparentUnitPrice?.unit) ? offer.apparentUnitPrice.unit : undefined,
+      deliveryLeadTimeWeeks: Math.round(offer.deliveryLeadTimeWeeks || 0),
+      warrantyMonths: Math.round(offer.warrantyMonths || 0),
+      expectedLifespanYears: Math.round(offer.expectedLifespanYears || 0),
+      technicalSuitabilityScore: Math.round(offer.technicalSuitabilityScore || 0),
+      isResponsibleCandidate: Boolean(offer.isResponsibleCandidate),
+      dataSource: 'manual',
+      costItems: (offer.costItems ?? []).map((item) => ({
+        label: item.label,
+        category: item.category,
+        amount: item.amount.value,
+        currency: isCurrencyCode(item.amount.unit) ? item.amount.unit : undefined,
+        sourceName: item.amount.sourceName || undefined,
+        confidenceLevel: Math.round(item.amount.confidenceLevel ?? 0),
+        isRecurringYearly: Boolean(item.isRecurringYearly),
+        yearOccurrences: item.yearOccurrences ?? item.annualOccurrenceYears ?? null,
+        yearlyInflationType: item.yearlyInflationType ?? null,
+      })),
+    }),
+  });
+  const context = { organizationId: '', userId: '', userName: '', now: new Date().toISOString() };
+  // La réponse du serveur ne contient pas les postes : ils sont relus juste après
+  // par l'appelant (rechargement complet), ce qui évite toute reconstruction
+  // locale approximative.
+  return mapOffer({ offer: created.offer, costItems: [], carbonItems: [], riskItems: [] }, context).offer;
+}
+
+/** Un code devise ISO à trois lettres, seule forme acceptée par l'API. */
+function isCurrencyCode(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^[A-Z]{3}$/.test(value);
+}
+
+function isUuid(value: string | null | undefined): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }

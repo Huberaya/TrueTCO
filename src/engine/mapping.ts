@@ -19,6 +19,15 @@
  *  4. Un poste de démonstration porte `isDemo` et génère un avertissement.
  *  5. Aucune catégorie n'est traduite silencieusement : les libellés de catégorie
  *     stockés sont ceux du moteur (`RECOGNIZED_COST_CATEGORIES`).
+ *
+ * POURQUOI CE MODULE EST DANS `src/engine/` ET NON CÔTÉ SERVEUR
+ * ------------------------------------------------------------
+ * Il sert aux DEUX : le serveur, pour calculer la décision, et le navigateur, pour
+ * afficher des offres lues depuis l'API. Deux conversions écrites séparément
+ * finissent toujours par diverger — c'est déjà arrivé une fois dans ce produit,
+ * avec deux vocabulaires de catégories de coût : les montants restaient justes
+ * mais l'analyse par nature de coût devenait fausse, sans que personne ne s'en
+ * aperçoive. Une seule conversion, un seul comportement, testée une seule fois.
  */
 
 import {
@@ -29,8 +38,8 @@ import {
   Project,
   RiskExpositionItem,
   SupplierOffer,
-} from '../../src/types/domain';
-import { CalculationWarning } from '../../src/engine/tcoEngine';
+} from '../types/domain';
+import { CalculationWarning } from './tcoEngine';
 
 export interface CostItemRow {
   id: string;
