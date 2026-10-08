@@ -68,7 +68,19 @@ export const AutomatedTestsModal: React.FC<AutomatedTestsModalProps> = ({ isOpen
               </span>
             )}
             <span className="text-slate-400 text-xs">
-              Statut : <span className="text-emerald-400 font-medium">Conforme aux standards d'audit financier</span>
+              Statut :{' '}
+              {testOutput && testOutput.failed > 0 ? (
+                <span className="text-rose-400 font-medium">
+                  Échecs détectés — le moteur de calcul ne doit pas être utilisé en l'état
+                </span>
+              ) : (
+                <span className="text-emerald-400 font-medium">
+                  Contrôles du moteur de calcul passés sur ce navigateur
+                </span>
+              )}
+            </span>
+            <span className="text-[10px] text-slate-500">
+              (contrôles internes : ils ne constituent ni un audit ni une certification externe)
             </span>
           </div>
 

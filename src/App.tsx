@@ -54,15 +54,11 @@ export default function App() {
   const [benchmarks, setBenchmarks] = useState<ExternalityReferenceBenchmark[]>(() => StorageService.getBenchmarks());
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => StorageService.getAuditLogs());
 
-  const [activeRole, setActiveRole] = useState<UserRole>(() => user?.role || 'directeur_achats');
+  // Le rôle affiché provient de la session serveur. Aucun sélecteur de rôle :
+  // un changement de rôle doit être effectué par un administrateur, pas par
+  // l'utilisateur lui-même.
+  const activeRole: UserRole = (user?.role ?? 'lecteur') as UserRole;
   const [currentView, setCurrentView] = useState<NavView>('chantier1');
-
-  // Synchronize active role when enterprise SSO user changes
-  useEffect(() => {
-    if (user?.role) {
-      setActiveRole(user.role);
-    }
-  }, [user?.role]);
 
   // Modals state
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -187,9 +183,9 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'u-acheteur',
-      userName: user?.fullName || 'Sophie Valéry',
-      userRole: activeRole,
+      userId: user?.id || 'session-inconnue',
+      userName: user?.fullName || 'Utilisateur non authentifié',
+      userRole: user?.role || activeRole,
       projectId: newProject.id,
       entityName: 'Projet d\'Achat',
       fieldChanged: 'Création de projet',
@@ -211,9 +207,9 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'u-acheteur',
-      userName: user?.fullName || 'Sophie Valéry',
-      userRole: activeRole,
+      userId: user?.id || 'session-inconnue',
+      userName: user?.fullName || 'Utilisateur non authentifié',
+      userRole: user?.role || activeRole,
       projectId: currentProject.id,
       offerId: newOffer.id,
       entityName: `Offre ${newOffer.supplierName}`,
@@ -253,9 +249,9 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'u-acheteur',
-      userName: user?.fullName || 'Sophie Valéry',
-      userRole: activeRole,
+      userId: user?.id || 'session-inconnue',
+      userName: user?.fullName || 'Utilisateur non authentifié',
+      userRole: user?.role || activeRole,
       entityName: `Fournisseur ${newSupplier.name}`,
       fieldChanged: 'Référencement & Qualification Tiers',
       oldValue: 'N/A',
@@ -281,9 +277,9 @@ export default function App() {
       const log: AuditLogEntry = {
         id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`,
         timestamp: new Date().toISOString(),
-        userId: 'u-rse',
-        userName: 'Éléonore Chen',
-        userRole: activeRole,
+        userId: user?.id || 'session-inconnue',
+        userName: user?.fullName || 'Utilisateur non authentifié',
+        userRole: user?.role || activeRole,
         projectId: currentProject.id,
         entityName: updated.name,
         fieldChanged: 'Valeur de référence pivot',
@@ -303,9 +299,9 @@ export default function App() {
     const log: AuditLogEntry = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`,
       timestamp: new Date().toISOString(),
-      userId: 'u-rse',
-      userName: 'Éléonore Chen',
-      userRole: activeRole,
+      userId: user?.id || 'session-inconnue',
+      userName: user?.fullName || 'Utilisateur non authentifié',
+      userRole: user?.role || activeRole,
       entityName: newBench.name,
       fieldChanged: 'Création facteur référentiel',
       oldValue: 'N/A',
@@ -350,7 +346,6 @@ export default function App() {
         projects={projects}
         onSelectProject={handleSelectProject}
         activeRole={activeRole}
-        onChangeRole={setActiveRole}
         onOpenNewProject={() => setIsNewProjectOpen(true)}
         onOpenTestsModal={() => setIsTestsModalOpen(true)}
         onOpenReportModal={() => setCurrentView('report')}

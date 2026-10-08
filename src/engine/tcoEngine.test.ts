@@ -1,9 +1,14 @@
 /**
- * TrueTCO - Automated Test Suite
- * Tests unitaires et d'intégration mathématique du moteur TCO/LCC
+ * TrueTCO — Suite de tests du moteur TCO/LCC
+ * ---------------------------------------------------------------------------
+ * v2 : les tests certifiaient auparavant des trivialités (ex. TCO-05 vérifiait
+ * seulement que le LCC était > 0, ce qu'un moteur cassé satisfait aussi).
+ * Cette suite vérifie désormais des INVARIANTS financiers et des cas limites
+ * concrets, exécutables aussi bien dans l'application qu'en CI
+ * (`npm test` → src/engine/tcoEngine.spec.ts).
  */
 
-import { TCOEngine } from './tcoEngine';
+import { TCOEngine, TCO_ENGINE_VERSION } from './tcoEngine';
 import { Project, SupplierOffer } from '../types/domain';
 
 export interface TestResultItem {
@@ -15,6 +20,8 @@ export interface TestResultItem {
   actual: string;
   durationMs: number;
 }
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export function runAllTCOEngineTests(): {
   total: number;
@@ -42,12 +49,22 @@ export function runAllTCOEngineTests(): {
     status: 'analyse',
     createdAt: '2026-03-01',
     updatedAt: '2026-03-15',
-    discountRate: 0.05, // 5% WACC
+    discountRate: 0.05,
     carbonScenario: 'central',
-    carbonPricePerTonne: 120, // 120€ / tonne
-    inflationRate: 0.02, // 2%
-    energyInflationRate: 0.04, // 4%
+    carbonPricePerTonne: 120,
+    inflationRate: 0.02,
+    energyInflationRate: 0.04,
   };
+
+  const audited = (value: number, unit: string, confidenceLevel = 95, sourceType: any = 'verifiee') => ({
+    value,
+    unit,
+    sourceType,
+    sourceName: 'Devis contractuel ferme',
+    confidenceLevel,
+    lastUpdated: '2026-03-10',
+    updatedBy: 'Acheteur',
+  });
 
   const mockConventionalOffer: SupplierOffer = {
     id: 'off-conv',
@@ -56,15 +73,7 @@ export function runAllTCOEngineTests(): {
     supplierName: 'Fournisseur Diesel Thermique',
     offerReference: 'DEV-TH-2026',
     isResponsibleCandidate: false,
-    apparentUnitPrice: {
-      value: 28000,
-      unit: '€/véhicule',
-      sourceType: 'verifiee',
-      sourceName: 'Devis contractuel N°4891',
-      confidenceLevel: 98,
-      lastUpdated: '2026-03-10',
-      updatedBy: 'Acheteur',
-    },
+    apparentUnitPrice: audited(28000, '€/véhicule', 98),
     quantity: 10,
     apparentTotal: 280000,
     deliveryLeadTimeWeeks: 4,
@@ -75,30 +84,14 @@ export function runAllTCOEngineTests(): {
         id: 'c1',
         category: 'acquisition',
         label: 'Achat véhicules neufs',
-        amount: {
-          value: 280000,
-          unit: '€',
-          sourceType: 'verifiee',
-          sourceName: 'Devis ferme',
-          confidenceLevel: 98,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Acheteur',
-        },
+        amount: audited(280000, '€', 98),
         isRecurringYearly: false,
       },
       {
         id: 'c2',
         category: 'energie_consommables',
         label: 'Carburant diesel annuel',
-        amount: {
-          value: 36000, // 36 000 € / an pour les 10 véhicules
-          unit: '€/an',
-          sourceType: 'estimee',
-          sourceName: 'Consommation 6.5L/100km sur 25 000 km',
-          confidenceLevel: 85,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Gestionnaire Flotte',
-        },
+        amount: audited(36000, '€/an', 85, 'estimee'),
         isRecurringYearly: true,
         yearlyInflationType: 'energy',
       },
@@ -106,407 +99,371 @@ export function runAllTCOEngineTests(): {
         id: 'c3',
         category: 'maintenance_reparations',
         label: 'Entretien & vidanges annuels',
-        amount: {
-          value: 12000, // 12 000 € / an
-          unit: '€/an',
-          sourceType: 'verifiee',
-          sourceName: 'Grille entretien constructeur',
-          confidenceLevel: 90,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Acheteur',
-        },
+        amount: audited(12000, '€/an', 90),
         isRecurringYearly: true,
         yearlyInflationType: 'maintenance',
-      },
-      {
-        id: 'c4',
-        category: 'remplacement_pannes',
-        label: 'Pannes curatives estimées',
-        amount: {
-          value: 4000,
-          unit: '€/an',
-          sourceType: 'estimee',
-          sourceName: 'Historique flotte',
-          confidenceLevel: 75,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Contrôleur',
-        },
-        isRecurringYearly: true,
-      },
-      {
-        id: 'c5',
-        category: 'valeur_residuelle',
-        label: 'Revente marché occasion à 5 ans',
-        amount: {
-          value: 70000, // Récupération d'actif
-          unit: '€',
-          sourceType: 'estimee',
-          sourceName: 'Argus Pro côte résiduelle',
-          confidenceLevel: 80,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Finance',
-        },
-        isRecurringYearly: false,
-      },
-      {
-        id: 'c6',
-        category: 'fin_de_vie_recyclage',
-        label: 'Frais administratifs cession & dépollution',
-        amount: {
-          value: 3000,
-          unit: '€',
-          sourceType: 'estimee',
-          sourceName: 'Barème standard',
-          confidenceLevel: 85,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Finance',
-        },
-        isRecurringYearly: false,
       },
     ],
     carbonItems: [
       {
         scope: 'Scope 1',
         lifecyclePhase: 'utilisation_annuelle',
-        emissionsPerUnitTonneCO2e: {
-          value: 4.8, // 4.8 tCO2e par véhicule et par an * 5 ans = 24 tCO2e
-          unit: 'tCO2e/véhicule',
-          sourceType: 'source_externe',
-          sourceName: 'ADEME Base Carbone (Diesel B7)',
-          confidenceLevel: 95,
-          lastUpdated: '2026-01-15',
-          updatedBy: 'RSE',
-        },
-        totalLifecycleEmissions: 240, // pour 10 véhicules
-        emissionFactorSource: 'ADEME 2026',
+        emissionsPerUnitTonneCO2e: audited(24, 'tCO2e/unité/an', 92, 'source_externe'),
+        totalLifecycleEmissions: 240,
+        emissionFactorSource: 'ADEME Base Empreinte',
       },
     ],
     riskItems: [
       {
         id: 'r1',
-        label: 'Interdiction circulation ZFE et fiscalité malus',
+        label: 'Risque réglementaire ZFE',
         category: 'reglementaire',
-        probability: {
-          value: 0.4,
-          unit: 'proba (0-1)',
-          sourceType: 'estimee',
-          sourceName: 'Calendrier réglementaire ZFE-m',
-          confidenceLevel: 85,
-          lastUpdated: '2026-03-01',
-          updatedBy: 'Juridique',
-        },
-        financialImpact: {
-          value: 25000,
-          unit: '€',
-          sourceType: 'estimee',
-          sourceName: 'Pénalités & dérogations',
-          confidenceLevel: 80,
-          lastUpdated: '2026-03-01',
-          updatedBy: 'Finance',
-        },
+        probability: audited(0.4, 'probabilité', 80, 'estimation'),
+        financialImpact: audited(25000, '€', 80, 'estimation'),
         expectedLoss: 10000,
         probabilityType: 'estimation',
       },
     ],
-    technicalSuitabilityScore: 82,
+    technicalSuitabilityScore: 70,
   };
 
   const mockElectricOffer: SupplierOffer = {
     id: 'off-elec',
     projectId: 'proj-test',
     supplierId: 'sup-elec',
-    supplierName: 'Fournisseur Véhicules Électriques',
-    offerReference: 'DEV-EV-2026',
+    supplierName: 'Fournisseur Électrique',
+    offerReference: 'DEV-EL-2026',
     isResponsibleCandidate: true,
-    apparentUnitPrice: {
-      value: 36000,
-      unit: '€/véhicule',
-      sourceType: 'verifiee',
-      sourceName: 'Devis ferme N°9910',
-      confidenceLevel: 98,
-      lastUpdated: '2026-03-10',
-      updatedBy: 'Acheteur',
-    },
+    apparentUnitPrice: audited(36000, '€/véhicule', 98),
     quantity: 10,
     apparentTotal: 360000,
     deliveryLeadTimeWeeks: 8,
-    warrantyMonths: 60, // Garantie 5 ans batterie
-    expectedLifespanYears: 7,
+    warrantyMonths: 60,
+    expectedLifespanYears: 5,
     costItems: [
       {
-        id: 'ce1',
+        id: 'e1',
         category: 'acquisition',
         label: 'Achat véhicules électriques',
-        amount: {
-          value: 360000,
-          unit: '€',
-          sourceType: 'verifiee',
-          sourceName: 'Devis ferme',
-          confidenceLevel: 98,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Acheteur',
-        },
+        amount: audited(360000, '€', 98),
         isRecurringYearly: false,
       },
       {
-        id: 'ce2',
+        id: 'e2',
         category: 'installation_mise_en_service',
-        label: 'Bornes de recharge & raccordement',
-        amount: {
-          value: 18000,
-          unit: '€',
-          sourceType: 'verifiee',
-          sourceName: 'Devis installateur IRVE certifié',
-          confidenceLevel: 95,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Acheteur',
-        },
+        label: 'Bornes de recharge et raccordement',
+        amount: audited(45000, '€', 96),
         isRecurringYearly: false,
       },
       {
-        id: 'ce3',
+        id: 'e3',
         category: 'energie_consommables',
-        label: 'Électricité recharge annuelle',
-        amount: {
-          value: 11000, // 11 000 € / an vs 36 000 € diesel
-          unit: '€/an',
-          sourceType: 'estimee',
-          sourceName: '18 kWh/100km tarif heures creuses',
-          confidenceLevel: 88,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Gestionnaire Flotte',
-        },
+        label: 'Électricité annuelle',
+        amount: audited(8000, '€/an', 88, 'estimee'),
         isRecurringYearly: true,
         yearlyInflationType: 'energy',
       },
       {
-        id: 'ce4',
+        id: 'e4',
         category: 'maintenance_reparations',
-        label: 'Entretien périodique VE (moins de pièces d\'usure)',
-        amount: {
-          value: 5000, // 5 000 € / an vs 12 000 € diesel
-          unit: '€/an',
-          sourceType: 'verifiee',
-          sourceName: 'Contrat d\'entretien constructeur',
-          confidenceLevel: 92,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Acheteur',
-        },
+        label: 'Entretien annuel',
+        amount: audited(6000, '€/an', 90),
         isRecurringYearly: true,
         yearlyInflationType: 'maintenance',
       },
       {
-        id: 'ce5',
-        category: 'remplacement_pannes',
-        label: 'Pannes curatives (garantie 5 ans incluse)',
-        amount: {
-          value: 1200,
-          unit: '€/an',
-          sourceType: 'verifiee',
-          sourceName: 'Garantie totale pièces & main d\'œuvre',
-          confidenceLevel: 95,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Acheteur',
-        },
-        isRecurringYearly: true,
-      },
-      {
-        id: 'ce6',
+        id: 'e5',
         category: 'valeur_residuelle',
-        label: 'Valeur résiduelle marché occasion VE',
-        amount: {
-          value: 90000,
-          unit: '€',
-          sourceType: 'estimee',
-          sourceName: 'Estimation B2B remarketing',
-          confidenceLevel: 75,
-          lastUpdated: '2026-03-10',
-          updatedBy: 'Finance',
-        },
+        label: 'Valeur de reprise garantie fin de vie',
+        amount: audited(-30000, '€', 90),
         isRecurringYearly: false,
       },
     ],
     carbonItems: [
       {
+        scope: 'Scope 3 - Amont',
+        lifecyclePhase: 'fabrication',
+        emissionsPerUnitTonneCO2e: audited(8, 'tCO2e/unité', 94, 'source_externe'),
+        totalLifecycleEmissions: 80,
+        emissionFactorSource: 'ADEME / ACV constructeur',
+      },
+      {
         scope: 'Scope 2',
         lifecyclePhase: 'utilisation_annuelle',
-        emissionsPerUnitTonneCO2e: {
-          value: 0.8, // 0.8 tCO2e par an (mix électrique français)
-          unit: 'tCO2e/véhicule',
-          sourceType: 'source_externe',
-          sourceName: 'ADEME Base Carbone (Mix électrique FR)',
-          confidenceLevel: 95,
-          lastUpdated: '2026-01-15',
-          updatedBy: 'RSE',
-        },
-        totalLifecycleEmissions: 40, // 40 tonnes vs 240 tonnes diesel
-        emissionFactorSource: 'ADEME 2026',
+        emissionsPerUnitTonneCO2e: audited(1.5, 'tCO2e/unité/an', 92, 'source_externe'),
+        totalLifecycleEmissions: 15,
+        emissionFactorSource: 'RTE / ADEME',
       },
     ],
-    riskItems: [
-      {
-        id: 're1',
-        label: 'Risque de dégradation prématurée batterie',
-        category: 'retrait_rappel',
-        probability: {
-          value: 0.05,
-          unit: 'proba (0-1)',
-          sourceType: 'historique',
-          sourceName: 'Télémétrie constructeur 2023-2025',
-          confidenceLevel: 90,
-          lastUpdated: '2026-03-01',
-          updatedBy: 'Contrôleur',
-        },
-        financialImpact: {
-          value: 40000,
-          unit: '€',
-          sourceType: 'estimee',
-          sourceName: 'Remplacement module batterie sous franchise',
-          confidenceLevel: 85,
-          lastUpdated: '2026-03-01',
-          updatedBy: 'Finance',
-        },
-        expectedLoss: 2000,
-        probabilityType: 'historique',
-      },
-    ],
-    technicalSuitabilityScore: 90,
+    riskItems: [],
+    technicalSuitabilityScore: 92,
   };
 
-  // TEST 1: Apparent Purchase Price Delta
-  {
-    const start = performance.now();
-    const convRes = TCOEngine.calculateOfferTCO(mockProject, mockConventionalOffer);
-    const elecRes = TCOEngine.calculateOfferTCO(mockProject, mockElectricOffer);
-    const passed = convRes.apparentDirectCost === 280000 && elecRes.apparentDirectCost === 360000;
+  const check = (
+    id: string,
+    name: string,
+    category: string,
+    fn: () => { passed: boolean; expected: string; actual: string }
+  ) => {
+    const start = typeof performance !== 'undefined' ? performance.now() : 0;
+    let outcome: { passed: boolean; expected: string; actual: string };
+    try {
+      outcome = fn();
+    } catch (err: any) {
+      outcome = { passed: false, expected: 'Exécution sans erreur', actual: `Exception : ${err?.message ?? err}` };
+    }
     results.push({
-      id: 'TCO-01',
-      name: 'Prix d\'acquisition direct apparent conforme aux devis',
-      category: 'Acquisition',
-      passed,
-      expected: 'Conv: 280 000 €, Elec: 360 000 € (Surcoût apparent initial de +80 000 € / +28.6%)',
-      actual: `Conv: ${convRes.apparentDirectCost.toLocaleString()} €, Elec: ${elecRes.apparentDirectCost.toLocaleString()} €`,
-      durationMs: Math.round(performance.now() - start),
+      id,
+      name,
+      category,
+      passed: outcome.passed,
+      expected: outcome.expected,
+      actual: outcome.actual,
+      durationMs: Math.round(((typeof performance !== 'undefined' ? performance.now() : 0) - start) * 100) / 100,
     });
-  }
+  };
 
-  // TEST 2: Operational Energy Inflation Logic
-  {
-    const start = performance.now();
-    const convRes = TCOEngine.calculateOfferTCO(mockProject, mockConventionalOffer);
-    // Base is 36000/yr, 4% energy inflation over 5 years:
-    // Y1: 36000, Y2: 37440, Y3: 38937.6, Y4: 40495.1, Y5: 42114.9 -> sum ~ 194988
-    const passed = convRes.energyConsumablesTotal > 180000 && convRes.energyConsumablesTotal < 200000;
-    results.push({
-      id: 'TCO-02',
-      name: 'Indexation de l\'inflation énergétique cumulée sur l\'horizon',
-      category: 'Énergie',
-      passed,
-      expected: 'Total énergie diesel entre 180 000 € et 200 000 € (inclut 4% d\'inflation annuelle)',
-      actual: `${convRes.energyConsumablesTotal.toLocaleString()} €`,
-      durationMs: Math.round(performance.now() - start),
-    });
-  }
+  const conv = TCOEngine.calculateOfferTCO(mockProject, mockConventionalOffer);
+  const elec = TCOEngine.calculateOfferTCO(mockProject, mockElectricOffer);
 
-  // TEST 3: Economic TCO vs Full Comprehensive TCO (Risks & Carbon)
-  {
-    const start = performance.now();
-    const convRes = TCOEngine.calculateOfferTCO(mockProject, mockConventionalOffer);
-    // Risk expectation: 0.4 * 25000 = 10000
-    // Carbon: 240 tonnes * 120€/t = 28800 €
-    const passed = convRes.riskExpositionTotal === 10000 && convRes.monetizedCarbonTotal === 28800;
-    results.push({
-      id: 'TCO-03',
-      name: 'Monétisation des externalités carbone et de l\'exposition aux risques réglementaires',
-      category: 'Externalités & Risques',
-      passed,
-      expected: 'Risque attendu: 10 000 € | Carbone monétisé (240t * 120€/t): 28 800 €',
-      actual: `Risque: ${convRes.riskExpositionTotal.toLocaleString()} € | Carbone: ${convRes.monetizedCarbonTotal.toLocaleString()} €`,
-      durationMs: Math.round(performance.now() - start),
-    });
-  }
+  // ---------------------------------------------------------------------------
+  // TCO-01 — Prix d'acquisition
+  // ---------------------------------------------------------------------------
+  check('TCO-01', "Prix d'acquisition direct apparent conforme aux devis", 'Acquisition', () => ({
+    passed: conv.apparentDirectCost === 280000 && elec.apparentDirectCost === 360000,
+    expected: 'Conv: 280 000 €, Élec: 360 000 € (surcoût apparent +80 000 €)',
+    actual: `Conv: ${conv.apparentDirectCost.toLocaleString('fr-FR')} €, Élec: ${elec.apparentDirectCost.toLocaleString('fr-FR')} €`,
+  }));
 
-  // TEST 4: Break-Even Calculation (Point Mort)
-  {
-    const start = performance.now();
-    const convRes = TCOEngine.calculateOfferTCO(mockProject, mockConventionalOffer);
-    const elecRes = TCOEngine.calculateOfferTCO(mockProject, mockElectricOffer);
-    const breakEven = TCOEngine.calculateBreakEven(convRes, elecRes, mockProject.horizonYears);
-    // Initial delta: +80,000 €
-    // Monthly operating savings: ~2500 - 3500 € / month
-    // Break-even month should be between 24 and 38 months (around 2.5 years)
-    const passed = breakEven.hasBreakEven && (breakEven.breakEvenMonth ?? 0) > 12 && (breakEven.breakEvenMonth ?? 0) < 48;
-    results.push({
-      id: 'TCO-04',
-      name: 'Détermination du point mort économique (crossover d\'amortissement)',
-      category: 'Point Mort',
-      passed,
-      expected: 'Point mort atteint entre 12 et 48 mois (rentable avant fin d\'horizon de 60 mois)',
-      actual: `${breakEven.breakEvenMonth} mois (${breakEven.crossoverYear} ans) - ${breakEven.breakEvenDescription}`,
-      durationMs: Math.round(performance.now() - start),
-    });
-  }
+  // ---------------------------------------------------------------------------
+  // TCO-02 — Indexation énergétique (valeur exacte, pas une fourchette)
+  // ---------------------------------------------------------------------------
+  check('TCO-02', "Indexation de l'inflation énergétique cumulée sur l'horizon", 'Énergie', () => {
+    // 36 000 €/an indexé à 4 % : 1 + 1,04 + 1,0816 + 1,124864 + 1,16985856 = 5,41632256
+    const expected = round2(36000 * (1 + 1.04 + 1.04 ** 2 + 1.04 ** 3 + 1.04 ** 4));
+    const actual = round2(conv.energyConsumablesTotal);
+    return {
+      passed: Math.abs(actual - expected) < 1,
+      expected: `${expected.toLocaleString('fr-FR')} € (36 000 €/an à +4 %)`,
+      actual: `${actual.toLocaleString('fr-FR')} €`,
+    };
+  });
 
-  // TEST 5: LCC Discounting (Net Present Value strictly less than nominal sum)
-  {
-    const start = performance.now();
-    const elecRes = TCOEngine.calculateOfferTCO(mockProject, mockElectricOffer);
-    // Because WACC = 5% > 0, future positive costs discounted will be lower than nominal sum
-    const passed = elecRes.lifecycleCostLCC > 0 && elecRes.cashFlowsByYear.length === 6;
-    results.push({
-      id: 'TCO-05',
-      name: 'Actualisation financière pluriannuelle LCC (WACC 5%)',
-      category: 'LCC Actualisé',
-      passed,
-      expected: 'Calcul des flux sur 5 ans + CAPEX Année 0 avec discount factor 1/(1+r)^t',
-      actual: `LCC Actualisé: ${elecRes.lifecycleCostLCC.toLocaleString()} € sur ${elecRes.cashFlowsByYear.length} jalons`,
-      durationMs: Math.round(performance.now() - start),
-    });
-  }
+  // ---------------------------------------------------------------------------
+  // TCO-03 — Risques et carbone
+  // ---------------------------------------------------------------------------
+  check('TCO-03', "Monétisation des externalités carbone et de l'exposition aux risques", 'Externalités & Risques', () => ({
+    passed: conv.riskExpositionTotal === 10000 && conv.monetizedCarbonTotal === 28800,
+    expected: 'Risque espéré : 10 000 € | Carbone (240 t × 120 €/t) : 28 800 €',
+    actual: `Risque : ${conv.riskExpositionTotal.toLocaleString('fr-FR')} € | Carbone : ${conv.monetizedCarbonTotal.toLocaleString('fr-FR')} €`,
+  }));
 
-  // TEST 6: Objectivity & Neutrality Assertion (Principe 37)
-  // Verify that if responsible offer is burdened with high price or conventional has lower operating costs,
-  // the engine faithfully declares conventional as the winner.
-  {
-    const start = performance.now();
-    const overpricedRespOffer: SupplierOffer = {
+  // ---------------------------------------------------------------------------
+  // TCO-04 — Point mort (méthode actualisée, cohérence avec le LCC)
+  // ---------------------------------------------------------------------------
+  check('TCO-04', "Détermination du point mort économique (crossover d'amortissement)", 'Point Mort', () => {
+    const be = TCOEngine.calculateBreakEven(conv, elec, mockProject.horizonYears);
+    const methodOk = be.method === 'discounted_cumulative_crossover';
+    const signOk = be.hasBreakEven ? (be.breakEvenMonth ?? -1) >= 0 : (be.finalDiscountedDelta ?? 0) < 0;
+    // Dépense Année 0 : acquisition (360 000 − 280 000) + bornes (45 000).
+    // La valeur de reprise est un produit encaissé en dernière année, elle ne
+    // réduit donc pas la dépense initiale (convention documentée).
+    const outlayOk = be.initialOutlayDelta === 80000 + 45000;
+    return {
+      passed: methodOk && signOk && outlayOk,
+      expected: `Méthode actualisée, dépense initiale réelle ${(80000 + 45000).toLocaleString('fr-FR')} €, résultat cohérent avec le signe du delta final`,
+      actual: `Méthode: ${be.method} | Dépense initiale: ${(be.initialOutlayDelta ?? 0).toLocaleString('fr-FR')} € | ${
+        be.hasBreakEven ? `point mort ${be.breakEvenMonth} mois` : `pas de point mort (écart final ${(be.finalDiscountedDelta ?? 0).toLocaleString('fr-FR')} €)`
+      }`,
+    };
+  });
+
+  // ---------------------------------------------------------------------------
+  // TCO-05 — Actualisation : INVARIANT Σ flux actualisés == LCC
+  // ---------------------------------------------------------------------------
+  check('TCO-05', 'Actualisation financière : Σ des flux actualisés = LCC (WACC 5 %)', 'LCC Actualisé', () => {
+    const sumDiscounted = elec.cashFlowsByYear.reduce((a, c) => a + c.discountedCost, 0);
+    const sumNominal = elec.cashFlowsByYear.reduce((a, c) => a + c.nominalCost, 0);
+    const lccOk = Math.abs(sumDiscounted - elec.lifecycleCostLCC) <= 2;
+    const tcoOk = Math.abs(sumNominal - elec.totalComprehensiveTCO) <= 2;
+    const discountedLower = elec.lifecycleCostLCC !== sumNominal;
+    return {
+      passed: lccOk && tcoOk && discountedLower && elec.cashFlowsByYear.length === mockProject.horizonYears + 1,
+      expected: 'Σ flux actualisés = LCC, Σ flux nominaux = TCO complet, périmètres identiques',
+      actual: `Σ actualisé ${Math.round(sumDiscounted).toLocaleString('fr-FR')} € vs LCC ${elec.lifecycleCostLCC.toLocaleString('fr-FR')} € | Σ nominal ${Math.round(sumNominal).toLocaleString('fr-FR')} € vs TCO ${elec.totalComprehensiveTCO.toLocaleString('fr-FR')} €`,
+    };
+  });
+
+  // ---------------------------------------------------------------------------
+  // TCO-06 — Neutralité : l'offre la moins coûteuse en VAN gagne
+  // ---------------------------------------------------------------------------
+  check('TCO-06', "Neutralité financière : aucune prime systématique à l'ESG", 'Gouvernance & Audit', () => {
+    const overpriced: SupplierOffer = {
       ...mockElectricOffer,
-      apparentUnitPrice: { ...mockElectricOffer.apparentUnitPrice, value: 95000 },
-      costItems: mockElectricOffer.costItems.map((ci) => 
+      apparentUnitPrice: audited(95000, '€/véhicule', 98),
+      costItems: mockElectricOffer.costItems.map((ci) =>
         ci.category === 'acquisition' ? { ...ci, amount: { ...ci.amount, value: 950000 } } : ci
       ),
     };
-    const convRes = TCOEngine.calculateOfferTCO(mockProject, mockConventionalOffer);
-    const badRespRes = TCOEngine.calculateOfferTCO(mockProject, overpricedRespOffer);
-    const breakEven = TCOEngine.calculateBreakEven(convRes, badRespRes, mockProject.horizonYears);
-    
-    const passed = badRespRes.totalComprehensiveTCO > convRes.totalComprehensiveTCO && (!breakEven.hasBreakEven || (breakEven.breakEvenMonth ?? 0) > 60);
-    results.push({
-      id: 'TCO-06',
-      name: 'Neutralité et objectivité financière : non-biais systématique vers l\'ESG',
-      category: 'Gouvernance & Audit',
-      passed,
-      expected: 'L\'offre conventionnelle doit être désignée vainqueur si l\'offre ESG est économiquement irrationnelle',
-      actual: `Conventionnel: ${convRes.totalComprehensiveTCO.toLocaleString()} € < ESG Surtaxée: ${badRespRes.totalComprehensiveTCO.toLocaleString()} € (Pas de point mort sur l'horizon)`,
-      durationMs: Math.round(performance.now() - start),
-    });
-  }
+    const bad = TCOEngine.calculateOfferTCO(mockProject, overpriced);
+    const be = TCOEngine.calculateBreakEven(conv, bad, mockProject.horizonYears);
+    const conventionalWinsOnNpv = bad.lifecycleCostLCC > conv.lifecycleCostLCC;
+    const conventionalWinsOnTco = bad.totalComprehensiveTCO > conv.totalComprehensiveTCO;
+    const noBreakeven = !be.hasBreakEven;
+    return {
+      passed: conventionalWinsOnNpv && conventionalWinsOnTco && noBreakeven,
+      expected: "L'offre conventionnelle est désignée meilleure (VAN et TCO) et aucun point mort n'est annoncé",
+      actual: `VAN conv ${conv.lifecycleCostLCC.toLocaleString('fr-FR')} € < VAN ESG ${bad.lifecycleCostLCC.toLocaleString('fr-FR')} € | point mort : ${be.hasBreakEven ? be.breakEvenMonth + ' mois' : 'aucun'}`,
+    };
+  });
 
-  // TEST 7: Sensitivity Analysis
-  {
-    const start = performance.now();
+  // ---------------------------------------------------------------------------
+  // TCO-07 — Sensibilité : métrique unique et tri décroissant
+  // ---------------------------------------------------------------------------
+  check('TCO-07', 'Analyse de sensibilité Tornado (métrique unique, tri décroissant)', 'Sensibilité', () => {
     const drivers = TCOEngine.calculateSensitivity(mockProject, mockConventionalOffer, mockElectricOffer);
-    const passed = drivers.length >= 4 && drivers[0].sensitivityRank === 'critique';
-    results.push({
-      id: 'TCO-07',
-      name: 'Analyse de sensibilité Tornado (Hiérarchisation des risques clés)',
-      category: 'Sensibilité',
-      passed,
-      expected: 'Classement ordonné des variables à fort impact (Énergie, Carbone, WACC, Pannes)',
-      actual: `${drivers.length} variables analysées. Driver principal: ${drivers[0].parameterName} (Rang: ${drivers[0].sensitivityRank})`,
-      durationMs: Math.round(performance.now() - start),
-    });
-  }
+    const sameMetric = drivers.every((d) => d.metric === 'delta_comprehensive_npv');
+    const sorted = drivers.every(
+      (d, i) => i === 0 || Math.abs(drivers[i - 1].spreadOnDeltaTCO ?? 0) >= Math.abs(d.spreadOnDeltaTCO ?? 0)
+    );
+    const includesHorizon = drivers.some((d) => d.category === 'duree_de_vie');
+    return {
+      passed: drivers.length >= 5 && sameMetric && sorted && includesHorizon,
+      expected: '5 drivers minimum, tous mesurés sur Δ VAN complet, triés par amplitude, horizon inclus',
+      actual: `${drivers.length} drivers. ${drivers.map((d) => `${d.parameterName.split(' ')[0]}=${d.spreadOnDeltaTCO} €`).join(' | ')}`,
+    };
+  });
+
+  // ---------------------------------------------------------------------------
+  // TCO-08 — Aucune perte silencieuse de poste de coût
+  // ---------------------------------------------------------------------------
+  check('TCO-08', 'Aucun poste de coût ignoré silencieusement (catégorie inconnue)', 'Traçabilité', () => {
+    const weird: SupplierOffer = {
+      ...mockConventionalOffer,
+      costItems: [
+        ...mockConventionalOffer.costItems,
+        {
+          id: 'cx',
+          category: 'categorie_non_mappee' as any,
+          label: 'Poste non mappé',
+          amount: audited(500000, '€', 90),
+          isRecurringYearly: false,
+        },
+      ],
+    };
+    const res = TCOEngine.calculateOfferTCO(mockProject, weird);
+    const flagged = (res.warnings ?? []).some((w) => w.code === 'UNRECOGNIZED_COST_CATEGORY');
+    return {
+      passed: res.unallocatedCostTotal === 500000 && flagged && res.isComplete === false,
+      expected: '500 000 € comptés comme coût + avertissement critique + isComplete = false',
+      actual: `Non ventilé : ${(res.unallocatedCostTotal ?? 0).toLocaleString('fr-FR')} € | avertissement : ${flagged} | isComplete : ${res.isComplete}`,
+    };
+  });
+
+  // ---------------------------------------------------------------------------
+  // TCO-09 — Occurrences annuelles honorées (imports ERP / IA)
+  // ---------------------------------------------------------------------------
+  check('TCO-09', 'Occurrences annuelles honorées (yearOccurrences / annualOccurrenceYears)', 'Intégrité des imports', () => {
+    const withOccurrences: SupplierOffer = {
+      ...mockConventionalOffer,
+      costItems: [
+        {
+          id: 'occ',
+          category: 'maintenance_reparations',
+          label: 'Contrat de maintenance 5 ans',
+          amount: audited(39000, '€/an', 95),
+          isRecurringYearly: false,
+          annualOccurrenceYears: [1, 2, 3, 4, 5],
+        } as any,
+      ],
+    };
+    const res = TCOEngine.calculateOfferTCO(mockProject, withOccurrences);
+    const oneShot = 39000;
+    return {
+      passed: res.maintenanceRepairsTotal > oneShot * 4,
+      expected: `> ${(oneShot * 4).toLocaleString('fr-FR')} € (le poste doit être compté 5 fois, pas une seule)`,
+      actual: `${res.maintenanceRepairsTotal.toLocaleString('fr-FR')} €`,
+    };
+  });
+
+  // ---------------------------------------------------------------------------
+  // TCO-10 — Pureté du moteur (aucune mutation des entrées)
+  // ---------------------------------------------------------------------------
+  check('TCO-10', "Pureté du moteur : aucune mutation des données d'entrée", 'Intégrité', () => {
+    const before = JSON.stringify(mockConventionalOffer);
+    TCOEngine.calculateOfferTCO(mockProject, mockConventionalOffer);
+    const after = JSON.stringify(mockConventionalOffer);
+    return {
+      passed: before === after,
+      expected: "L'objet offre est identique avant et après calcul",
+      actual: before === after ? 'Aucune mutation détectée' : 'MUTATION DÉTECTÉE (effet de bord)',
+    };
+  });
+
+  // ---------------------------------------------------------------------------
+  // TCO-11 — Scénarios relatifs aux hypothèses du projet
+  // ---------------------------------------------------------------------------
+  check('TCO-11', 'Scénarios relatifs aux hypothèses du projet (jamais de valeurs absolues codées)', 'Scénarios', () => {
+    const highCarbon: Project = { ...mockProject, carbonPricePerTonne: 300, discountRate: 0.1 };
+    const scenarios = TCOEngine.calculateScenarios(highCarbon, [mockConventionalOffer, mockElectricOffer]);
+    const pess = scenarios.find((s) => s.scenarioName === 'Pessimiste')!;
+    const cen = scenarios.find((s) => s.scenarioName === 'Central')!;
+    const opt = scenarios.find((s) => s.scenarioName === 'Optimiste')!;
+    const monotonic =
+      pess.parameters.carbonPricePerTonne > cen.parameters.carbonPricePerTonne &&
+      cen.parameters.carbonPricePerTonne > opt.parameters.carbonPricePerTonne &&
+      pess.parameters.discountRate > cen.parameters.discountRate &&
+      cen.parameters.discountRate > opt.parameters.discountRate;
+    return {
+      passed: monotonic && scenarios.every((s) => s.isRelativeToProjectBase === true),
+      expected: 'Pessimiste > Central > Optimiste sur le carbone ET le WACC, quel que soit le projet',
+      actual: `Carbone : ${pess.parameters.carbonPricePerTonne} / ${cen.parameters.carbonPricePerTonne} / ${opt.parameters.carbonPricePerTonne} €/t | WACC : ${(pess.parameters.discountRate * 100).toFixed(2)} / ${(cen.parameters.discountRate * 100).toFixed(2)} / ${(opt.parameters.discountRate * 100).toFixed(2)} %`,
+    };
+  });
+
+  // ---------------------------------------------------------------------------
+  // TCO-12 — Qualité de données pondérée par la matérialité
+  // ---------------------------------------------------------------------------
+  check('TCO-12', 'Score de confiance pondéré par la matérialité (pas de défaut flatteur)', 'Qualité des données', () => {
+    const lowQuality: SupplierOffer = {
+      ...mockConventionalOffer,
+      apparentUnitPrice: audited(28000, '€/véhicule', 0, 'manquante'),
+      carbonItems: [],
+      riskItems: [],
+      costItems: [
+        { id: 'q1', category: 'acquisition', label: 'Montant non sourcé', amount: audited(280000, '€', 0, 'manquante'), isRecurringYearly: false },
+        { id: 'q2', category: 'maintenance_reparations', label: 'Devis ferme', amount: audited(12000, '€/an', 100), isRecurringYearly: true },
+      ],
+    };
+    const res = TCOEngine.calculateOfferTCO(mockProject, lowQuality);
+    const heavyLineDomination = res.dataQualityScore !== undefined && res.dataQualityScore < 30;
+    return {
+      passed: heavyLineDomination && (res.dataConfidenceBreakdown?.missingShare ?? 0) > 0.5,
+      expected: 'Le poste majoritaire non sourcé fait chuter le score (< 30/100) et est signalé comme manquant',
+      actual: `Score : ${res.dataQualityScore}/100 | part de données manquantes : ${((res.dataConfidenceBreakdown?.missingShare ?? 0) * 100).toFixed(0)} %`,
+    };
+  });
+
+  // ---------------------------------------------------------------------------
+  // TCO-13 — Traçabilité ligne à ligne (explicabilité)
+  // ---------------------------------------------------------------------------
+  check('TCO-13', 'Traçabilité ligne à ligne disponible pour chaque poste (explicabilité)', 'Explicabilité', () => {
+    const traced = elec.costLineTrace ?? [];
+    const allTraced = traced.length === mockElectricOffer.costItems.length;
+    // Les traces portent le montant NOMINAL CUMULÉ de chaque ligne sur
+    // l'horizon (indexation incluse). Les lignes de valeur résiduelle sont des
+    // crédits : elles se déduisent du TCO. On vérifie donc l'identité
+    // Σ coûts − Σ crédits == TCO économique nominal.
+    const tracedCosts = traced.filter((t) => !t.isCredit).reduce((a, t) => a + t.amountNominal, 0);
+    const tracedCredits = traced.filter((t) => t.isCredit).reduce((a, t) => a + t.amountNominal, 0);
+    const coherent = Math.abs(tracedCosts - tracedCredits - elec.economicTCONominal) <= 1;
+    const versioned = elec.engineVersion === TCO_ENGINE_VERSION && !!elec.methodology;
+    return {
+      passed: allTraced && coherent && versioned,
+      expected: `1 trace par poste (${mockElectricOffer.costItems.length}), Σ coûts − Σ crédits = TCO économique nominal, version et méthodologie exposées`,
+      actual: `${traced.length} traces | Σ coûts − Σ crédits = ${Math.round(tracedCosts - tracedCredits).toLocaleString('fr-FR')} € vs TCO éco ${elec.economicTCONominal.toLocaleString('fr-FR')} € | version : ${elec.engineVersion}`,
+    };
+  });
 
   const passedCount = results.filter((r) => r.passed).length;
   return {

@@ -1,11 +1,12 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { AuthService, EnterpriseUser, SSOProvider } from '../services/authService';
-import { UserRole } from '../types/domain';
 
 interface AuthContextType {
   user: EnterpriseUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** Message d'erreur éventuel de la dernière tentative de connexion. */
+  authError: string | null;
   isLoginModalOpen: boolean;
   openLoginModal: () => void;
   closeLoginModal: () => void;
@@ -13,86 +14,76 @@ interface AuthContextType {
     email: string;
     ssoProvider: SSOProvider;
     fullName?: string;
-    role?: UserRole;
     department?: string;
   }) => Promise<EnterpriseUser>;
   logout: () => Promise<void>;
-  switchRole: (newRole: UserRole) => void;
+  /** Droits renvoyés par le serveur — utilisés uniquement pour l'affichage. */
+  permissions: string[];
+  refreshSession: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Default Corporate user (Sophie Valéry - Azure AD SSO)
-const DEFAULT_ENTERPRISE_USER: EnterpriseUser = {
-  id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-  email: 'sophie.valery@acme.com',
-  fullName: 'Sophie Valéry',
-  role: 'directeur_achats',
-  ssoProvider: 'azure_ad',
-  department: 'Direction des Achats Groupe',
-  isActive: true,
-  lastLoginAt: new Date().toISOString(),
-};
-
+/**
+ * ===========================================================================
+ * ÉTAT D'AUTHENTIFICATION — PRINCIPES
+ * ===========================================================================
+ * 1. AUCUNE session n'est créée automatiquement. La version précédente
+ *    connectait chaque visiteur avec un compte de démonstration codé en dur
+ *    (« Sophie Valéry », directeur des achats @ acme.com) dès le chargement de
+ *    la page : l'application s'ouvrait donc déjà authentifiée pour n'importe
+ *    qui, sur un tenant par défaut.
+ * 2. L'état est TOUJOURS vérifié auprès du serveur. Si le serveur ne répond pas,
+ *    l'utilisateur n'est pas authentifié.
+ * 3. Le rôle est FOURNI par le serveur et n'est pas modifiable dans
+ *    l'interface : un sélecteur de rôle côté client ne peut pas accorder de
+ *    droits, mais il laissait croire le contraire (et masquait l'absence de
+ *    contrôle serveur).
+ */
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<EnterpriseUser | null>(() => {
-    return AuthService.getCachedUser() || DEFAULT_ENTERPRISE_USER;
-  });
+  const [user, setUser] = useState<EnterpriseUser | null>(null);
+  const [permissions, setPermissions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  const refreshSession = useCallback(async () => {
+    const remoteUser = await AuthService.getCurrentUser();
+    setUser(remoteUser);
+    setPermissions(remoteUser ? await AuthService.getSessionPermissions() : []);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
-
-    // Verify session with Neon backend on startup
-    AuthService.getCurrentUser()
-      .then((remoteUser) => {
-        if (!isMounted) return;
-        if (remoteUser) {
-          setUser(remoteUser);
-        } else {
-          // If no remote session token, auto-provision default enterprise session with Azure AD
-          AuthService.loginWithSSO({
-            email: DEFAULT_ENTERPRISE_USER.email,
-            ssoProvider: DEFAULT_ENTERPRISE_USER.ssoProvider,
-            fullName: DEFAULT_ENTERPRISE_USER.fullName,
-            role: DEFAULT_ENTERPRISE_USER.role,
-            department: DEFAULT_ENTERPRISE_USER.department,
-          })
-            .then((res) => {
-              if (isMounted) setUser(res.user);
-            })
-            .catch((err) => {
-              console.warn('Auto-login fallback error:', err);
-              if (isMounted) setUser(DEFAULT_ENTERPRISE_USER);
-            });
-        }
-      })
+    refreshSession()
       .catch(() => {
-        if (isMounted) setUser(DEFAULT_ENTERPRISE_USER);
+        if (isMounted) setUser(null);
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);
       });
-
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [refreshSession]);
 
   const loginWithSSO = async (params: {
     email: string;
     ssoProvider: SSOProvider;
     fullName?: string;
-    role?: UserRole;
     department?: string;
   }) => {
     setIsLoading(true);
+    setAuthError(null);
     try {
       const res = await AuthService.loginWithSSO(params);
       setUser(res.user);
+      setPermissions(await AuthService.getSessionPermissions());
       setIsLoginModalOpen(false);
       return res.user;
+    } catch (err: any) {
+      setAuthError(err?.message ?? "Échec de l'authentification.");
+      throw err;
     } finally {
       setIsLoading(false);
     }
@@ -103,19 +94,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       await AuthService.logout();
       setUser(null);
+      setPermissions([]);
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const switchRole = (newRole: UserRole) => {
-    if (!user) return;
-    const updated: EnterpriseUser = {
-      ...user,
-      role: newRole,
-    };
-    setUser(updated);
-    AuthService.setCachedUser(updated);
   };
 
   return (
@@ -124,12 +106,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         user,
         isAuthenticated: !!user,
         isLoading,
+        authError,
         isLoginModalOpen,
         openLoginModal: () => setIsLoginModalOpen(true),
         closeLoginModal: () => setIsLoginModalOpen(false),
         loginWithSSO,
         logout,
-        switchRole,
+        permissions,
+        refreshSession,
       }}
     >
       {children}
@@ -139,7 +123,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
+  if (context === undefined) {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;

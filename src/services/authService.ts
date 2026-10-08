@@ -1,6 +1,6 @@
 import { UserRole } from '../types/domain';
 
-export type SSOProvider = 'azure_ad' | 'google_workspace' | 'auth0' | 'okta' | 'magic_link';
+export type SSOProvider = 'azure_ad' | 'google_workspace' | 'auth0' | 'okta' | 'magic_link' | 'demo_local';
 
 export interface EnterpriseUser {
   id: string;
@@ -8,137 +8,130 @@ export interface EnterpriseUser {
   fullName: string;
   role: UserRole;
   ssoProvider: SSOProvider;
-  department: string;
+  department?: string;
   isActive?: boolean;
   lastLoginAt?: string;
 }
 
 export interface SSOLoginResponse {
   success: boolean;
-  token: string;
   expiresAt: string;
+  organizationId: string;
+  organizationName?: string;
+  organizationSlug?: string | null;
+  authenticationMode?: string;
+  warning?: string;
   user: EnterpriseUser;
 }
 
-const TOKEN_KEY = 'truetco_enterprise_sso_token';
-const USER_KEY = 'truetco_enterprise_sso_user';
-
+/**
+ * ===========================================================================
+ * CLIENT D'AUTHENTIFICATION
+ * ===========================================================================
+ * CE QUI A CHANGÉ (sécurité) :
+ *   - le jeton de session n'est PLUS stocké dans localStorage : le serveur le
+ *     dépose dans un cookie HttpOnly / Secure / SameSite=Lax. Un script injecté
+ *     dans la page ne peut donc plus l'exfiltrer ;
+ *   - plus de « user » mis en cache côté navigateur : l'état d'authentification
+ *     est TOUJOURS vérifié auprès du serveur (/api/auth/me). En cas de panne
+ *     réseau, l'utilisateur est considéré non authentifié plutôt que
+ *     silencieusement considéré connecté ;
+ *   - le rôle n'est jamais choisi par le client : il provient de la session
+ *     serveur et conditionne les vérifications de permissions côté API.
+ */
 export const AuthService = {
-  getToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(TOKEN_KEY);
-  },
-
-  setToken(token: string): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(TOKEN_KEY, token);
-  },
-
-  clearSession(): void {
-    if (typeof window === 'undefined') return;
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-  },
-
-  getCachedUser(): EnterpriseUser | null {
-    if (typeof window === 'undefined') return null;
-    try {
-      const stored = localStorage.getItem(USER_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
-  },
-
-  setCachedUser(user: EnterpriseUser): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(USER_KEY, JSON.stringify(user));
-  },
-
-  // Login via Enterprise SSO provider
+  /** Connexion. En production, échoue tant qu'aucun IdP n'est branché (501). */
   async loginWithSSO(params: {
     email: string;
     ssoProvider: SSOProvider;
     fullName?: string;
-    role?: UserRole;
     department?: string;
   }): Promise<SSOLoginResponse> {
     const response = await fetch('/api/auth/sso/login', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params),
     });
 
     if (!response.ok) {
-      const err = await response.json().catch(() => ({ error: 'Échec de la connexion SSO' }));
-      throw new Error(err.error || `Erreur HTTP ${response.status}`);
+      const err = await response
+        .json()
+        .catch(() => ({ error: `Échec de l'authentification (HTTP ${response.status}).` }));
+      const error = new Error(err.error || `Erreur HTTP ${response.status}`) as Error & { code?: string };
+      error.code = err.code;
+      throw error;
     }
 
-    const data: SSOLoginResponse = await response.json();
-    this.setToken(data.token);
-    this.setCachedUser(data.user);
-    return data;
+    return (await response.json()) as SSOLoginResponse;
   },
 
-  // Check current session validity against backend
+  /** Vérifie la session courante auprès du serveur. */
   async getCurrentUser(): Promise<EnterpriseUser | null> {
-    const token = this.getToken();
-    if (!token) return null;
-
     try {
       const response = await fetch('/api/auth/me', {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
       });
-
-      if (!response.ok) {
-        this.clearSession();
-        return null;
-      }
-
+      if (!response.ok) return null;
       const data = await response.json();
-      if (data.authenticated && data.user) {
-        this.setCachedUser(data.user);
-        return data.user;
+      if (data?.authenticated && data.user) {
+        return {
+          id: data.user.id,
+          email: data.user.email,
+          fullName: data.user.fullName,
+          role: data.user.role,
+          ssoProvider: data.user.ssoProvider ?? 'demo_local',
+          department: data.user.department ?? undefined,
+          isActive: data.user.isActive,
+        } as EnterpriseUser;
       }
       return null;
-    } catch (err) {
-      console.warn('Network error while checking SSO session, fallback to cached user:', err);
-      return this.getCachedUser();
+    } catch {
+      // Serveur injoignable : aucune session ne peut être considérée valide.
+      return null;
     }
   },
 
-  // Logout current session
+  /** Droits effectifs renvoyés par le serveur (pour l'affichage uniquement). */
+  async getSessionPermissions(): Promise<string[]> {
+    try {
+      const response = await fetch('/api/auth/me', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data.permissions) ? data.permissions : [];
+    } catch {
+      return [];
+    }
+  },
+
   async logout(): Promise<void> {
-    const token = this.getToken();
-    if (token) {
-      try {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ token }),
-        });
-      } catch (err) {
-        console.warn('Failed to invalidate session on server:', err);
-      }
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch {
+      // La session serveur reste révoquée côté API lors de sa prochaine
+      // utilisation ; l'échec réseau n'est pas bloquant pour la déconnexion UI.
     }
-    this.clearSession();
   },
 
-  // Fetch all corporate users in enterprise directory
+  /** Annuaire de l'organisation (nécessite la permission user:read). */
   async getEnterpriseDirectory(): Promise<EnterpriseUser[]> {
     try {
-      const response = await fetch('/api/auth/users');
+      const response = await fetch('/api/auth/users', {
+        credentials: 'same-origin',
+        headers: { Accept: 'application/json' },
+      });
       if (!response.ok) return [];
-      return await response.json();
-    } catch (err) {
-      console.error('Failed to fetch enterprise directory:', err);
+      const data = await response.json();
+      return Array.isArray(data) ? data : (data.users ?? []);
+    } catch {
       return [];
     }
   },

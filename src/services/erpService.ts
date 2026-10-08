@@ -1,5 +1,30 @@
 import { ErpConnector, ErpSyncLog, SupplierOffer } from '../types/domain';
 
+/**
+ * ===========================================================================
+ * STATUT D'IMPLÉMENTATION — INTÉGRATION ERP
+ * ===========================================================================
+ * ❌ AUCUNE intégration ERP réelle n'est implémentée à ce jour.
+ *
+ * Ce qu'il manque pour parler d'intégration réelle :
+ *   - un adaptateur serveur par éditeur (SAP Ariba cXML, Coupa REST, Ivalua,
+ *     Oracle, Workday) avec mapping des schémas de commande ;
+ *   - une authentification sortante réellement négociée avec le client
+ *     (OAuth2 client credentials / mTLS) et des secrets stockés dans un coffre
+ *     (KMS/Vault) côté serveur, jamais dans le navigateur ;
+ *   - une file d'attente idempotente avec reprise sur erreur et journal de
+ *     synchronisation côté serveur ;
+ *   - des tests de contrat et un environnement de recette fourni par le client.
+ *
+ * En attendant, les connecteurs ci-dessous sont des JEUX DE DÉMONSTRATION et
+ * les actions de synchronisation échouent explicitement, au lieu de produire
+ * des données fictives présentées comme des données ERP réelles.
+ */
+export const ERP_INTEGRATION_IMPLEMENTED = false;
+
+export const ERP_NOT_IMPLEMENTED_MESSAGE =
+  "Intégration ERP non implémentée dans cette version : aucune donnée n'a été lue ni écrite dans un système tiers.";
+
 const STORAGE_KEYS = {
   CONNECTORS: 'truetco_erp_connectors_v1',
   LOGS: 'truetco_erp_logs_v1',
@@ -261,29 +286,30 @@ export class ErpService {
         httpCode: data.httpCode || 200,
       };
     } catch {
-      // Local fallback simulation if server route is offline
-      const durationMs = Math.round(180 + Math.random() * 140);
+      // AUCUNE simulation de succès : un test de connectivité qui ne joint pas
+      // le serveur ne prouve rien sur le connecteur. On retourne un échec
+      // explicite plutôt qu'une latence inventée et un faux « mTLS validé ».
       const log: ErpSyncLog = {
         id: `log-test-${Date.now()}`,
         connectorId,
-        connectorName: 'ERP Connecteur',
+        connectorName: connectorId,
         direction: 'outbound',
         timestamp: new Date().toISOString(),
-        status: 'success',
-        action: 'Test de connectivité / Handshake Ping (Mode Certifié)',
-        entityReference: 'Token OAuth2 Bearer validé',
-        payloadPreview: '{"status":"connected","latency_ms":' + durationMs + ',"ssl_valid_until":"2027-04-12"}',
-        httpCode: 200,
-        durationMs,
-        details: 'Connecteur testé avec succès. Authentification mutuelle mTLS et jeton de session opérationnels.',
+        status: 'failed',
+        action: 'Test de connectivité — NON EXÉCUTÉ',
+        entityReference: 'Serveur TrueTCO indisponible',
+        payloadPreview: JSON.stringify({ error: 'SERVER_UNREACHABLE' }, null, 2),
+        httpCode: 503,
+        durationMs: Date.now() - start,
+        details: ERP_NOT_IMPLEMENTED_MESSAGE,
       };
       this.addLog(log);
 
       return {
-        success: true,
-        durationMs,
-        message: 'Handshake réussi (Latence ' + durationMs + 'ms) — Session ERP active.',
-        httpCode: 200,
+        success: false,
+        durationMs: Date.now() - start,
+        message: ERP_NOT_IMPLEMENTED_MESSAGE,
+        httpCode: 503,
       };
     }
   }
@@ -307,112 +333,29 @@ export class ErpService {
       }
     } catch {}
 
-    // Fallback simulation: return a realistic offer generated from the ERP
-    const connector = this.getConnectors().find((c) => c.id === connectorId) || this.getConnectors()[0];
-    const newOffer: SupplierOffer = {
-      id: `off-erp-${Date.now()}`,
-      projectId,
-      supplierId: 'sup-erp-sync',
-      supplierName: `${connector.name} Sync Partner`,
-      offerReference: `ERP-${connector.code.toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`,
-      isResponsibleCandidate: true,
-      quantity: 50,
-      apparentUnitPrice: {
-        value: 74500,
-        unit: '€/unité',
-        sourceType: 'verifiee',
-        sourceName: `${connector.name} RFQ Export`,
-        confidenceLevel: 96,
-        lastUpdated: new Date().toISOString().split('T')[0],
-        updatedBy: 'ERP Integration',
-      },
-      apparentTotal: 3725000,
-      deliveryLeadTimeWeeks: 10,
-      warrantyMonths: 48,
-      expectedLifespanYears: 5,
-      costItems: [
-        {
-          id: `c-erp-1-${Date.now()}`,
-          category: 'acquisition',
-          label: 'Prix d’achat matériel remisé grand compte',
-          amount: {
-            value: 3725000,
-            unit: '€',
-            sourceType: 'verifiee',
-            sourceName: 'Grille tarifaire négociée Ariba',
-            confidenceLevel: 98,
-            lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'ERP Integration',
-          },
-          isRecurringYearly: false,
-          yearOccurrences: [],
-        },
-        {
-          id: `c-erp-2-${Date.now()}`,
-          category: 'maintenance_reparations',
-          label: 'Contrat d’entretien full-service constructeur',
-          amount: {
-            value: 48000,
-            unit: '€/an',
-            sourceType: 'verifiee',
-            sourceName: 'SLA Entreprise 48h',
-            confidenceLevel: 94,
-            lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'ERP Integration',
-          },
-          isRecurringYearly: true,
-          yearOccurrences: [1, 2, 3, 4, 5],
-        },
-      ],
-      carbonItems: [
-        {
-          scope: 'Scope 3 - Amont',
-          lifecyclePhase: 'fabrication',
-          emissionsPerUnitTonneCO2e: {
-            value: 12.4,
-            unit: 'tCO2e/unité',
-            sourceType: 'source_externe',
-            sourceName: 'Fiche ACV fournisseur certifiée',
-            confidenceLevel: 92,
-            lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'ERP Integration',
-          },
-          totalLifecycleEmissions: 620,
-          emissionFactorSource: 'Base Empreinte ADEME v23',
-        },
-      ],
-      riskItems: [],
-      technicalSuitabilityScore: 91,
-      notes: `Importé automatiquement via le connecteur ${connector.name} le ${new Date().toLocaleString('fr-FR')}.`,
-    };
-
-    const log: ErpSyncLog = {
+    // AUCUN fallback ne fabrique d'offre : la version précédente créait une
+    // proposition commerciale de 3 725 000 € notée « Prix d'achat vérifié,
+    // confiance 96 % » alors qu'aucun système externe n'avait été contacté.
+    this.addLog({
       id: `log-sync-${Date.now()}`,
       connectorId,
-      connectorName: connector.name,
+      connectorName: connectorId,
       direction: 'inbound',
       timestamp: new Date().toISOString(),
-      status: 'success',
-      action: 'Importation devis consultation RFQ',
-      entityReference: newOffer.offerReference,
-      payloadPreview: JSON.stringify({ offer: newOffer }, null, 2),
-      httpCode: 200,
-      durationMs: 380,
-      details: `1 nouvelle proposition commerciale reçue et normalisée sous le projet ${projectId}.`,
-    };
-    this.addLog(log);
-
-    // Update connector counters
-    this.updateConnector(connectorId, {
-      inboundOffersCount: (connector.inboundOffersCount || 0) + 1,
-      lastSyncTimestamp: new Date().toISOString(),
+      status: 'failed',
+      action: 'Importation devis consultation RFQ — NON EXÉCUTÉE',
+      entityReference: 'Aucune',
+      payloadPreview: JSON.stringify({ error: 'ERP_NOT_IMPLEMENTED', projectId }, null, 2),
+      httpCode: 501,
+      durationMs: 0,
+      details: ERP_NOT_IMPLEMENTED_MESSAGE,
     });
 
     return {
-      success: true,
-      offersImported: 1,
-      offers: [newOffer],
-      message: `1 offre fournisseur importée avec succès depuis ${connector.name}.`,
+      success: false,
+      offersImported: 0,
+      offers: [],
+      message: ERP_NOT_IMPLEMENTED_MESSAGE,
     };
   }
 
@@ -437,45 +380,27 @@ export class ErpService {
       }
     } catch {}
 
-    const connector = this.getConnectors().find((c) => c.id === connectorId) || this.getConnectors()[0];
-    const poReference = `PO-${connector.code.toUpperCase()}-${Math.floor(100000 + Math.random() * 900000)}`;
-
-    const log: ErpSyncLog = {
+    // AUCUN bon de commande fictif : la version précédente retournait une
+    // référence PO aléatoire présentée comme créée dans l'ERP du client.
+    this.addLog({
       id: `log-award-${Date.now()}`,
       connectorId,
-      connectorName: connector.name,
+      connectorName: connectorId,
       direction: 'outbound',
       timestamp: new Date().toISOString(),
-      status: 'success',
-      action: 'Transmission d’adjudication TCO & Création Bon de Commande',
-      entityReference: poReference,
-      payloadPreview: JSON.stringify(
-        {
-          po_number: poReference,
-          project_id: projectId,
-          winning_offer_id: offerId,
-          rationale,
-          awarded_by: 'Comité des Engagements TrueTCO',
-          timestamp: new Date().toISOString(),
-        },
-        null,
-        2
-      ),
-      httpCode: 201,
-      durationMs: 440,
-      details: `Bon de commande ${poReference} créé avec succès dans l'environnement ${connector.name}.`,
-    };
-    this.addLog(log);
-
-    this.updateConnector(connectorId, {
-      outboundAwardsCount: (connector.outboundAwardsCount || 0) + 1,
-      lastSyncTimestamp: new Date().toISOString(),
+      status: 'failed',
+      action: 'Transmission adjudication TCO — NON EXÉCUTÉE',
+      entityReference: 'Aucun bon de commande émis',
+      payloadPreview: JSON.stringify({ error: 'ERP_NOT_IMPLEMENTED', projectId, offerId }, null, 2),
+      httpCode: 501,
+      durationMs: 0,
+      details: ERP_NOT_IMPLEMENTED_MESSAGE,
     });
 
     return {
-      success: true,
-      poReference,
-      message: `Décision d'adjudication transmise avec succès à ${connector.name}. Bon de commande généré : ${poReference}.`,
+      success: false,
+      poReference: '',
+      message: ERP_NOT_IMPLEMENTED_MESSAGE,
     };
   }
 }

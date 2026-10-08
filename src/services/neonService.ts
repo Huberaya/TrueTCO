@@ -14,26 +14,39 @@ export interface NeonUserRecord {
 
 export class NeonService {
   /**
-   * Helper to construct headers with tenant and auth context
+   * En-têtes d'appel API.
+   *
+   * SÉCURITÉ : le tenant n'est plus transmis par le client. L'ancienne version
+   * envoyait `x-tenant-id` (valeur du localStorage) et un jeton lu dans
+   * localStorage ; le serveur acceptait cet en-tête comme source de vérité, ce
+   * qui permettait d'écrire dans n'importe quelle organisation. Le serveur
+   * déduit désormais l'organisation de la session (cookie HttpOnly) et rejette
+   * toute valeur contradictoire avec un 403 TENANT_MISMATCH.
    */
-  private static getHeaders(extraHeaders: Record<string, string> = {}, explicitTenantId?: string): Record<string, string> {
-    const headers: Record<string, string> = {
+  private static getHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
+    return {
       'Content-Type': 'application/json',
       ...extraHeaders,
     };
+  }
 
-    if (typeof window !== 'undefined') {
-      const tenantId = explicitTenantId || TenantService.getActiveTenantId();
-      if (tenantId) {
-        headers['x-tenant-id'] = tenantId;
-      }
-      const token = localStorage.getItem('truetco_enterprise_sso_token');
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`;
-      }
+  /** Vrai si une session est active (vérifiée par le serveur, jamais déduite localement). */
+  public static async hasValidSession(): Promise<boolean> {
+    try {
+      const res = await this.request('/api/auth/me', { credentials: 'same-origin' });
+      return res.ok;
+    } catch {
+      return false;
     }
+  }
 
-    return headers;
+  /**
+   * Fetch authentifié : envoie systématiquement le cookie de session.
+   * Aucune écriture n'est tentée sans session valide : en l'absence de session,
+   * l'opération échoue explicitement au lieu d'être simulée localement.
+   */
+  private static async request(path: string, init: RequestInit): Promise<Response> {
+    return fetch(path, { ...init, credentials: 'same-origin' });
   }
 
   /**
@@ -46,7 +59,7 @@ export class NeonService {
     role: UserRole;
   }): Promise<NeonUserRecord | null> {
     try {
-      const res = await fetch('/api/users/sync', {
+      const res = await this.request('/api/users/sync', {
         method: 'POST',
         headers: this.getHeaders(),
         body: JSON.stringify(params),
@@ -70,9 +83,9 @@ export class NeonService {
    */
   public static async saveProject(project: Project, tenantId?: string): Promise<boolean> {
     try {
-      const res = await fetch('/api/projects', {
+      const res = await this.request('/api/projects', {
         method: 'POST',
-        headers: this.getHeaders({}, tenantId),
+        headers: this.getHeaders(),
         body: JSON.stringify(project),
       });
       return res.ok;
@@ -87,9 +100,9 @@ export class NeonService {
    */
   public static async saveOffer(offer: SupplierOffer, tenantId?: string): Promise<boolean> {
     try {
-      const res = await fetch('/api/offers', {
+      const res = await this.request('/api/offers', {
         method: 'POST',
-        headers: this.getHeaders({}, tenantId),
+        headers: this.getHeaders(),
         body: JSON.stringify(offer),
       });
       return res.ok;
@@ -104,9 +117,9 @@ export class NeonService {
    */
   public static async saveAuditLog(log: AuditLogEntry, tenantId?: string): Promise<boolean> {
     try {
-      const res = await fetch('/api/audit-logs', {
+      const res = await this.request('/api/audit-logs', {
         method: 'POST',
-        headers: this.getHeaders({}, tenantId),
+        headers: this.getHeaders(),
         body: JSON.stringify(log),
       });
       return res.ok;
@@ -121,9 +134,9 @@ export class NeonService {
    */
   public static async saveSupplier(supplier: any, tenantId?: string): Promise<boolean> {
     try {
-      const res = await fetch('/api/suppliers', {
+      const res = await this.request('/api/suppliers', {
         method: 'POST',
-        headers: this.getHeaders({}, tenantId),
+        headers: this.getHeaders(),
         body: JSON.stringify(supplier),
       });
       return res.ok;
@@ -138,8 +151,8 @@ export class NeonService {
    */
   public static async fetchSuppliers(tenantId?: string): Promise<any[] | null> {
     try {
-      const res = await fetch('/api/suppliers', {
-        headers: this.getHeaders({}, tenantId),
+      const res = await this.request('/api/suppliers', {
+        headers: this.getHeaders(),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -156,8 +169,8 @@ export class NeonService {
    */
   public static async fetchAuditLogs(tenantId?: string): Promise<AuditLogEntry[] | null> {
     try {
-      const res = await fetch('/api/audit-logs', {
-        headers: this.getHeaders({}, tenantId),
+      const res = await this.request('/api/audit-logs', {
+        headers: this.getHeaders(),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -174,9 +187,9 @@ export class NeonService {
    */
   public static async saveBenchmark(benchmark: any, tenantId?: string): Promise<boolean> {
     try {
-      const res = await fetch('/api/benchmarks', {
+      const res = await this.request('/api/benchmarks', {
         method: 'POST',
-        headers: this.getHeaders({}, tenantId),
+        headers: this.getHeaders(),
         body: JSON.stringify(benchmark),
       });
       return res.ok;
@@ -191,8 +204,8 @@ export class NeonService {
    */
   public static async fetchBenchmarks(tenantId?: string): Promise<any[] | null> {
     try {
-      const res = await fetch('/api/benchmarks', {
-        headers: this.getHeaders({}, tenantId),
+      const res = await this.request('/api/benchmarks', {
+        headers: this.getHeaders(),
       });
       if (!res.ok) return null;
       const data = await res.json();
@@ -209,8 +222,8 @@ export class NeonService {
    */
   public static async fetchProjects(tenantId?: string): Promise<Project[] | null> {
     try {
-      const res = await fetch('/api/projects', {
-        headers: this.getHeaders({}, tenantId),
+      const res = await this.request('/api/projects', {
+        headers: this.getHeaders(),
       });
       if (!res.ok) return null;
       const data = await res.json();

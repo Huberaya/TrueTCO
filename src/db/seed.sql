@@ -4,14 +4,21 @@
 -- =============================================================================
 
 -- 1. Organisation Racine
-INSERT INTO organizations (id, name, legal_registration_number, country_code, default_currency)
+INSERT INTO organizations (id, name, slug, domain, legal_registration_number, country_code, default_currency, data_residency, subscription_tier)
 VALUES (
     'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
     'Acme Logistics Europe SAS',
+    'acme-logistics',        -- utilisé pour la résolution de tenant
+    'acme.com',              -- domaine e-mail de l'organisation
     '849 203 910 00024',
     'FR',
-    'EUR'
-) ON CONFLICT DO NOTHING;
+    'EUR',
+    'EU-FRANCE-PARIS',
+    'starter'
+)
+ON CONFLICT (id) DO UPDATE SET
+    slug = COALESCE(organizations.slug, EXCLUDED.slug),
+    domain = COALESCE(organizations.domain, EXCLUDED.domain);
 
 -- 2. Utilisateurs
 INSERT INTO users (id, organization_id, email, full_name, role)
@@ -22,13 +29,49 @@ VALUES
 ON CONFLICT DO NOTHING;
 
 -- 3. Référentiels Institutionnels Externes
-INSERT INTO reference_benchmarks (organization_id, name, category, source, value, unit, valid_until, confidence_score, last_audit_date, legal_reference)
+-- ⚠️ Les valeurs ci-dessous sont des HYPOTHÈSES DE DÉMONSTRATION. La version
+-- précédente attribuait à la « Commission Quinet » une valeur de 120 €/tCO2e
+-- (avec un score de confiance de 95) qui ne correspond à aucune publication, et
+-- citait des identifiants ADEME non vérifiés. Une donnée d'externalité qui
+-- n'est pas traçable à une publication réelle ne doit jamais être présentée
+-- comme une référence officielle.
+INSERT INTO reference_benchmarks (organization_id, name, category, source, value, unit, valid_until, confidence_score, last_audit_date, legal_reference, methodology)
 VALUES
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Valeur Tutélaire de l''Action Climat (Quinet)', 'carbone', 'Commission Quinet / France Stratégie', 120.00, '€/tCO2e', '2030-12-31T23:59:59Z', 95, CURRENT_TIMESTAMP, 'Rapport Quinet II - Trajectoire Neutralité Carbone 2050'),
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Facteur Émission Électricité Mix Réseau France', 'carbone', 'Base Empreinte ADEME', 0.0571, 'kgCO2e/kWh', '2026-12-31T23:59:59Z', 98, CURRENT_TIMESTAMP, 'Identifiant ADEME 27584 - Mix moyen consommation BT'),
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Facteur Émission Gazole Routier B7', 'carbone', 'Base Empreinte ADEME', 3.1600, 'kgCO2e/Litre', '2026-12-31T23:59:59Z', 95, CURRENT_TIMESTAMP, 'Identifiant ADEME 31201 - Combustion + Amont raffinage'),
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Coût Moyen Pondéré du Capital (WACC)', 'financier', 'Direction Financière Groupe / Banque de France', 0.0450, 'taux décimal (4.5%)', '2026-12-31T23:59:59Z', 92, CURRENT_TIMESTAMP, 'Politique financière interne 2026 & OAT 10 ans + spread corporate'),
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Index d''Inflation Énergétique Projetée', 'energie', 'Commission de Régulation de l''Énergie (CRE)', 0.0550, 'taux décimal (5.5%)', '2027-12-31T23:59:59Z', 88, CURRENT_TIMESTAMP, 'Perspectives pluriannuelles marché de gros CRE / RTE')
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+     'Prix interne du carbone — hypothèse de démonstration',
+     'carbone',
+     'Hypothèse de démonstration TrueTCO (non institutionnelle)',
+     120.00, '€/tCO2e', '2030-12-31T23:59:59Z', 55, CURRENT_TIMESTAMP,
+     'À REMPLACER. Référence publique à consulter : France Stratégie, « La valeur tutélaire du carbone — Rapport de la commission Quinet II » (2019), valeur cible 250 €/tCO2e en 2030 (54 €/tCO2e en 2018).',
+     'Méthode de référence à appliquer : valeur tutélaire publiée, ou prix interne validé par la Direction Financière. Hypothèse de calcul interne, non une obligation réglementaire.'),
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+     'Facteur d''émission électricité — mix consommation France',
+     'carbone',
+     'ADEME — Base Empreinte (base publique de facteurs d''émission)',
+     0.0520, 'kgCO2e/kWh', '2026-12-31T23:59:59Z', 75, CURRENT_TIMESTAMP,
+     'Base Empreinte ADEME — électricité, mix moyen de consommation, France continentale. MILLÉSIME ET IDENTIFIANT DE FICHE À VÉRIFIER sur la base avant tout usage décisionnel.',
+     'Facteur annualisé du mix de consommation (ACV) — cadre ISO 14040/44'),
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+     'Facteur d''émission gazole routier B7',
+     'carbone',
+     'ADEME — Base Empreinte (base publique de facteurs d''émission)',
+     3.1600, 'kgCO2e/Litre', '2026-12-31T23:59:59Z', 75, CURRENT_TIMESTAMP,
+     'Base Empreinte ADEME — gazole routier B7, périmètre « puits au réservoir ». MILLÉSIME ET IDENTIFIANT DE FICHE À VÉRIFIER.',
+     'ACV — combustion + amont raffinage'),
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+     'Taux d''actualisation (WACC) — hypothèse de démonstration',
+     'wacc',
+     'Hypothèse de démonstration TrueTCO (non institutionnelle)',
+     0.0450, 'taux décimal (4.5%)', '2026-12-31T23:59:59Z', 50, CURRENT_TIMESTAMP,
+     'À REMPLACER par le WACC ou le taux de rejet communiqué par la Direction Financière de l''entreprise. Aucune source institutionnelle unique ne publie de « taux de hurdle achats ».',
+     'Coût moyen pondéré du capital (WACC) — méthode à appliquer : structure de capital, coût de la dette après impôt, bêta sectoriel.'),
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+     'Inflation énergétique — hypothèse de démonstration',
+     'energie',
+     'Hypothèse de démonstration TrueTCO (non institutionnelle)',
+     0.0550, 'taux décimal (5.5%)', '2027-12-31T23:59:59Z', 50, CURRENT_TIMESTAMP,
+     'À REMPLACER par la trajectoire de prix retenue par l''entreprise (contrat d''énergie, PPA, scénarios CRE/RTE datés).',
+     'Hypothèse d''indexation annuelle des coûts énergétiques.')
 ON CONFLICT DO NOTHING;
 
 -- 4. Fournisseurs
@@ -62,10 +105,15 @@ VALUES (
 ) ON CONFLICT DO NOTHING;
 
 -- 6. Offres Fournisseurs
-INSERT INTO supplier_offers (id, project_id, supplier_id, offer_reference, apparent_total, is_responsible_candidate, economic_tco_nominal, lifecycle_cost_lcc, total_lifecycle_co2e_tonnes, monetized_carbon_total, risk_exposition_total, total_comprehensive_tco, confidence_score)
+-- Les colonnes d'agrégats (economic_tco_nominal, lifecycle_cost_lcc, …) sont
+-- volontairement NULL : ce sont des RÉSULTATS de calcul, produits par le moteur
+-- à partir des postes de coût. Stocker des résultats figés crée une seconde
+-- source de vérité qui diverge silencieusement du moteur. Les valeurs
+-- recalculées sont exposées avec leur version de moteur (engine_version).
+INSERT INTO supplier_offers (id, project_id, supplier_id, offer_reference, apparent_total, quantity, is_responsible_candidate, confidence_score)
 VALUES
-    ('e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'OFFRE-ECO-50E', 360000.00, true, 442000.00, 421500.00, 32.500, 3900.00, 7700.00, 453600.00, 92),
-    ('e1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'OFFRE-STD-50D', 280000.00, false, 672000.00, 628000.00, 245.000, 29400.00, 26600.00, 728000.00, 81)
+    ('e0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'OFFRE-ECO-50E', 360000.00, 50, true, 92),
+    ('e1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'OFFRE-STD-50D', 280000.00, 50, false, 81)
 ON CONFLICT DO NOTHING;
 
 -- 7. Journal d'Audit Initial

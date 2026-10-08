@@ -1560,77 +1560,115 @@ export const SEED_OFFERS: SupplierOffer[] = [
   },
 ];
 
+/**
+ * RÉFÉRENTIEL D'EXTERNALITÉS — JEU DE DÉMONSTRATION
+ * ---------------------------------------------------------------------------
+ * ⚠️ REGLE PRODUIT (non négociable) : une donnée présentée comme
+ * « institutionnelle » doit être traçable à une publication officielle
+ * (émetteur, titre, millésime, identifiant de fiche, périmètre géographique).
+ *
+ * La version précédente de ce fichier présentait comme « Commission Quinet »
+ * une valeur de 120 €/tCO2e avec la référence « Trajectoire 2026-2030
+ * Actualisée » — publication qui n'existe pas — et des identifiants ADEME non
+ * vérifiables. Ces valeurs sont désormais explicites : soit sourcées de façon
+ * vérifiable, soit marquées `isDemoHypothesis: true`.
+ *
+ * Un client doit REMPLACER ces valeurs par ses propres références (politique
+ * financière interne, ACV fournisseur, facteurs ADEME INIES / Base Empreinte
+ * du millésime en vigueur) avant tout usage décisionnel réel.
+ */
 export const SEED_BENCHMARKS: ExternalityReferenceBenchmark[] = [
   {
-    id: 'bm-quinet-2026',
-    name: 'Valeur Tutélaire de l\'Action pour le Climat (Rapport Quinet)',
+    id: 'bm-carbone-hypothese-demo',
+    name: 'Prix interne du carbone — hypothèse de démonstration',
     category: 'carbone',
     value: 120,
     unit: '€/tCO2e',
-    source: 'France Stratégie / Commission Quinet',
+    source: 'Hypothèse de démonstration TrueTCO (non institutionnelle)',
     sourceUrl: 'https://www.strategie.gouv.fr/publications/valeur-tutelaire-carbone',
-    documentRef: 'Trajectoire 2026-2030 Actualisée',
+    documentRef:
+      'Hypothèse à remplacer. Référence publique à consulter : France Stratégie, « La valeur tutélaire du carbone — Rapport de la commission Quinet II » (2019), valeur cible 250 €/tCO2e en 2030, 54 €/tCO2e en 2018.',
     lastUpdated: '2026-01-10',
-    countryScope: 'France / Union Européenne',
-    methodology: 'Coût d\'abattement marginal requis pour atteindre la neutralité 2050',
+    countryScope: 'France / Union européenne',
+    methodology:
+      'Hypothèse d’illustration : interpolation linéaire indicative entre la valeur 2018 (54 €/t) et la cible 2030 (250 €/t) de la commission Quinet II. Cette interpolation n’est PAS une valeur officielle et doit être validée par la Direction Financière.',
     valueRange: [95, 160],
-    confidenceLevel: 95,
+    confidenceLevel: 55,
+    isDemoHypothesis: true,
+    verificationNote:
+      'HYPOTHÈSE DE DÉMONSTRATION. La traduction monétaire des émissions dans TrueTCO est une convention de calcul interne, pas une recommandation d’investissement ni une obligation réglementaire.',
   },
   {
     id: 'bm-ademe-diesel',
-    name: 'Facteur d\'émission Gazole B7 Utilitaire',
+    name: "Facteur d'émission gazole routier B7",
     category: 'carbone',
     value: 3.16,
     unit: 'kg CO2e/litre',
-    source: 'ADEME - Base Empreinte',
+    source: 'ADEME — Base Empreinte (base publique de facteurs d’émission)',
     sourceUrl: 'https://base-empreinte.ademe.fr/',
-    documentRef: 'Identifiant 28419 (Puits au réservoir)',
+    documentRef:
+      'Base Empreinte ADEME — gazole routier B7, périmètre « puits au réservoir ». L’identifiant de fiche, le millésime et le périmètre (combustion seule vs amont inclus) DOIVENT être vérifiés sur la base avant usage décisionnel.',
     lastUpdated: '2026-01-15',
     countryScope: 'France',
-    methodology: 'Analyse de Cycle de Vie (ACV) ISO 14040/44',
-    confidenceLevel: 98,
+    methodology: 'Analyse de cycle de vie (ACV) — cadre ISO 14040/44',
+    confidenceLevel: 75,
+    verificationNote:
+      'Millésime et identifiant de fiche non consolidés : à confirmer directement dans la Base Empreinte avant toute décision engageante.',
   },
   {
     id: 'bm-ademe-elec-fr',
-    name: 'Mix Électrique Français Moyen Réseau',
+    name: 'Facteur d’émission du mix électrique français (consommation)',
     category: 'carbone',
     value: 0.052,
     unit: 'kg CO2e/kWh',
-    source: 'ADEME - Base Empreinte',
+    source: 'ADEME — Base Empreinte (base publique de facteurs d’émission)',
     sourceUrl: 'https://base-empreinte.ademe.fr/',
-    documentRef: 'Identifiant 28422 (Mix de consommation 2025/2026)',
+    documentRef:
+      'Base Empreinte ADEME — électricité, mix moyen de consommation, France continentale. Millésime à vérifier (les valeurs publiées pour le mix consommateur français sont de l’ordre de 0,05 à 0,06 kgCO2e/kWh selon le millésime et le périmètre).',
     lastUpdated: '2026-01-15',
     countryScope: 'France',
-    methodology: 'Bilan Carbone réglementaire',
-    confidenceLevel: 98,
+    methodology: 'Facteur annualisé du mix de consommation — Bilan GES réglementaire',
+    confidenceLevel: 75,
+    verificationNote:
+      'Ordre de grandeur conforme à la base publique, mais MILLÉSIME À VÉRIFIER : un facteur obsolète peut fausser un arbitrage sur un horizon de 5 à 10 ans.',
   },
   {
-    id: 'bm-wacc-corporate',
-    name: 'Coût Moyen Pondéré du Capital (WACC Achats Industriels)',
+    id: 'bm-wacc-hypothese-demo',
+    name: 'Taux d’actualisation (WACC) — hypothèse de démonstration',
     category: 'wacc',
     value: 0.045,
-    unit: '% (décimal)',
-    source: 'Banque de France & consensus Trésorerie d\'Entreprise',
-    documentRef: 'Enquête annuelle taux de hurdle B2B 2026',
+    unit: 'taux décimal',
+    source: 'Hypothèse de démonstration TrueTCO (non institutionnelle)',
+    documentRef:
+      'Aucune source institutionnelle unique ne publie un « taux de hurdle achats » : ce paramètre dépend de la structure de capital, du secteur et du pays de chaque entreprise. À remplacer par le WACC communiqué par votre Direction Financière.',
     lastUpdated: '2026-02-01',
-    countryScope: 'Zone Euro',
-    methodology: 'CAPM + Prime de risque de liquidité',
+    countryScope: 'Zone euro',
+    methodology:
+      'Hypothèse d’illustration (4,5 %). Méthode de référence à appliquer : coût moyen pondéré du capital ou taux de rejet validé par la Direction Financière.',
     valueRange: [0.035, 0.065],
-    confidenceLevel: 92,
+    confidenceLevel: 50,
+    isDemoHypothesis: true,
+    verificationNote:
+      'VALEUR DE DÉMONSTRATION. Le taux d’actualisation est déterminant sur les arbitrages CAPEX/OPEX : ne jamais conserver cette valeur pour une décision réelle.',
   },
   {
-    id: 'bm-ademe-it-recond',
-    name: 'Émissions évitées reconditionnement ordinateur portable',
+    id: 'bm-it-recond-hypothese-demo',
+    name: 'Émissions évitées par le reconditionnement d’un ordinateur portable',
     category: 'carbone',
     value: 255,
     unit: 'kg CO2e évités/machine',
-    source: 'ADEME - Direction Économie Circulaire',
+    source: 'Hypothèse de démonstration TrueTCO (ordre de grandeur sectoriel)',
     sourceUrl: 'https://presse.ademe.fr/2022/01/etude-evaluation-de-limpact-environnemental-du-reconditionnement.html',
-    documentRef: 'Étude d\'impact environnemental du reconditionnement B2B',
+    documentRef:
+      'Ordre de grandeur issu de la littérature publique sur le reconditionnement informatique (ADEME, étude 2022). À remplacer par l’ACV fournisseur réellement fournie (rapport PCF/EPD).',
     lastUpdated: '2025-11-20',
     countryScope: 'Europe',
-    methodology: 'ACV comparative berceau à la tombe',
-    confidenceLevel: 94,
+    methodology:
+      'ACV comparative berceau à la tombe (reconditionné vs neuf équivalent). Le résultat dépend fortement des hypothèses de durée de vie et de mix électrique : ne pas extrapoler sans ACV produit.',
+    confidenceLevel: 60,
+    isDemoHypothesis: true,
+    verificationNote:
+      'HYPOTHÈSE DE DÉMONSTRATION. Le produit exige une ACV fournisseur (FDES/EPD ou PCF) pour tout chiffre d’évitement présenté à un tiers.',
   },
 ];
 

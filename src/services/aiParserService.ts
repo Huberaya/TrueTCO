@@ -173,6 +173,20 @@ SYNTHÈSE DU BILAN DES ÉMISSIONS DE GAZ À EFFET DE SERRE (12 ANS D'EXPLOITATIO
   },
 ];
 
+const newId = (): string =>
+  typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}`;
+
+/** Référence d'offre déterministe et traçable, dérivée du nom de fichier. */
+const referenceFromFilename = (filename: string): string => {
+  const base = (filename || 'document')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .replace(/[^a-zA-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toUpperCase()
+    .slice(0, 40);
+  return `${base || 'DOCUMENT'}-IMPORT-${new Date().toISOString().slice(0, 10)}`;
+};
+
 export class AiParserService {
   /**
    * Parse document either via server API (Gemini 3.8 Flash) or smart fallback
@@ -199,329 +213,86 @@ export class AiParserService {
           return data.result;
         }
       }
-    } catch {}
 
-    // Fallback heuristic extraction
-    return this.parseLocalHeuristic(params.filename, params.content, params.category);
+      // Réponse non exploitable : message d'erreur du serveur remonté tel quel.
+      const errorBody = await res.json().catch(() => ({} as any));
+      return this.buildUnavailableResult(
+        params.filename,
+        params.category,
+        errorBody?.error ??
+          `Service d'extraction indisponible (HTTP ${res.status}). Saisie manuelle requise : aucune donnée n'a été extraite.`
+      );
+    } catch (err: any) {
+      return this.buildUnavailableResult(
+        params.filename,
+        params.category,
+        "Service d'extraction injoignable. Aucune donnée n'a été extraite : saisir l'offre manuellement ou reconfigurer le service. " +
+          '(Aucune estimation automatique n’est produite, afin de ne jamais introduire de montant inventé dans une décision d’achat.)'
+      );
+    }
   }
 
   /**
    * Deterministic and smart heuristic parser for offline resilience
    */
-  private static parseLocalHeuristic(
+  /**
+   * =======================================================================
+   * EXTRACTION LOCALE — SUPPRIMÉE VOLONTAIREMENT
+   * =======================================================================
+   * La version précédente ne « parsait » rien : elle appliquait des
+   * expressions régulières au texte collé et renvoyait, selon les mots
+   * reconnus, un devis ENTIÈREMENT FABRIQUÉ (fournisseur, SIREN, prix
+   * unitaire, total, empreinte carbone) avec un score de confiance de 96 à 98
+   * et des postes marqués `sourceType: 'verifiee'`.
+   *
+   * Conséquence concrète : tout document contenant le mot « 50 » ou
+   * « véhicule » produisait un faux devis Renault Trucks de 3 850 000 €
+   * présenté comme une extraction vérifiée. Un tel comportement est
+   * incompatible avec un usage décisionnel (il injecte des montants inventés
+   * dans une décision d'achat).
+   *
+   * Comportement retenu :
+   *   - si le service d'extraction (clé API) n'est pas configuré ou échoue,
+   *     AUCUNE donnée n'est produite ;
+   *   - l'utilisateur est explicitement invité à saisir l'offre manuellement ;
+   *   - le résultat est marqué `extractionStatus: 'unavailable'` afin que
+   *     l'interface affiche un avertissement et n'active jamais le bouton
+   *     d'injection dans le projet.
+   */
+  private static buildUnavailableResult(
     filename: string,
-    content: string,
-    category: DocumentCategory
+    category: DocumentCategory,
+    reason: string
   ): DocumentParseResult {
-    const isElectricFlotte = /master|renault|utilitaire|véhicule|50/i.test(content);
-    const isCircularIt = /circularpc|dell|portable|ordinateur|200|reconditionn/i.test(content);
-    const isGrundfos = /grundfos|pompe|station|ie5/i.test(content);
-    const isFives = /fives|four|verre|saint-gobain/i.test(content);
-
-    if (isElectricFlotte) {
-      return {
-        id: `parsed-${Date.now()}`,
-        filename,
-        docCategory: category,
-        parsedAt: new Date().toISOString(),
-        confidenceScore: 96,
-        extractedSupplier: {
-          name: 'Renault Trucks France SAS',
-          siren: '954 506 077',
-          country: 'France',
-          contact: 'Direction des Ventes Entreprises (Lyon)',
-        },
-        offerReference: 'DEV-2026-RT-0849',
-        currency: 'EUR',
-        quantity: 50,
-        unitName: 'utilitaires',
-        apparentUnitPrice: 77000,
-        apparentTotal: 3850000,
-        deliveryLeadTimeWeeks: 8,
-        warrantyMonths: 60,
-        expectedLifespanYears: 5,
-        technicalSuitabilityScore: 92,
-        isResponsibleCandidate: true,
-        summaryAnalysis:
-          'Proposition complète 100% électrique de 50 VUL avec pack 52 kWh, infrastructure de charge 25 bornes doubles (85k€) et contrat de maintenance 5 ans.',
-        keyDifferentiators: [
-          'Autonomie adaptée aux tournées urbaines et zones ZFE',
-          'Garantie batterie constructeur 5 ans / 160 000 km',
-          'Recyclabilité 95% certifiée en boucle fermée européenne',
-        ],
-        costItems: [
-          {
-            id: 'c-parsed-1',
-            category: 'acquisition',
-            label: 'Achat de 50 fourgons Renault Master E-Tech (52 kWh)',
-            amount: 3850000,
-            sourceType: 'verifiee',
-            confidenceLevel: 98,
-            notes: 'Prix unitaire remisé de 77 000 € HT',
-          },
-          {
-            id: 'c-parsed-2',
-            category: 'installation_mise_en_service',
-            label: '25 Bornes de recharge intelligentes 22 kW AC et raccordement TGBT',
-            amount: 85000,
-            sourceType: 'verifiee',
-            confidenceLevel: 95,
-            notes: 'Subvention Advenir déduite',
-          },
-          {
-            id: 'c-parsed-3',
-            category: 'maintenance_reparations',
-            label: 'Contrat d’entretien complet constructeur Excellence EV (5 ans)',
-            amount: 210000,
-            sourceType: 'verifiee',
-            confidenceLevel: 95,
-            notes: '42 000 € HT par an',
-          },
-          {
-            id: 'c-parsed-4',
-            category: 'energie_consommables',
-            label: 'Consommation électrique annuelle estimée (306 250 kWh/an)',
-            amount: 230000,
-            sourceType: 'estimee',
-            confidenceLevel: 90,
-            notes: '46 000 € HT / an sur 5 ans',
-          },
-        ],
-        carbonItems: [
-          {
-            scope: 'Scope 3 - Amont',
-            label: 'Empreinte carbone fabrication et batterie (ACV berceau à la porte)',
-            emissionsTCO2e: 640,
-            emissionsPerUnit: 12.8,
-            factorSource: 'Base Empreinte ADEME / ACV Renault',
-            confidenceLevel: 94,
-          },
-          {
-            scope: 'Scope 2',
-            label: 'Émissions en phase d’usage électricité réseau mix français',
-            emissionsTCO2e: 84,
-            emissionsPerUnit: 1.68,
-            factorSource: 'Réseau RTE 55g/kWh',
-            confidenceLevel: 92,
-          },
-        ],
-        riskItems: [
-          {
-            category: 'interruption_service',
-            description: 'Risque de saturation de puissance électrique lors de la recharge simultanée nocturne',
-            financialImpact: 15000,
-            probability: 0.25,
-            riskLevel: 'faible',
-          },
-        ],
-      };
-    }
-
-    if (isCircularIt) {
-      return {
-        id: `parsed-${Date.now()}`,
-        filename,
-        docCategory: category,
-        parsedAt: new Date().toISOString(),
-        confidenceScore: 98,
-        extractedSupplier: {
-          name: 'CircularPC Technologies SAS',
-          siren: '881 204 192',
-          country: 'France',
-          contact: 'Service Grands Comptes (Nantes)',
-        },
-        offerReference: 'OFF-CPC-2026-0312',
-        currency: 'EUR',
-        quantity: 200,
-        unitName: 'postes portables',
-        apparentUnitPrice: 790,
-        apparentTotal: 158000,
-        deliveryLeadTimeWeeks: 2,
-        warrantyMonths: 48,
-        expectedLifespanYears: 4,
-        technicalSuitabilityScore: 93,
-        isResponsibleCandidate: true,
-        summaryAnalysis:
-          'Offre circulaire reconditionnée certifiée Grade A+ avec 48 mois de garantie sur site J+1, masterisation d’entreprise et engagement de rachat (buy-back) en fin de vie.',
-        keyDifferentiators: [
-          'Économie immédiate de 51% sur le prix d’acquisition facial',
-          'Évitement certifié de 70,4 tCO2e par rapport au neuf',
-          'Garantie et pièces détachées garanties 4 ans avec stock tampon',
-        ],
-        costItems: [
-          {
-            id: 'c-parsed-it-1',
-            category: 'acquisition',
-            label: '200 Postes Dell Latitude 5420 i7 / 16Go reconditionnés Grade A+',
-            amount: 158000,
-            sourceType: 'verifiee',
-            confidenceLevel: 99,
-            notes: '790 € HT par poste',
-          },
-          {
-            id: 'c-parsed-it-2',
-            category: 'installation_mise_en_service',
-            label: 'Forfait de masterisation d’entreprise et étiquetage code-barres',
-            amount: 7000,
-            sourceType: 'verifiee',
-            confidenceLevel: 98,
-            notes: '35 € HT par poste',
-          },
-          {
-            id: 'c-parsed-it-3',
-            category: 'maintenance_reparations',
-            label: 'Garantie étendue 48 mois sur site J+1 et stock tampon 5 machines',
-            amount: 38000,
-            sourceType: 'verifiee',
-            confidenceLevel: 96,
-            notes: '9 500 € HT par an',
-          },
-          {
-            id: 'c-parsed-it-4',
-            category: 'valeur_residuelle',
-            label: 'Valeur de reprise contractuelle garantie en fin de vie (Buy-back)',
-            amount: -18000,
-            sourceType: 'verifiee',
-            confidenceLevel: 95,
-            notes: '-90 € HT par poste à 48 mois',
-          },
-        ],
-        carbonItems: [
-          {
-            scope: 'Scope 3 - Amont',
-            label: 'Empreinte carbone fabrication résiduelle reconditionné (ADEME)',
-            emissionsTCO2e: 9.6,
-            emissionsPerUnit: 0.048,
-            factorSource: 'Étude ADEME Numérique Circulaire',
-            confidenceLevel: 95,
-          },
-        ],
-        riskItems: [],
-      };
-    }
-
-    if (isGrundfos) {
-      return {
-        id: `parsed-${Date.now()}`,
-        filename,
-        docCategory: category,
-        parsedAt: new Date().toISOString(),
-        confidenceScore: 95,
-        extractedSupplier: {
-          name: 'Grundfos Pompes SAS',
-          siren: '304 882 109',
-          country: 'France / Danemark',
-          contact: 'Division Eau & Environnement',
-        },
-        offerReference: 'CR-IE5-VEOLIA-2026',
-        currency: 'EUR',
-        quantity: 1,
-        unitName: 'système de pompage',
-        apparentUnitPrice: 215000,
-        apparentTotal: 215000,
-        deliveryLeadTimeWeeks: 6,
-        warrantyMonths: 60,
-        expectedLifespanYears: 10,
-        technicalSuitabilityScore: 96,
-        isResponsibleCandidate: true,
-        summaryAnalysis:
-          'Fiche EPD certifiée INIES : Moteur ultra-premium IE5 réduisant de 40% la consommation d’électricité et les pertes en service continu.',
-        keyDifferentiators: [
-          'Rendement hydraulique de classe internationale 96,2%',
-          'Recyclabilité 98,5% des métaux (fonte, inox 316, cuivre)',
-          'Crédit fin de vie de -18,2 tCO2e',
-        ],
-        costItems: [
-          {
-            id: 'c-parsed-p-1',
-            category: 'acquisition',
-            label: 'Pompe centrifuge Grundfos CR-IE5 avec variateur intégré',
-            amount: 215000,
-            sourceType: 'verifiee',
-            confidenceLevel: 98,
-          },
-          {
-            id: 'c-parsed-p-2',
-            category: 'energie_consommables',
-            label: 'Consommation électrique cumulée 10 ans (72 000 kWh/an)',
-            amount: 720000,
-            sourceType: 'estimee',
-            confidenceLevel: 94,
-          },
-        ],
-        carbonItems: [
-          {
-            scope: 'Scope 3 - Amont',
-            label: 'Fabrication et matières premières (Modules A1-A3 FDES)',
-            emissionsTCO2e: 60,
-            emissionsPerUnit: 60,
-            factorSource: 'Base INIES n° 2026-GRUND-IE5',
-            confidenceLevel: 96,
-          },
-          {
-            scope: 'Scope 2',
-            label: 'Émissions usage électricité sur 10 ans (Modules B1-B7)',
-            emissionsTCO2e: 1900,
-            emissionsPerUnit: 1900,
-            factorSource: 'Mix réseau électrique 55g/kWh',
-            confidenceLevel: 94,
-          },
-        ],
-        riskItems: [],
-      };
-    }
-
-    // Default Generic Parsed Document
     return {
-      id: `parsed-${Date.now()}`,
+      id: `parse-${Date.now()}`,
       filename,
       docCategory: category,
       parsedAt: new Date().toISOString(),
-      confidenceScore: 88,
-      extractedSupplier: {
-        name: 'Fournisseur Extrait par IA',
-        country: 'France',
-      },
-      offerReference: `DEV-AUTO-${Math.floor(1000 + Math.random() * 9000)}`,
+      confidenceScore: 0,
+      extractionStatus: 'unavailable',
+      extractionMessage: reason,
+      requiresHumanInput: true,
+      extractedSupplier: { name: '' },
+      offerReference: '',
       currency: 'EUR',
-      quantity: 1,
-      unitName: 'lot',
-      apparentUnitPrice: 125000,
-      apparentTotal: 125000,
-      deliveryLeadTimeWeeks: 6,
-      warrantyMonths: 36,
-      expectedLifespanYears: 5,
-      technicalSuitabilityScore: 88,
+      quantity: 0,
+      unitName: '',
+      apparentUnitPrice: 0,
+      apparentTotal: 0,
+      deliveryLeadTimeWeeks: 0,
+      warrantyMonths: 0,
+      expectedLifespanYears: 0,
+      technicalSuitabilityScore: 0,
       isResponsibleCandidate: false,
-      summaryAnalysis: 'Document analysé par le moteur IA TrueTCO. Postes tarifaires et indicateurs carbone normalisés.',
-      keyDifferentiators: ['Validation automatique du format', 'Contrôle de cohérence TVA et totaux'],
-      costItems: [
-        {
-          id: 'c-parsed-def-1',
-          category: 'acquisition',
-          label: 'Montant d’acquisition principal extrait',
-          amount: 125000,
-          sourceType: 'verifiee',
-          confidenceLevel: 90,
-        },
-      ],
-      carbonItems: [
-        {
-          scope: 'Scope 3 - Amont',
-          label: 'Facteur carbone estimé par défaut',
-          emissionsTCO2e: 45,
-          emissionsPerUnit: 45,
-          factorSource: 'Base Empreinte ADEME',
-          confidenceLevel: 80,
-        },
-      ],
+      summaryAnalysis: '',
+      keyDifferentiators: [],
+      costItems: [],
+      carbonItems: [],
       riskItems: [],
-    };
+    } as DocumentParseResult;
   }
 
-  /**
-   * Converts a DocumentParseResult into an active SupplierOffer ready for TrueTCO
-   */
   public static convertToSupplierOffer(parseResult: DocumentParseResult, projectId: string): SupplierOffer {
     return {
       id: `off-parsed-${Date.now()}`,
@@ -545,7 +316,7 @@ export class AiParserService {
       warrantyMonths: parseResult.warrantyMonths,
       expectedLifespanYears: parseResult.expectedLifespanYears,
       costItems: parseResult.costItems.map((ci) => ({
-        id: ci.id || `c-${Math.random()}`,
+        id: ci.id || newId(),
         category: ci.category,
         label: ci.label,
         amount: {

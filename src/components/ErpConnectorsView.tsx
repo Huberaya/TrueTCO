@@ -155,6 +155,25 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Avertissement d'implémentation — obligatoire : les connecteurs de cette
+          page sont des jeux de démonstration, aucun système tiers n'est joint. */}
+      <div className="p-3.5 bg-amber-950/40 border border-amber-800/70 rounded-xl text-xs text-amber-200 flex items-start gap-2.5">
+        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <div className="font-semibold">
+            Module de démonstration — aucune intégration ERP réelle n'est implémentée.
+          </div>
+          <div className="text-amber-200/80 leading-relaxed">
+            Les connecteurs listés ci-dessous (SAP Ariba, Coupa, Ivalua, Jaggaer), leurs compteurs
+            et leurs journaux sont des jeux de données figés à des fins de maquette. Aucun appel
+            réseau, aucune authentification OAuth2/mTLS et aucun échange cXML/REST n'a lieu : les
+            tests de connectivité et les synchronisations se terminent explicitement en échec tant
+            que les adaptateurs serveur ne sont pas livrés. Les API doivent être fournies par le
+            client (URL, identifiants, environnement de recette) pour une mise en œuvre réelle.
+          </div>
+        </div>
+      </div>
+
       {/* Top Banner */}
       <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
@@ -166,7 +185,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
             Intégration Amont / Aval (SAP Ariba, Coupa, Ivalua, Jaggaer)
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Passerelle sécurisée mTLS / OAuth2 pour la réception automatisée des dossiers de consultation (Inbound) et l'émission directe des bons de commande PO après arbitrage TCO (Outbound).
+            Cible fonctionnelle : réception automatisée des dossiers de consultation (Inbound) et émission des bons de commande (Outbound) après arbitrage TCO.
           </p>
         </div>
 
@@ -224,7 +243,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
             {activeCount} <span className="text-xs font-normal text-slate-500">/ {connectors.length} ERP</span>
           </div>
           <div className="text-[10px] text-emerald-400 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Connectivité TLS 1.3 certifiée
+            <AlertTriangle className="w-3 h-3 text-amber-400" /> Maquette — aucune connexion réelle
           </div>
         </div>
 
@@ -641,49 +660,49 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
         <div className="p-6 bg-slate-900/90 border border-slate-800 rounded-xl space-y-4 text-xs text-slate-300">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Architecture d'Intégration & Spécifications Techniques — Chantier 7
+              Spécifications Techniques CIBLES — Chantier 7 (non implémentées)
             </h3>
-            <span className="text-sky-400 font-mono font-bold">Protocoles Standardisés</span>
+            <span className="text-amber-400 font-mono font-bold">À construire</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
             <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
               <div className="font-bold text-white flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-sky-400" />
-                1. Intégration SAP Ariba (cXML 1.2)
+                1. Cible à développer — SAP Ariba (cXML 1.2)
               </div>
               <p className="text-slate-400 text-[11px]">
-                Support natif du protocole <strong>cXML QuoteMessage</strong> pour aspirer les bordereaux de prix sans ressaisie manuelle. En sortie, émission du <strong>OrderRequest</strong> pour création du bon de commande standard SAP MM.
+                À développer : réception des <strong>cXML QuoteMessage</strong> (bordereaux de prix) et émission d'un <strong>OrderRequest</strong> vers SAP MM. Aucun adaptateur cXML n'existe aujourd'hui dans le produit.
               </p>
             </div>
 
             <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
               <div className="font-bold text-white flex items-center gap-2">
                 <Radio className="w-4 h-4 text-indigo-400" />
-                2. Coupa BSM & Ivalua (API REST & Webhooks)
+                2. Cible à développer — Coupa BSM & Ivalua (REST & Webhooks)
               </div>
               <p className="text-slate-400 text-[11px]">
-                Appels signés HMAC-SHA256 avec jeton <strong>OAuth2 Bearer</strong> rafraîchi toutes les 60 minutes. Mapping automatique des tables d'articles, imputations analytiques et centres de profits.
+                À développer : appels signés HMAC-SHA256, jetons <strong>OAuth2</strong> côté serveur, mapping des tables d'articles et des axes analytiques. Non implémenté à ce jour (aucun appel sortant).
               </p>
             </div>
 
             <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
               <div className="font-bold text-white flex items-center gap-2">
                 <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                3. Sécurité mTLS & Chiffrement de Bout-en-Bout
+                3. Exigences de sécurité (à mettre en œuvre)
               </div>
               <p className="text-slate-400 text-[11px]">
-                Échanges chiffrés en <strong>TLS 1.3</strong> avec filtrage d'adresses IP dédiées et certificats X.509 d'entreprise. Les clés d'API et secrets clients sont masqués au repos.
+                Cible : <strong>TLS 1.3</strong>, authentification mutuelle mTLS avec certificats X.509 d'entreprise et stockage des secrets dans un coffre serveur (KMS/Vault). Aujourd'hui, les « identifiants » affichés dans cette page sont des libellés de démonstration stockés dans le navigateur.
               </p>
             </div>
 
             <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
               <div className="font-bold text-white flex items-center gap-2">
                 <FileCode className="w-4 h-4 text-amber-400" />
-                4. Piste d'Audit & Conformité Réversible
+                4. Piste d'audit (cible)
               </div>
               <p className="text-slate-400 text-[11px]">
-                Chaque transaction d'import/export est historisée dans le journal immuable du Chantier 5 avec horodatage UTC et identifiant de session de l'auditeur.
+                Cible : historisation serveur horodatée de chaque transaction d'import/export, rattachée à la session authentifiée. Le journal actuel est applicatif (navigateur) et non immuable : il ne constitue pas une piste d'audit opposable.
               </p>
             </div>
           </div>

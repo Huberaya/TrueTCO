@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { AdjudicationCertificate, DigitalSignatureRecord, Project, SupplierOffer, SignatureRole } from '../types/domain';
 import { SignatureService } from '../services/signatureService';
+import { TCOEngine } from '../engine/tcoEngine';
 
 interface DigitalSignatureViewProps {
   project: Project;
@@ -32,15 +33,30 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
 }) => {
   const winningOffer = offers.find((o) => o.isResponsibleCandidate) || offers[0];
 
-  const [certificate, setCertificate] = useState<AdjudicationCertificate>(() =>
-    SignatureService.getCertificate(project.id, winningOffer, project)
-  );
+  const [certificate, setCertificate] = useState<AdjudicationCertificate>(() => {
+    // Le TCO affiché sur l'attestation provient du moteur de calcul, jamais
+    // d'un coefficient appliqué au prix facial (l'ancienne version majorait le
+    // montant facial de 8 % sans aucune justification méthodologique).
+    let computed: { totalComprehensiveTCO?: number; totalLifecycleCO2eTonnes?: number } | undefined;
+    if (winningOffer) {
+      try {
+        const result = TCOEngine.calculateOfferTCO(project, winningOffer);
+        computed = {
+          totalComprehensiveTCO: result.lifecycleCostLCC,
+          totalLifecycleCO2eTonnes: result.totalLifecycleCO2eTonnes,
+        };
+      } catch {
+        computed = undefined;
+      }
+    }
+    return SignatureService.getCertificate(project.id, winningOffer, project, computed);
+  });
 
   const [activeSignModalRole, setActiveSignModalRole] = useState<SignatureRole | null>(null);
   const [signerNameInput, setSignerNameInput] = useState('');
   const [signerTitleInput, setSignerTitleInput] = useState('');
   const [signerEmailInput, setSignerEmailInput] = useState('');
-  const [signerComment, setSignerComment] = useState('Lu et approuvé. Engagement budgétaire et conformité TCO/CSRD validés sans réserve.');
+  const [signerComment, setSignerComment] = useState('');
   const [consentChecked, setConsentChecked] = useState(false);
   const [copiedHash, setCopiedHash] = useState(false);
 
@@ -150,7 +166,7 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
             Chantier 9 · Signature Électronique Certifiée & Scellé Numérique
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            Circuit d'Engagement Juridique & Attestation eIDAS (Règlement UE 910/2014)
+            Circuit Interne de Validation de la Décision d'Achat
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
             Formalisation probante de la décision d'arbitrage Comex : scellement cryptographique SHA-256 de l'offre retenue, horodatage certifié RFC 3161 et signatures quadripartites qualifiées (Acheteur, RSE, Finance, DG).
@@ -168,6 +184,19 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
         </div>
       </div>
 
+      {/* Bandeau de statut juridique — obligatoire */}
+      <div className="p-3.5 bg-amber-950/40 border border-amber-800/70 rounded-xl text-xs text-amber-200 flex items-start gap-2.5">
+        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+        <div className="space-y-1">
+          <div className="font-semibold">
+            Document de travail interne — aucune signature électronique qualifiée n'est produite par cette version.
+          </div>
+          <div className="text-amber-200/80 leading-relaxed">
+            {SignatureService.LEGAL_DISCLAIMER}
+          </div>
+        </div>
+      </div>
+
       {/* Case Seal Status Card */}
       <div className="p-5 bg-slate-900/90 border border-slate-800 rounded-xl space-y-4 shadow-lg">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -179,7 +208,7 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
               <div className="flex items-center gap-2">
                 <span className="text-sm font-bold text-white">{certificate.certificateId}</span>
                 <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${certificate.isFullyExecuted ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}`}>
-                  {certificate.isFullyExecuted ? 'SCELLÉ COMPLET — VALIDÉ COMEX' : 'EN COURS DE SIGNATURE'}
+                  {certificate.isFullyExecuted ? 'VALIDATIONS INTERNES COMPLÈTES' : 'EN COURS DE VALIDATION INTERNE'}
                 </span>
               </div>
               <div className="text-xs text-slate-400 mt-0.5">
@@ -190,7 +219,7 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
 
           <div className="text-right">
             <div className="text-xs font-mono font-bold text-white">
-              Progression : {signedCount} / {certificate.signatures.length} Signatures Scellées
+              Progression : {signedCount} / {certificate.signatures.length} validations internes enregistrées
             </div>
             <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
               Horodatage : {new Date(certificate.generatedAt).toLocaleString('fr-FR')}
@@ -229,15 +258,17 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
             </div>
           </div>
           <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-lg">
-            <div className="text-[10px] text-slate-400 font-sans">CO2 Évité Net</div>
+            <div className="text-[10px] text-slate-400 font-sans">
+              Carbone du scénario retenu
+            </div>
             <div className="text-sm font-bold text-teal-400 mt-0.5">
-              {certificate.awardedCarbonAvoidedTonnes} tCO2e
+              {(certificate.awardedCarbonTonnes ?? 0).toLocaleString('fr-FR')} tCO2e
             </div>
           </div>
           <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-lg">
-            <div className="text-[10px] text-slate-400 font-sans">Norme Juridique</div>
-            <div className="text-sm font-bold text-indigo-400 mt-0.5">
-              eIDAS Qualifié QES
+            <div className="text-[10px] text-slate-400 font-sans">Statut juridique</div>
+            <div className="text-sm font-bold text-amber-400 mt-0.5">
+              Non qualifiée (interne)
             </div>
           </div>
         </div>
@@ -283,7 +314,7 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
                         : 'bg-amber-950 text-amber-400 border border-amber-800'
                     }`}
                   >
-                    {isSigned ? 'SIGNÉ eIDAS' : 'EN ATTENTE'}
+                    {isSigned ? 'VALIDATION ENREGISTRÉE' : 'EN ATTENTE'}
                   </span>
                 </div>
 
@@ -405,7 +436,7 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
                   />
                 </div>
                 <div className="text-[10px] text-slate-500 mt-1 font-mono">
-                  Certificat émis : ANSSI / CertEurope eIDAS QES · Algorithme SHA-256 + RSA-4096
+                  Empreinte d'intégrité SHA-256 calculée localement · AUCUN certificat n'est délivré par TrueTCO
                 </div>
               </div>
 
@@ -419,7 +450,7 @@ export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
                   className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-0"
                 />
                 <label htmlFor="consentCheck" className="text-[11px] text-slate-300 leading-relaxed cursor-pointer select-none">
-                  Je certifie sur l’honneur avoir vérifié l’exactitude de l’arbitrage TCO/LCC et donne mon accord exprès pour l'engagement juridique et financier de la dépense (Règlement eIDAS art. 25).
+                  Je confirme avoir vérifié l'exactitude de l'arbitrage TCO/LCC exposé ci-dessus et j'approuve la décision d'achat. Je comprends que cette validation est enregistrée dans l'application et ne constitue pas une signature électronique qualifiée au sens du règlement (UE) n° 910/2014.
                 </label>
               </div>
 

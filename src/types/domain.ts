@@ -124,7 +124,7 @@ export interface AuditedValue<T = number> {
 
 export interface CostBreakdownItem {
   id: string;
-  category: 
+  category:
     | 'acquisition'
     | 'logistique_douanes'
     | 'installation_mise_en_service'
@@ -135,12 +135,20 @@ export interface CostBreakdownItem {
     | 'risques_operationnels'
     | 'externalite_carbone'
     | 'fin_de_vie_recyclage'
+    | 'indisponibilite_operationnelle'
+    | 'fiscalite_taxes'
+    | 'deploiement'
     | 'valeur_residuelle'; // Valeur négative (récupération d'actif)
   label: string;
   amount: AuditedValue<number>;
   isRecurringYearly: boolean;
   yearlyInflationType?: 'general' | 'energy' | 'maintenance' | 'none';
   yearOccurrences?: number[]; // [1, 2, 3, 4, 5]
+  /**
+   * Alias toléré de `yearOccurrences`, émis historiquement par les imports ERP
+   * et le parser IA. Le moteur honore les deux champs (aucune perte silencieuse).
+   */
+  annualOccurrenceYears?: number[];
 }
 
 export interface RiskExpositionItem {
@@ -198,12 +206,65 @@ export interface SupplierOffer {
 
 export interface YearCashFlow {
   year: number;
+  /** Coût nominal complet de l'année (économique + risque + carbone) — v2 */
   nominalCost: number;
   discountFactor: number;
+  /** Coût actualisé complet (économique + risque + carbone) — v2 */
   discountedCost: number;
   cumulativeDiscountedCost: number;
   carbonEmissionsTonnes: number;
   carbonCostNominal: number;
+  // --- Ventilation v2 (traçabilité auditable) -----------------------------
+  economicNominalCost?: number;
+  economicDiscountedCost?: number;
+  capexNominalCost?: number;
+  opexNominalCost?: number;
+  riskNominalCost?: number;
+  riskDiscountedCost?: number;
+  carbonDiscountedCost?: number;
+  salvageNominalCost?: number;
+  endOfLifeNominalCost?: number;
+}
+
+export interface CostLineTrace {
+  id: string;
+  label: string;
+  declaredCategory: string;
+  category: string;
+  amountNominal: number;
+  amountDiscounted: number;
+  occurrences: number[];
+  indexation: string;
+  sourceName: string;
+  sourceType: DataSourceType | string;
+  confidenceLevel: number;
+  isCredit: boolean;
+}
+
+export interface CalculationWarning {
+  code: string;
+  severity: 'critique' | 'avertissement' | 'information';
+  message: string;
+  amount?: number;
+  itemId?: string;
+}
+
+export interface DataConfidenceBreakdown {
+  weightedScore: number;
+  method: string;
+  bySourceType: Record<string, { amount: number; share: number }>;
+  missingAmount: number;
+  missingShare: number;
+}
+
+export interface UncertaintyRange {
+  minTCO: number;
+  maxTCO: number;
+  /** @deprecated v1 : champ trompeur, conservé en optionnel pour compatibilité */
+  confidenceIntervalPercent?: number;
+  method?: 'envelope_par_type_de_source';
+  isStatisticalConfidenceInterval?: boolean;
+  dispersionPercent?: number;
 }
 
 export interface TCOCalculationResult {
@@ -224,6 +285,10 @@ export interface TCOCalculationResult {
   adminComplianceTotal: number;
   salvageValueTotal: number; // Positive credit / reduction of TCO
   endOfLifeRecyclingTotal: number;
+  /** Montant des postes dont la catégorie n'a pas été reconnue (comptés prudemment) */
+  unallocatedCostTotal?: number;
+
+  quantity?: number;
 
   economicTCONominal: number; // Standard economic TCO before risks and externalities
 
@@ -240,27 +305,43 @@ export interface TCOCalculationResult {
   // Lifecycle Costing (LCC) - Discounted Cash Flows
   discountRateUsed: number;
   cashFlowsByYear: YearCashFlow[];
-  lifecycleCostLCC: number; // Net Present Value (NPV) of all life cycle costs
+  /**
+   * Valeur Actuelle Nette du coût complet : économique + risque + carbone.
+   * v2 : périmètre strictement identique à `totalComprehensiveTCO` (nominal).
+   */
+  lifecycleCostLCC: number;
+  /** Valeur Actuelle Nette du périmètre économique seul (hors risque et carbone) */
+  economicLCC?: number;
 
   // Data Quality and Uncertainty
-  dataQualityScore: number; // 0 - 100%
-  uncertaintyRange: {
-    minTCO: number;
-    maxTCO: number;
-    confidenceIntervalPercent: number; // e.g. 90%
-  };
+  dataQualityScore: number; // 0 - 100%, pondéré par la matérialité
+  uncertaintyRange: UncertaintyRange;
+  dataConfidenceBreakdown?: DataConfidenceBreakdown;
 
   // Environmental Impact
   totalLifecycleCO2eTonnes: number;
+
+  // --- Traçabilité & auditabilité (v2) ------------------------------------
+  costLineTrace?: CostLineTrace[];
+  warnings?: CalculationWarning[];
+  isComplete?: boolean;
+  engineVersion?: string;
+  methodology?: Record<string, string>;
 }
 
 export interface BreakEvenAnalysis {
   hasBreakEven: boolean;
   breakEvenMonth: number | null; // e.g. 28 months
-  initialPriceDeltaPercent: number; // e.g. +14.2% initial acquisition cost
-  monthlyOperatingSavings: number; // e.g. 1,420 € / month saved during usage
+  initialPriceDeltaPercent: number; // Écart de prix facial (information)
+  monthlyOperatingSavings: number; // e.g. 1,420 € / month saved during usage (nominal)
   breakEvenDescription: string;
   crossoverYear: number | null;
+  /** Écart réel de dépense Année 0 (CAPEX), base du calcul du point mort — v2 */
+  initialOutlayDelta?: number;
+  initialOutlayDeltaPercent?: number;
+  /** Méthode utilisée : `discounted_cumulative_crossover` (référence) ou repli legacy */
+  method?: 'discounted_cumulative_crossover' | 'linear_undiscounted_legacy';
+  finalDiscountedDelta?: number;
 }
 
 export interface SensitivityDriver {
@@ -270,6 +351,11 @@ export interface SensitivityDriver {
   unit: string;
   lowValueImpactOnDeltaTCO: number; // Impact in € on difference vs baseline
   highValueImpactOnDeltaTCO: number;
+  lowValue?: number;
+  highValue?: number;
+  /** Indicateur commun sur lequel tous les drivers sont mesurés (comparabilité) */
+  metric?: 'delta_comprehensive_npv';
+  spreadOnDeltaTCO?: number;
   sensitivityRank: 'critique' | 'fort' | 'moyen' | 'faible';
   explanation: string;
 }
@@ -283,11 +369,14 @@ export interface ScenarioResult {
     failureRateMultiplier: number;
     discountRate: number;
   };
+  isRelativeToProjectBase?: boolean;
   resultsByOfferId: Record<string, {
     nominalTCO: number;
     discountedLCC: number;
     deltaVsCheapestNominal: number;
+    deltaVsCheapestNpv?: number;
     isBestChoice: boolean;
+    isBestChoiceByNpv?: boolean;
   }>;
 }
 
@@ -308,6 +397,14 @@ export interface AuditLogEntry {
 }
 
 export interface ExternalityReferenceBenchmark {
+  /**
+   * `true` lorsque la valeur est une HYPOTHÈSE DE DÉMONSTRATION et non une
+   * donnée institutionnelle vérifiée. L'interface doit alors l'afficher
+   * explicitement et interdire sa présentation comme référence officielle.
+   */
+  isDemoHypothesis?: boolean;
+  /** Avertissement affiché à l'utilisateur (millésime, périmètre, limites). */
+  verificationNote?: string;
   id: string;
   name: string;
   category: 'carbone' | 'wacc' | 'energie_kwh' | 'recyclage' | 'energie' | 'dechets' | 'pollution_locale';
@@ -379,6 +476,14 @@ export interface DocumentParseResult {
   docCategory: DocumentCategory;
   parsedAt: string;
   confidenceScore: number; // 0-100%
+  /**
+   * 'unavailable' : aucun moteur d'extraction disponible → aucune donnée n'a
+   * été produite et une saisie humaine est requise. L'interface ne doit pas
+   * proposer d'injecter ce résultat dans le projet.
+   */
+  extractionStatus?: 'extracted' | 'unavailable';
+  extractionMessage?: string;
+  requiresHumanInput?: boolean;
   extractedSupplier: {
     name: string;
     siren?: string;
@@ -472,6 +577,15 @@ export interface AdjudicationCertificate {
   sealedHash: string;
   signatures: DigitalSignatureRecord[];
   isFullyExecuted: boolean;
+  /** Statut juridique réel du document. 'non_qualifiee' tant qu'aucun
+   *  prestataire de confiance eIDAS n'est intégré. */
+  legalStatus?: 'non_qualifiee' | 'qualifiee';
+  /** Avertissement légal affiché et imprimé avec le document. */
+  legalDisclaimer?: string;
+  /** Marqueur interne : 'false' = aucun contenu fabriqué (identités, séries, IP). */
+  containsFabricatedIdentity?: boolean;
+  /** Carbone du scénario retenu (tCO2e) — jamais un « évitement » sans base de comparaison. */
+  awardedCarbonTonnes?: number;
 }
 
 /**
@@ -517,6 +631,19 @@ export interface CsrdExecutiveReport {
   scope3UpstreamAvoidedTCO2e: number;
 
   activities: TaxonomyActivityAlignment[];
-  auditorVerificationStatus: 'certifie_sans_reserve' | 'revue_en_cours' | 'conforme_csrd';
-  independentAuditorName: string; // e.g. 'PwC Audit & Sustainability / OTI Agréé'
+  auditorVerificationStatus:
+    | 'non_verifie'
+    | 'certifie_sans_reserve'
+    | 'revue_en_cours'
+    | 'conforme_csrd';
+  /**
+   * Nom de l'organisme ayant réellement revu le rapport. VIDE tant qu'aucun
+   * auditeur n'a été mandaté : TrueTCO ne peut pas attribuer une revue à un
+   * tiers qui ne l'a pas réalisée.
+   */
+  independentAuditorName: string;
+  /** Avertissements de complétude (données manquantes, périmètres non évalués). */
+  dataWarnings?: string[];
+  /** Base de calcul effectivement utilisée pour chaque agrégat. */
+  computationBasis?: Record<string, string>;
 }

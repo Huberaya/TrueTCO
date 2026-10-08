@@ -97,8 +97,50 @@ export class StorageService {
   }
 
   // --- Benchmarks ---
+  /**
+   * Identifiants du jeu de démonstration historique dont les valeurs étaient
+   * présentées comme des références institutionnelles (« Commission Quinet
+   * 2026 », « Enquête taux de hurdle BdB 2026 ») alors qu'aucune publication
+   * correspondante n'existe. Ils sont remplacés par le jeu corrigé, qui
+   * marque explicitement ces valeurs comme hypothèses de démonstration.
+   */
+  private static readonly LEGACY_FABRICATED_BENCHMARK_IDS = [
+    'bm-quinet-2026',
+    'bm-wacc-corporate',
+    'bm-ademe-elec-fr',
+    'bm-ademe-diesel',
+    'bm-ademe-it-recond',
+  ];
+
   public static getBenchmarks(): ExternalityReferenceBenchmark[] {
-    return this.load<ExternalityReferenceBenchmark[]>(STORAGE_KEYS.BENCHMARKS, SEED_BENCHMARKS);
+    const stored = this.load<ExternalityReferenceBenchmark[]>(STORAGE_KEYS.BENCHMARKS, SEED_BENCHMARKS);
+    if (!Array.isArray(stored) || stored.length === 0) return SEED_BENCHMARKS;
+
+    const correctedById = new Map(SEED_BENCHMARKS.map((b) => [b.id, b]));
+    let migrated = false;
+    const sanitized = stored.map((b) => {
+      const corrected = correctedById.get(b.id);
+      if (corrected) {
+        migrated = true;
+        return corrected;
+      }
+      if (b.isDemoHypothesis === undefined && !b.sourceUrl && !b.documentRef) {
+        // Valeur importée sans provenance : elle reste utilisable, mais elle est
+        // désormais signalée comme non vérifiable au lieu d'être présentée
+        // comme une donnée officielle.
+        migrated = true;
+        return {
+          ...b,
+          isDemoHypothesis: true,
+          verificationNote:
+            'Provenance incomplète : aucune URL ni référence documentaire vérifiable. À confirmer avant usage décisionnel.',
+        };
+      }
+      return b;
+    });
+
+    if (migrated) this.save(STORAGE_KEYS.BENCHMARKS, sanitized);
+    return sanitized;
   }
 
   public static saveBenchmarks(benchmarks: ExternalityReferenceBenchmark[]): void {

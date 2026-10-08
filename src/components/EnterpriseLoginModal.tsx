@@ -116,7 +116,6 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
       await loginWithSSO({
         email: u.email,
         fullName: u.fullName,
-        role: u.role,
         department: u.department,
         ssoProvider: u.ssoProvider,
       });
@@ -141,7 +140,6 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
       await loginWithSSO({
         email: customEmail.trim(),
         fullName: customName.trim() || customEmail.split('@')[0],
-        role: customRole,
         department: customDept.trim() || 'Direction des Achats',
         ssoProvider: customProvider,
       });

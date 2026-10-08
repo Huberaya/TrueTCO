@@ -12,6 +12,7 @@ import {
   X,
   History,
   AlertCircle,
+  AlertTriangle,
   FileCheck2,
 } from 'lucide-react';
 
@@ -40,13 +41,19 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newCategory, setNewCategory] = useState<'carbone' | 'energie' | 'dechets' | 'wacc' | 'pollution_locale'>('carbone');
-  const [newValue, setNewValue] = useState(150);
+  const [newValue, setNewValue] = useState(0);
   const [newUnit, setNewUnit] = useState('€/tCO2e');
-  const [newSource, setNewSource] = useState('Commission Quinet / France Stratégie');
-  const [newSourceUrl, setNewSourceUrl] = useState('https://www.strategie.gouv.fr');
-  const [newCountryScope, setNewCountryScope] = useState('France / UE');
-  const [newMethodology, setNewMethodology] = useState('Valeur tutélaire de l\'action pour le climat (Trajectoire 2026-2030)');
-  const [newConfidence, setNewConfidence] = useState(95);
+  // Plus aucune source institutionnelle pré-remplie : un référentiel saisi par
+  // défaut (« Commission Quinet », « ADEME »…) laissait croire à une donnée
+  // officielle alors qu'elle n'était pas renseignée par l'utilisateur.
+  const [newSource, setNewSource] = useState('');
+  const [newSourceUrl, setNewSourceUrl] = useState('');
+  const [newCountryScope, setNewCountryScope] = useState('France');
+  const [newMethodology, setNewMethodology] = useState('');
+  const [newDocumentRef, setNewDocumentRef] = useState('');
+  const [newRangeMin, setNewRangeMin] = useState('');
+  const [newRangeMax, setNewRangeMax] = useState('');
+  const [newConfidence, setNewConfidence] = useState(50);
 
   const filteredBenchmarks = benchmarks.filter((b) => {
     const matchesSearch =
@@ -88,6 +95,11 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
     e.preventDefault();
     if (!newName.trim() || !onAddBenchmark) return;
 
+    // Un intervalle d'incertitude ne se déduit pas automatiquement de la valeur
+    // pivot (±15 % était appliqué sans base méthodologique) : il est soit saisi,
+    // soit absent.
+    const hasRange = newRangeMin.trim() !== '' && newRangeMax.trim() !== '';
+
     const newBench: ExternalityReferenceBenchmark = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`,
       name: newName.trim(),
@@ -99,9 +111,12 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
       lastUpdated: new Date().toISOString().split('T')[0],
       countryScope: newCountryScope.trim(),
       methodology: newMethodology.trim(),
-      valueRange: [Number(newValue) * 0.85, Number(newValue) * 1.15],
+      valueRange: hasRange ? [Number(newRangeMin), Number(newRangeMax)] : undefined,
       confidenceLevel: Number(newConfidence),
-      documentRef: `REF-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      documentRef: newDocumentRef.trim() || 'NON RENSEIGNÉ — référence non vérifiable',
+      isDemoHypothesis: true,
+      verificationNote:
+        'Référentiel saisi manuellement dans cette instance : vérifier la publication d’origine (émetteur, millésime, périmètre) avant tout usage décisionnel.',
     };
 
     onAddBenchmark(newBench);
@@ -143,11 +158,13 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Prix Tutélaire Quinet 2026</div>
+          <div className="text-slate-400 text-[11px]">Prix interne du carbone utilisé</div>
           <div className="text-xl font-bold font-mono text-sky-400 mt-0.5">
-            {benchmarks.find((b) => b.id === 'bench-carbone-quinet')?.value || 120} €/t
+            {benchmarks.find((b) => b.category === 'carbone')?.value ?? '—'} €/tCO2e
           </div>
-          <div className="text-[10px] text-slate-500">Trajectoire officielle France</div>
+          <div className="text-[10px] text-slate-500">
+            Hypothèse paramétrable — à valider par la Direction Financière
+          </div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
@@ -155,13 +172,19 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
           <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">
             {Math.round(benchmarks.reduce((acc, b) => acc + b.confidenceLevel, 0) / (benchmarks.length || 1))}%
           </div>
-          <div className="text-[10px] text-slate-500">Données certifiées de rang A</div>
+          <div className="text-[10px] text-slate-500">
+            Aucune donnée n'est certifiée automatiquement
+          </div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Traçabilité Audit</div>
-          <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">100% Immuable</div>
-          <div className="text-[10px] text-slate-500">Justification CAC obligatoire</div>
+          <div className="text-slate-400 text-[11px]">Traçabilité des révisions</div>
+          <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">
+            {benchmarks.length} facteur(s)
+          </div>
+          <div className="text-[10px] text-slate-500">
+            Justification requise à chaque révision — journal d'audit applicatif
+          </div>
         </div>
       </div>
 
@@ -216,9 +239,18 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
                   {/* 1. Nom & Doc */}
                   <td className="py-3.5 px-4">
                     <div className="font-bold text-white text-sm">{b.name}</div>
+                    {b.isDemoHypothesis && (
+                      <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded border border-amber-600/60 bg-amber-950/40 text-[9px] font-semibold uppercase tracking-wide text-amber-300">
+                        <AlertTriangle className="w-3 h-3" />
+                        Hypothèse de démonstration
+                      </span>
+                    )}
                     <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                       Réf: {b.documentRef} · Catégorie: <span className="uppercase text-slate-400">{b.category}</span>
                     </div>
+                    {b.verificationNote && (
+                      <div className="text-[10px] text-amber-300/80 mt-1 max-w-xs">{b.verificationNote}</div>
+                    )}
                   </td>
 
                   {/* 2 & 3. Valeur & Unité */}
@@ -503,6 +535,51 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
                     placeholder="https://..."
                     className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs focus:outline-none focus:border-emerald-500"
                   />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-400 mb-1">
+                    Référence documentaire (publication, millésime, fiche)
+                  </label>
+                  <input
+                    type="text"
+                    value={newDocumentRef}
+                    onChange={(e) => setNewDocumentRef(e.target.value)}
+                    placeholder="ex: Base Empreinte ADEME — fiche 28419 — édition 2025"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs focus:outline-none focus:border-emerald-500"
+                  />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Aucune référence n'est générée automatiquement : un identifiant inventé ne
+                    serait pas vérifiable par un auditeur.
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-slate-400 mb-1">
+                    Intervalle Min / Max (optionnel)
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={newRangeMin}
+                      onChange={(e) => setNewRangeMin(e.target.value)}
+                      placeholder="Min"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={newRangeMax}
+                      onChange={(e) => setNewRangeMax(e.target.value)}
+                      placeholder="Max"
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Laissez vide si la source ne publie pas d'intervalle.
+                  </p>
                 </div>
               </div>
 

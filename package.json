@@ -1,7 +1,7 @@
 {
-  "name": "react-example",
+  "name": "truetco",
   "private": true,
-  "version": "0.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
@@ -11,7 +11,10 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "db:migrate": "node scripts/migrate-neon.mjs",
-    "db:push": "drizzle-kit push --config=src/db/drizzle.config.ts"
+    "db:push": "drizzle-kit push --config=src/db/drizzle.config.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",
@@ -37,10 +40,14 @@
     "@types/react-dom": "^19.3.0",
     "autoprefixer": "^10.4.21",
     "drizzle-kit": "^0.31.11",
-    "esbuild": "^0.25.0",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
-    "vite-plugin-pwa": "^1.3.0"
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^3.2.4"
+  },
+  "description": "TrueTCO - Moteur de decision economique pour les achats responsables (TCO/LCC, externalites, risques, scenarios).",
+  "engines": {
+    "node": ">=20.0.0"
   }
 }

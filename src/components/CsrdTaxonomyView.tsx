@@ -52,7 +52,7 @@ export const CsrdTaxonomyView: React.FC<CsrdTaxonomyViewProps> = ({
             Déclaration de Durabilité & Consolidation des Achats Décarbonés
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Consolidation multi-projets conforme aux normes ESRS E1 (Changement Climatique) et aux critères d'alignement de la Taxonomie Verte Européenne (Article 8).
+            Consolidation multi-projets destinée à préparer un projet de déclaration ESRS E1 / Taxonomie verte (règlement UE 2020/852). Les ratios d'alignement ne peuvent être établis que par l'entreprise et ses auditeurs : TrueTCO agrège les données, il ne qualifie pas l'alignement réglementaire.
           </p>
         </div>
 
@@ -84,11 +84,9 @@ export const CsrdTaxonomyView: React.FC<CsrdTaxonomyViewProps> = ({
             <span>CapEx Aligné Taxonomie</span>
             <Leaf className="w-3.5 h-3.5 text-teal-400" />
           </div>
-          <div className="text-2xl font-bold text-teal-400">
-            {report.taxonomyAlignedCapexPercent}%
-          </div>
+          <div className="text-2xl font-bold text-teal-400">Non évalué</div>
           <div className="text-[10px] text-slate-400 font-sans">
-            Éligible : <strong className="text-white">{report.taxonomyEligibleCapexPercent}%</strong> des investissements
+            Éligibilité et alignement non qualifiés par TrueTCO — classification requise
           </div>
         </div>
 
@@ -267,7 +265,7 @@ export const CsrdTaxonomyView: React.FC<CsrdTaxonomyViewProps> = ({
               <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold">Scope 3 Amont / Circularité</div>
               <div className="text-2xl font-bold text-teal-400 font-mono">{report.scope3UpstreamAvoidedTCO2e} tCO2e</div>
               <p className="text-[11px] text-slate-400">
-                Reconditionnement informatique certifié et recyclabilité fin de vie des matériels.
+                Reconditionnement informatique et recyclabilité fin de vie des matériels (données fournisseur à l'appui).
               </p>
             </div>
           </div>
@@ -294,24 +292,32 @@ export const CsrdTaxonomyView: React.FC<CsrdTaxonomyViewProps> = ({
                 Attestation de Vérification Indépendante (Rapport OTI / Commissaire aux Comptes)
               </h3>
               <p className="text-[11px] text-slate-400 mt-0.5">
-                Conforme aux exigences de certification de l'information de durabilité (Directive CSRD 2022/2464/UE).
+                Note méthodologique : ce rapport est un brouillon de travail. La revue par un organisme tiers indépendant (OTI) relève de la procédure de certification de l'information de durabilité (Directive CSRD 2022/2464/UE) et n'est pas réalisée par TrueTCO.
               </p>
             </div>
-            <span className="px-2.5 py-1 bg-emerald-950 text-emerald-300 border border-emerald-800 rounded-lg font-mono font-bold">
-              CERTIFIÉ SANS RÉSERVE
+            <span className="px-2.5 py-1 bg-amber-950 text-amber-300 border border-amber-800 rounded-lg font-mono font-bold">
+              NON VÉRIFIÉ PAR UN TIERS
             </span>
           </div>
 
           <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg space-y-3 font-mono text-[11px]">
             <div className="text-white font-bold font-sans">
-              Organisme Tiers Indépendant : {report.independentAuditorName}
+              Organisme tiers indépendant : aucun
             </div>
             <p className="text-slate-300 leading-relaxed font-sans text-xs">
-              « Sur la base de nos diligences menées selon la norme ISAE 3000 révisée, nous n’avons relevé aucune anomalie significative de nature à remettre en cause la conformité des indicateurs de la Taxonomie Verte ({report.taxonomyAlignedCapexPercent}% de CapEx aligné) et la matérialité des émissions de GES évitées présentées dans le dossier TrueTCO pour l’exercice {report.fiscalYear}. »
+              Aucune attestation d'assurance n'a été délivrée. La version précédente de cet écran
+              affichait une opinion d'audit « ISAE 3000 » attribuée à un organisme tiers
+              indépendant nommé, avec un numéro de visa : ce texte était entièrement rédigé par le
+              logiciel et n'avait aucun fondement. Aucun auditeur n'a examiné ces données.
+            </p>
+            <p className="text-slate-300 leading-relaxed font-sans text-xs">
+              Pour publier une déclaration de durabilité, la revue par un OTI (Directive CSRD
+              2022/2464/UE, norme ISAE 3000 révisée) doit être commandée auprès d'un organisme
+              accrédité, hors de TrueTCO.
             </p>
             <div className="text-slate-500 pt-2 border-t border-slate-900 flex justify-between">
-              <span>Date d'attestation : {new Date(report.reportingDate).toLocaleDateString('fr-FR')}</span>
-              <span>Visa légal : OTI-FR-2026-COFRAC-881</span>
+              <span>Document généré le : {new Date(report.reportingDate).toLocaleDateString('fr-FR')}</span>
+              <span>Aucune valeur d'attestation</span>
             </div>
           </div>
         </div>

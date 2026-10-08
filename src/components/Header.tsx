@@ -26,7 +26,6 @@ interface HeaderProps {
   projects: Project[];
   onSelectProject: (proj: Project) => void;
   activeRole: UserRole;
-  onChangeRole: (role: UserRole) => void;
   onOpenNewProject: () => void;
   onOpenTestsModal: () => void;
   onOpenReportModal: () => void;
@@ -40,13 +39,12 @@ export const Header: React.FC<HeaderProps> = ({
   projects,
   onSelectProject,
   activeRole,
-  onChangeRole,
   onOpenNewProject,
   onOpenTestsModal,
   onOpenReportModal,
   onOpenBackupModal,
 }) => {
-  const { user, isAuthenticated, logout, openLoginModal, switchRole } = useAuth();
+  const { user, isAuthenticated, logout, openLoginModal } = useAuth();
   const { currentTenant } = useTenant();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -80,11 +78,6 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const currentProviderBadge = user ? providerBadges[user.ssoProvider] || providerBadges.azure_ad : providerBadges.azure_ad;
-
-  const handleRoleChange = (newRole: UserRole) => {
-    onChangeRole(newRole);
-    switchRole(newRole);
-  };
 
   return (
     <header className="h-14 border-b border-slate-800 bg-slate-950/95 backdrop-blur-md px-5 flex items-center justify-between z-30 sticky top-0 no-print">
@@ -170,20 +163,16 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Nouveau Projet</span>
         </button>
 
-        {/* Role Switcher */}
-        <div className="flex items-center pl-2 border-l border-slate-800">
-          <select
-            value={activeRole}
-            onChange={(e) => handleRoleChange(e.target.value as UserRole)}
-            className="bg-slate-900 border border-slate-700/80 rounded px-2 py-1 text-slate-200 text-xs font-medium focus:outline-none focus:border-emerald-500"
-            title="Basculer de rôle utilisateur pour tester les perspectives métiers"
+        {/* Rôle courant — lecture seule : le rôle est attribué par un
+            administrateur et vérifié côté serveur, jamais choisi ici. */}
+        <div className="flex items-center gap-1.5 pl-2 border-l border-slate-800">
+          <ShieldCheck className="w-3.5 h-3.5 text-slate-500" />
+          <span
+            className="px-2 py-1 bg-slate-900 border border-slate-700/80 rounded text-slate-200 text-xs font-medium"
+            title="Rôle issu de votre session authentifiée. Toute modification doit être effectuée par un administrateur."
           >
-            {Object.entries(roleLabels).map(([roleKey, label]) => (
-              <option key={roleKey} value={roleKey}>
-                {label}
-              </option>
-            ))}
-          </select>
+            {roleLabels[activeRole] ?? activeRole}
+          </span>
         </div>
 
         {/* Enterprise SSO User & Session Section */}
@@ -255,26 +244,22 @@ export const Header: React.FC<HeaderProps> = ({
                       </span>
                     </div>
                     <div className="text-[10px] text-slate-500 font-mono">
-                      Jeton chiffré synchronisé avec Neon DB
+                      Session vérifiée par le serveur (cookie HttpOnly)
                     </div>
                   </div>
 
-                  {/* Role in session */}
+                  {/* Rôle de session (lecture seule) */}
                   <div className="space-y-1">
                     <label className="text-[11px] text-slate-400 font-medium block">
-                      Perspective Métier Active :
+                      Rôle attribué par l'administrateur :
                     </label>
-                    <select
-                      value={activeRole}
-                      onChange={(e) => handleRoleChange(e.target.value as UserRole)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500"
-                    >
-                      {Object.entries(roleLabels).map(([roleKey, label]) => (
-                        <option key={roleKey} value={roleKey}>
-                          {label}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs font-semibold">
+                      {roleLabels[activeRole] ?? activeRole}
+                    </div>
+                    <p className="text-[10px] text-slate-500 leading-relaxed">
+                      Les droits sont appliqués côté serveur à partir de votre session. Aucun
+                      changement de rôle n'est possible depuis l'interface.
+                    </p>
                   </div>
 
                   {/* Actions */}

@@ -1,25 +1,5 @@
 import React, { useState } from 'react';
-import {
-  Sparkles,
-  FileText,
-  UploadCloud,
-  CheckCircle2,
-  AlertCircle,
-  FileCheck2,
-  ArrowRight,
-  TrendingDown,
-  Layers,
-  Building2,
-  Scale,
-  Calendar,
-  Clock,
-  ShieldAlert,
-  Zap,
-  Info,
-  Check,
-  Eye,
-  FileSpreadsheet,
-} from 'lucide-react';
+import { AlertCircle, AlertTriangle, ArrowRight, Building2, Calendar, Check, CheckCircle2, Clock, Eye, FileCheck2, FileSpreadsheet, FileText, Info, Layers, Scale, ShieldAlert, Sparkles, TrendingDown, UploadCloud, Zap } from 'lucide-react';
 import { Project, SupplierOffer, DocumentParseResult, DocumentCategory } from '../types/domain';
 import { AiParserService, SAMPLE_DOCUMENTS, SampleDocumentItem } from '../services/aiParserService';
 
@@ -67,7 +47,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
     }
 
     setIsParsing(true);
-    setStatusMessage('Extraction OCR & structuration par le modèle Gemini 3.8 Flash...');
+    setStatusMessage('Extraction assistée par IA en cours (service configuré côté serveur)...');
     setInjectedSuccess(false);
 
     try {
@@ -87,6 +67,15 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
 
   const handleInjectIntoProject = () => {
     if (!parseResult) return;
+    // Garde-fou : un résultat sans données extraites ne peut pas être injecté
+    // dans le projet (aucune écriture de données inventées).
+    if (parseResult.extractionStatus === 'unavailable' || parseResult.requiresHumanInput) {
+      setStatusMessage(
+        parseResult.extractionMessage ??
+          "Aucune donnée n'a été extraite : la saisie manuelle est requise."
+      );
+      return;
+    }
     const newOffer = AiParserService.convertToSupplierOffer(parseResult, project.id);
     onAddOffer(newOffer);
     setInjectedSuccess(true);
@@ -320,6 +309,21 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                       </div>
                     </div>
                   </div>
+
+                  {parseResult.extractionStatus === 'unavailable' && (
+                    <div className="p-3 bg-amber-950/40 border border-amber-800/70 rounded-lg text-xs text-amber-200 flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-semibold">
+                          Aucune extraction automatique n'a été effectuée.
+                        </div>
+                        <div className="text-amber-200/80 mt-0.5">
+                          {parseResult.extractionMessage ??
+                            "Le service d'extraction n'est pas configuré. Saisir l'offre manuellement : TrueTCO ne produit jamais de montant estimé présenté comme extrait."}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Summary Callout */}
                   <div className="p-3 bg-purple-950/30 border border-purple-900/50 rounded-lg space-y-1.5 text-xs">
