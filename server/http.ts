@@ -9,6 +9,7 @@
  */
 
 import { NextFunction, Request, RequestHandler, Response } from 'express';
+import { logger, recordRequest } from './observability';
 import { DataError } from './db/types';
 
 export class HttpError extends Error {
@@ -184,7 +185,12 @@ export function errorHandler(isProd: boolean) {
     if (hasExplicitStatus && !(err instanceof HttpError)) {
       const status = withStatus.status as number;
       if (status >= 500) {
-        console.error(`[TrueTCO][${correlationId}] Erreur ${status} (${withStatus.code}) : ${withStatus.message}`);
+        logger.error('request.failed', {
+          correlationId,
+          status,
+          code: String(withStatus.code),
+          message: String(withStatus.message),
+        });
       }
       res.status(status).json({
         error: String(withStatus.message ?? 'Opération refusée.'),
@@ -196,7 +202,7 @@ export function errorHandler(isProd: boolean) {
 
     if (err instanceof HttpError) {
       if (err.status >= 500) {
-        console.error(`[TrueTCO][${correlationId}] Erreur HTTP ${err.status} (${err.code}) : ${err.message}`);
+        logger.error('request.failed', { correlationId, status: err.status, code: err.code, message: err.message });
       }
       res.status(err.status).json({
         error: err.message,
@@ -210,10 +216,14 @@ export function errorHandler(isProd: boolean) {
     if (err instanceof DataError) {
       // Journalisation serveur systématique : l'utilisateur reçoit un message
       // lisible, l'exploitant dispose de la cause réelle et du corrélateur.
-      console.error(
-        `[TrueTCO][${correlationId}] Erreur de données (${err.code}) sur ${req.method} ${req.originalUrl} : ${err.message}` +
-          (err.technical ? ` | cause technique : ${err.technical}` : '')
-      );
+      logger.error('data.error', {
+        correlationId,
+        code: err.code,
+        method: req.method,
+        route: req.originalUrl,
+        message: err.message,
+        technical: err.technical,
+      });
       const status =
         err.code === 'NOT_FOUND'
           ? 404
@@ -233,7 +243,13 @@ export function errorHandler(isProd: boolean) {
     }
 
     const message = (err as Error)?.message ?? 'Erreur interne';
-    console.error(`[TrueTCO][${correlationId}] Erreur non gérée :`, err);
+    logger.error('request.unhandled', {
+      correlationId,
+      method: req.method,
+      route: req.originalUrl,
+      message,
+      error: err,
+    });
 
     res.status(500).json({
       error: isProd

@@ -126,6 +126,16 @@ export function sha256Hex(message: string): string {
 }
 
 export class SignatureService {
+  /** Signale un échec de persistance locale : jamais silencieux. */
+  private static notifyStorageFailure(scope: string, error: unknown): void {
+    if (typeof window === 'undefined') return;
+    window.dispatchEvent(
+      new CustomEvent('truetco:storage-failure', {
+        detail: { scope, message: error instanceof Error ? error.message : String(error) },
+      })
+    );
+  }
+
   /**
    * Empreinte SHA-256 (FIPS 180-4) d'une charge utile.
    *
@@ -172,7 +182,11 @@ export class SignatureService {
           return parsed;
         }
       }
-    } catch {}
+    } catch (error) {
+      // Certificat existant illisible : on le signale au lieu de le laisser
+      // passer pour absent (ce qui en créerait un nouveau silencieusement).
+      this.notifyStorageFailure('signature-certificate-read', error);
+    }
 
     const issuedAt = new Date().toISOString();
     const payload = JSON.stringify({
@@ -213,7 +227,9 @@ export class SignatureService {
       if (typeof window !== 'undefined') {
         localStorage.setItem(`${STORAGE_KEY}_${cert.projectId}`, JSON.stringify(cert));
       }
-    } catch {}
+    } catch (error) {
+      this.notifyStorageFailure('signature-certificate-write', error);
+    }
   }
 
   /**

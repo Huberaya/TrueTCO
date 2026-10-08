@@ -1,0 +1,127 @@
+##############################################################################
+# TrueTCO — Intégration continue
+#
+# Chaque étape correspond à une exigence du produit ; aucune n'est décorative :
+#   typecheck  : le TypeScript doit compiler sans erreur
+#   lint       : règles de qualité (erreurs uniquement, pas de préférences)
+#   unit/api/sécu/isolation : la suite de tests réelle (PostgreSQL embarqué)
+#   e2e        : parcours navigateur complet (Playwright)
+#   build      : la compilation de production doit réussir
+#   bundle     : la taille du paquet est mesurée et plafonnée
+#   audit      : les dépendances de production ne doivent pas porter
+#                d'avis de sécurité de gravité haute ou critique
+#
+# NOTE HONNÊTE : la suite Playwright télécharge un navigateur. Elle n'a pas pu
+# être exécutée dans l'environnement de développement initial (réseau filtré) ;
+# elle est donc écrite et câblée ici, où le téléchargement est possible. Sur
+# toute machine disposant d'un navigateur, `npm run test:e2e` l'exécute.
+##############################################################################
+
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Les tests utilisent PostgreSQL embarqué (PGlite) : aucun service externe.
+  TRUETCO_USE_PGLITE: 'true'
+  TRUETCO_AUTO_MIGRATE: 'true'
+  TRUETCO_ALLOW_DEMO_AUTH: 'true'
+  CI: 'true'
+
+jobs:
+  quality:
+    name: Qualité, tests et build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Vérification des types
+        run: npx tsc --noEmit
+
+      - name: Contrôles statiques ciblés
+        # ESLint ne peut pas s'exécuter avec TypeScript 7 (typescript-eslint 8
+        # s'arrête au chargement). Ce script applique 8 règles vérifiables, dont
+        # l'interdiction de `xlsx` sur des fichiers d'utilisateurs. Voir TESTING.md.
+        run: npm run check:static
+
+      - name: Tests unitaires, API, sécurité, isolation, interface
+        run: npm test
+
+      - name: Couverture des tests
+        run: npm run test:coverage
+
+      - name: Build de production
+        run: npm run build
+
+      - name: Taille du paquet (plafond)
+        run: npm run bundle:check
+
+      - name: Audit des dépendances de production
+        run: npm run audit:prod
+
+      - name: Publication des artefacts de test
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rapports
+          path: |
+            coverage/
+            dist/
+          retention-days: 7
+
+  e2e:
+    name: Parcours navigateur (Playwright)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      - name: Installation du navigateur
+        run: npx playwright install --with-deps chromium
+
+      - name: Serveur applicatif de test
+        run: npm run test:e2e:server &
+        env:
+          PORT: '3000'
+          TRUETCO_USE_PGLITE: 'true'
+          TRUETCO_AUTO_MIGRATE: 'true'
+          TRUETCO_ALLOW_DEMO_AUTH: 'true'
+
+      - name: Attente de disponibilité de l'API
+        run: npx wait-on http://127.0.0.1:3000/api/health --timeout 120000
+
+      - name: Tests de bout en bout
+        run: npm run test:e2e
+
+      - name: Rapport Playwright
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

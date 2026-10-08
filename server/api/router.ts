@@ -55,6 +55,7 @@ import { createSupplier, listSuppliers } from '../repositories/suppliers';
 import { COST_CATEGORIES, createOffer, deleteOffer, getOffer, listOffers, normalizeCostCategoryInput } from '../repositories/offers';
 import { listAuditLogs } from '../repositories/auditLogs';
 import { verifyAuditChain } from '../audit';
+import { metricsSnapshot } from '../observability';
 import { checkRunFreshness, listDecisionRuns, replayDecisionRun, runDecision } from '../services/decision';
 import {
   commitImportBatch,
@@ -125,6 +126,20 @@ export function createApiRouter(deps: ApiDependencies): Router {
   // ---------------------------------------------------------------------------
   // Santé
   // ---------------------------------------------------------------------------
+  /**
+   * Mesures d'exploitation. Volontairement réservées à l'administration de
+   * plateforme : un compteur de requêtes et d'erreurs est une information
+   * interne, pas une donnée client.
+   */
+  router.get(
+    '/metrics',
+    requireSession({ db }),
+    requirePermission('platform:admin'),
+    asyncHandler(async (_req, res) => {
+      res.json(metricsSnapshot());
+    })
+  );
+
   router.get(
     '/health',
     asyncHandler(async (_req, res) => {

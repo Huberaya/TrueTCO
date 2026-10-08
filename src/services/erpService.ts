@@ -219,7 +219,24 @@ export class ErpService {
     try {
       if (typeof window === 'undefined') return;
       localStorage.setItem(key, JSON.stringify(data));
-    } catch {}
+    } catch (error) {
+      // Un échec d'écriture locale (quota, mode privé) était avalé : les
+      // paramètres semblaient enregistrés alors qu'ils étaient perdus.
+      // L'interface est prévenue, l'utilisateur peut agir.
+      this.notifyStorageFailure('connector-settings', error);
+    }
+  }
+
+  /**
+   * Signale un échec de persistance locale. Ce service ne stocke QUE des
+   * paramètres d'affichage (jamais des données métier, qui vivent au serveur) :
+   * l'échec est donc informatif, mais il ne doit pas être silencieux.
+   */
+  private static notifyStorageFailure(scope: string, error: unknown): void {
+    const message = error instanceof Error ? error.message : String(error);
+    window.dispatchEvent(
+      new CustomEvent('truetco:storage-failure', { detail: { scope, message } })
+    );
   }
 
   public static getConnectors(): ErpConnector[] {
@@ -321,6 +338,7 @@ export class ErpService {
     connectorId: string,
     projectId: string
   ): Promise<{ success: boolean; offersImported: number; offers: SupplierOffer[]; message: string }> {
+    let lastError = 'Le connecteur est injoignable.';
     try {
       const res = await fetch(`/api/erp/connectors/${connectorId}/sync-inbound`, {
         method: 'POST',
@@ -331,7 +349,10 @@ export class ErpService {
         const data = await res.json();
         return data;
       }
-    } catch {}
+      lastError = `Le connecteur a répondu ${res.status}.`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Le connecteur est injoignable.';
+    }
 
     // AUCUN fallback ne fabrique d'offre : la version précédente créait une
     // proposition commerciale de 3 725 000 € notée « Prix d'achat vérifié,
@@ -355,7 +376,9 @@ export class ErpService {
       success: false,
       offersImported: 0,
       offers: [],
-      message: ERP_NOT_IMPLEMENTED_MESSAGE,
+      // Le motif réel de l'échec est remonté : « non implémenté » n'est pas
+      // présenté comme une panne du connecteur du client.
+      message: `${ERP_NOT_IMPLEMENTED_MESSAGE} Dernier essai : ${lastError}`,
     };
   }
 
@@ -368,6 +391,7 @@ export class ErpService {
     offerId: string,
     rationale: string
   ): Promise<{ success: boolean; poReference: string; message: string }> {
+    let lastError = 'Le connecteur est injoignable.';
     try {
       const res = await fetch(`/api/erp/connectors/${connectorId}/push-award`, {
         method: 'POST',
@@ -378,7 +402,10 @@ export class ErpService {
         const data = await res.json();
         return data;
       }
-    } catch {}
+      lastError = `Le connecteur a répondu ${res.status}.`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : 'Le connecteur est injoignable.';
+    }
 
     // AUCUN bon de commande fictif : la version précédente retournait une
     // référence PO aléatoire présentée comme créée dans l'ERP du client.
@@ -400,7 +427,7 @@ export class ErpService {
     return {
       success: false,
       poReference: '',
-      message: ERP_NOT_IMPLEMENTED_MESSAGE,
+      message: `${ERP_NOT_IMPLEMENTED_MESSAGE} Dernier essai : ${lastError}`,
     };
   }
 }

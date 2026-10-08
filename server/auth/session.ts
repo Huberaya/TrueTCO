@@ -18,6 +18,7 @@ import crypto from 'crypto';
 import { NextFunction, Request, Response } from 'express';
 import { Db, Executor } from '../db/types';
 import { AuthContext, Permission, ROLE_PERMISSIONS, UserRole, hasPermission } from './types';
+import { logger } from '../observability';
 
 export const SESSION_COOKIE = 'truetco_session';
 const SESSION_TTL_HOURS = Number(process.env.TRUETCO_SESSION_TTL_HOURS ?? 12);
@@ -185,10 +186,15 @@ export function requireSession(deps: AuthDependencies) {
         null;
 
       if (requested && requested !== context.organization.id && context.user.role !== 'platform_admin') {
-        console.warn(
-          `[TrueTCO][${req.correlationId ?? '-'}] Tentative d'accès inter-organisation refusée : ` +
-            `session=${context.organization.id} demandé=${requested} utilisateur=${context.user.id}`
-        );
+        // Événement de sécurité : conservé à part, avec l'identité de la session
+        // et la valeur refusée, pour permettre une enquête a posteriori.
+        logger.warn('security.tenant_mismatch', {
+          correlationId: req.correlationId,
+          sessionOrganizationId: context.organization.id,
+          requestedOrganizationId: requested,
+          userId: context.user.id,
+          route: req.originalUrl,
+        });
         res.status(403).json({
           error: "Accès refusé : la ressource demandée appartient à une autre organisation.",
           code: 'TENANT_MISMATCH',
@@ -220,9 +226,15 @@ export function requirePermission(permission: Permission) {
       return;
     }
     if (!hasPermission(ctx.user.role, permission)) {
-      console.warn(
-        `[TrueTCO][${req.correlationId ?? '-'}] Permission refusée : ${permission} (rôle ${ctx.user.role}, utilisateur ${ctx.user.id})`
-      );
+      // Un refus de permission est un événement de sécurité : il est journalisé
+      // avec le rôle et l'utilisateur concernés, jamais avec le contenu échangé.
+      logger.warn('security.permission_denied', {
+        correlationId: req.correlationId,
+        permission,
+        role: ctx.user.role,
+        userId: ctx.user.id,
+        route: req.originalUrl,
+      });
       res.status(403).json({
         error: `Accès refusé : votre rôle (${ctx.user.role}) ne dispose pas du droit « ${permission} ».`,
         code: 'PERMISSION_DENIED',

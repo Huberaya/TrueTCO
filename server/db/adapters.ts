@@ -1,4 +1,5 @@
 import { assertSafeRoleName, Db, DbStatus, Executor, ORG_SETTING, APP_ROLE_DEFAULT, DataError } from './types';
+import { logger } from '../observability';
 
 /**
  * TrueTCO — Implémentations du contrat de données
@@ -196,7 +197,7 @@ export class PgDb extends BaseDb {
     });
     // Un pool qui émet une erreur sans écouteur tue le processus Node.
     this.pool.on?.('error', (err: Error) => {
-      console.error('[TrueTCO][db] Erreur de connexion inattendue du pool :', err.message);
+      logger.error('db.pool_error', { message: err.message });
     });
   }
 

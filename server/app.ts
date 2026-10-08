@@ -13,6 +13,7 @@
  */
 
 import express, { Express, Request, Response } from 'express';
+import { logger, recordRequest } from './observability';
 import { createApiRouter } from './api/router';
 import { Db } from './db/types';
 import { errorHandler } from './http';
@@ -151,10 +152,11 @@ export function createApp(options: AppOptions): Express {
         // tolérance n'existe pas : la liste est obligatoire.
         if (!devOriginWarningLogged) {
           devOriginWarningLogged = true;
-          console.warn(
-            '[TrueTCO] CORS de développement : TRUETCO_ALLOWED_ORIGINS est vide, les origines tierces sont acceptées. ' +
-              'Renseignez la liste avant toute mise en production (interdit en production).'
-          );
+          logger.warn('cors.development_open', {
+            message:
+              'TRUETCO_ALLOWED_ORIGINS est vide : les origines tierces sont acceptées en développement. ' +
+              'Renseignez la liste avant toute mise en production (valeur interdite en production).',
+          });
         }
         next();
         return;
@@ -184,6 +186,36 @@ export function createApp(options: AppOptions): Express {
     '/api/auth',
     rateLimit({ windowMs: 60_000, max: 30, name: 'auth' })
   );
+
+  // Mesure et journal de chaque requête d'API : durée, statut, route normalisée
+  // (les identifiants sont remplacés par « :id » pour que les compteurs restent
+  // exploitables). Aucun corps de requête n'est journalisé : les données métier
+  // n'ont pas leur place dans un journal technique.
+  app.use('/api', (req, res, next) => {
+    const startedAt = process.hrtime.bigint();
+    res.on('finish', () => {
+      const durationMs = Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+      recordRequest({ path: req.originalUrl, status: res.statusCode, durationMs: Math.round(durationMs * 10) / 10 });
+      if (res.statusCode >= 500) {
+        logger.error('request.server_error', {
+          correlationId: req.correlationId,
+          method: req.method,
+          route: req.originalUrl,
+          status: res.statusCode,
+          durationMs: Math.round(durationMs * 10) / 10,
+        });
+      } else if (process.env.TRUETCO_LOG_LEVEL === 'debug') {
+        logger.debug('request.completed', {
+          correlationId: req.correlationId,
+          method: req.method,
+          route: req.originalUrl,
+          status: res.statusCode,
+          durationMs: Math.round(durationMs * 10) / 10,
+        });
+      }
+    });
+    next();
+  });
 
   app.use('/api', createApiRouter({
     db: options.db,

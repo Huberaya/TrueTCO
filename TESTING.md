@@ -51,3 +51,58 @@ Un test doit échouer quand la fonctionnalité manque. Le test `T-PG-00` appliqu
 explicitement cette règle : si le socket PostgreSQL ne peut pas être ouvert, la
 suite **échoue** avec un message indiquant que le pilote de production n'a pas
 été vérifié, au lieu de « passer » silencieusement.
+
+
+---
+
+## Contrôles statiques (`npm run check:static`)
+
+ESLint **ne peut pas être utilisé dans ce dépôt** : son moteur TypeScript
+(`typescript-eslint` 8.x, dernière version publiée) refuse TypeScript 7 et
+interrompt son chargement (`typescript-eslint does not support TS 7.0`). Plutôt
+que d'afficher une étape « lint » qui ne vérifierait rien, `scripts/check-static-rules.mjs`
+applique huit règles vérifiables, chacune liée à un défaut réel :
+
+| Règle | Ce qu'elle empêche |
+| --- | --- |
+| R1 | Bloc `catch` vide : une erreur avalée devient une panne silencieuse |
+| R2 | `console.*` dans le serveur : la trace doit passer par la journalisation structurée |
+| R3 | Tests neutralisés (`it.only`, `describe.skip`) : suite verte sans vérification |
+| R4 | Lecture de fichiers d'utilisateurs par `xlsx` (avis de sécurité sans correctif) |
+| R5 | Accès au stockage du navigateur depuis le serveur |
+| R6 | Secrets en clair dans le code |
+| R7 | Évaluation dynamique (`eval`, `new Function`) |
+| R8 | Dépendance du serveur envers les composants d'interface |
+
+Chaque exception doit être inscrite dans le script **avec sa raison** : il n'existe
+pas de désactivation silencieuse.
+
+## Journalisation et mesures
+
+`server/observability.ts` remplace les `console.*` dispersés :
+
+- une ligne = un objet JSON (`ts`, `level`, `event`, contexte) exploitable par un collecteur ;
+- l'identifiant de corrélation renvoyé à l'utilisateur dans la réponse d'erreur permet de retrouver la trace exacte ;
+- les champs sensibles (`password`, `token`, `authorization`, `cookie`, `secret`…) sont **masqués par liste de noms** ;
+- `TRUETCO_LOG_LEVEL` (`debug`|`info`|`warn`|`error`) et `TRUETCO_LOG_SILENT` pilotent le volume ;
+- `GET /api/metrics` (permission `platform:admin`) expose requêtes, erreurs, durée moyenne et maximale, top des routes. Ce n'est **pas** un exportateur Prometheus, et ce n'est pas présenté comme tel.
+
+## Tests navigateur (Playwright)
+
+`tests/e2e/` contient les parcours réels (PME, import, décision, reconnexion).
+**Ils n'ont pas pu être exécutés dans l'environnement de développement initial** :
+le téléchargement des navigateurs Playwright y est bloqué par le filtrage réseau
+(`cdn.playwright.dev` injoignable). Ils sont donc câblés dans la tâche `e2e` de
+l'intégration continue, où le téléchargement fonctionne, et exécutables sur toute
+machine disposant d'un navigateur :
+
+```bash
+npm run test:e2e:server &      # API + PostgreSQL embarqué
+npx playwright install chromium
+npm run test:e2e
+```
+
+Ce qui **remplace** ces tests dans l'environnement actuel : `tests/ui.spec.tsx`
+monte réellement les écrans dans un DOM (jsdom) et vérifie le rendu et les règles
+d'honnêteté de l'affichage (import bloqué, recommandation « aucune », intégrité du
+journal). Ce n'est pas équivalent à un navigateur complet — c'est dit ici.
