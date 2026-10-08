@@ -143,9 +143,22 @@ export async function getOffer(db: Db, ctx: AuthContext, offerId: string) {
  */
 export async function createOffer(db: Db, ctx: AuthContext, input: OfferInput, meta: RequestMeta) {
   return db.asOrganization(ctx.organization.id, async (tx) => {
-    const project = await tx.query<{ id: string }>('SELECT id FROM projects WHERE id = $1', [input.projectId]);
+    const project = await tx.query<{ id: string; workflow_status: string }>(
+      'SELECT id, workflow_status FROM projects WHERE id = $1',
+      [input.projectId]
+    );
     if (project.length === 0) {
       throw notFound("Ce dossier est introuvable dans votre organisation.");
+    }
+    // Un dossier verrouillé est une pièce figée : le workflow exige qu'une
+    // modification passe par une nouvelle version (nouveau dossier lié). Sans ce
+    // contrôle, ajouter une offre après verrouillage contournait la règle.
+    if (project[0].workflow_status === 'locked') {
+      throw new HttpError(
+        409,
+        'PROJECT_LOCKED',
+        "Ce dossier est verrouillé : il ne peut plus recevoir d'offre. Créez une nouvelle version du dossier pour intégrer cette offre."
+      );
     }
 
     const [offer] = await tx.query<{ id: string; offer_reference: string }>(

@@ -244,3 +244,8 @@ export function errorHandler(isProd: boolean) {
     });
   };
 }
+
+/** Vrai pour un objet JSON simple (ni tableau, ni null, ni classe). */
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}

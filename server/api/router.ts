@@ -13,7 +13,8 @@
  *     une réponse vide qui laisserait croire à un résultat.
  */
 
-import express, { Request, Response, Router } from 'express';
+import express, { NextFunction, Request, Response, Router } from 'express';
+import multer from 'multer';
 import { Db } from '../db/types';
 import { AuthContext, ROLE_PERMISSIONS, USER_ROLES, UserRole, canManageTeam } from '../auth/types';
 import {
@@ -55,6 +56,15 @@ import { COST_CATEGORIES, createOffer, deleteOffer, getOffer, listOffers, normal
 import { listAuditLogs } from '../repositories/auditLogs';
 import { verifyAuditChain } from '../audit';
 import { checkRunFreshness, listDecisionRuns, replayDecisionRun, runDecision } from '../services/decision';
+import {
+  commitImportBatch,
+  getImportBatch,
+  listImportBatches,
+  maxImportBytes,
+  updateImportMapping,
+  uploadImport,
+} from '../services/imports';
+import { isPlainObject } from '../http';
 import { asyncHandler, badRequest, forbidden, notFound, parsePagination, requireCurrency, requireEmail, requireEnum, requireNumber, requireString, requireUuid, optionalString, optionalNumber, HttpError } from '../http';
 
 export interface ApiDependencies {
@@ -791,17 +801,142 @@ export function createApiRouter(deps: ApiDependencies): Router {
     )
   );
 
-  const importNotImplemented = (_req: Request, res: Response) => {
-    res.status(501).json({
-      error:
-        "L'Import Center (XLSX/CSV) est prévu en Phase 2 : téléversement, détection d'encodage, mapping assisté, " +
-        'aperçu, validation, puis import tracé avec provenance.',
-      code: 'IMPORT_NOT_IMPLEMENTED',
-      implemented: false,
+  // ---------------------------------------------------------------------------
+  // Centre d'import (Phase 2) — XLSX / CSV
+  // ---------------------------------------------------------------------------
+  // Le fichier est reçu en mémoire, borné en taille, et son FORMAT RÉEL est
+  // vérifié sur son contenu (signature ZIP + entrées OOXML pour XLSX) : le nom du
+  // fichier et le type MIME annoncé par le navigateur ne sont jamais crus.
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: maxImportBytes(), files: 1, fields: 10 },
+  });
+
+  const uploadSingle = (req: Request, res: Response, next: NextFunction) => {
+    upload.single('file')(req, res, (error: unknown) => {
+      if (!error) {
+        next();
+        return;
+      }
+      if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+        next(
+          new HttpError(
+            413,
+            'FILE_TOO_LARGE',
+            `Le fichier dépasse la taille maximale acceptée (${Math.round(maxImportBytes() / 1024 / 1024)} Mo). Scindez-le en plusieurs fichiers.`
+          )
+        );
+        return;
+      }
+      next(
+        badRequest(
+          'UPLOAD_FAILED',
+          `Le fichier n'a pas pu être reçu : ${error instanceof Error ? error.message : 'erreur inconnue'}.`
+        )
+      );
     });
   };
-  router.all('/imports', requireSession({ db }), importNotImplemented);
-  router.all('/imports/*', requireSession({ db }), importNotImplemented);
+
+  const parseImportMode = (value: unknown): 'costs' | 'carbon' | 'risks' => {
+    const mode = typeof value === 'string' ? value.toLowerCase() : 'costs';
+    if (mode === 'costs' || mode === 'carbon' || mode === 'risks') return mode;
+    throw badRequest(
+      'INVALID_IMPORT_MODE',
+      `Mode d'import inconnu « ${String(value)} ». Valeurs acceptées : costs (postes de coût), carbon (émissions), risks (risques).`
+    );
+  };
+
+  router.post(
+    '/projects/:projectId/imports',
+    requireSession({ db }),
+    requirePermission('import:write'),
+    uploadSingle,
+    asyncHandler(async (req, res) => {
+      const ctx = ctxOf(req);
+      const file = (req as Request & { file?: { originalname: string; mimetype: string; buffer: Buffer } }).file;
+      if (!file) {
+        throw badRequest('FILE_REQUIRED', "Aucun fichier reçu : joignez un fichier XLSX ou CSV dans le champ « file ».");
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const allowDuplicateContent =
+        body.allowDuplicateContent === true || body.allowDuplicateContent === 'true' || body.allowDuplicateContent === '1';
+
+      const result = await uploadImport(
+        db,
+        ctx,
+        {
+          projectId: requireUuid(req.params.projectId, 'projectId'),
+          fileName: file.originalname || 'fichier',
+          mimeType: file.mimetype,
+          content: file.buffer,
+          mode: parseImportMode(body.mode),
+          sheetName: optionalString(body.sheetName, 'sheetName', 255),
+          allowDuplicateContent,
+        },
+        requestMeta(req)
+      );
+      res.status(201).json(result);
+    })
+  );
+
+  router.get(
+    '/projects/:projectId/imports',
+    requireSession({ db }),
+    requirePermission('import:read'),
+    asyncHandler(async (req, res) => {
+      const page = parsePagination(req.query);
+      const result = await listImportBatches(db, ctxOf(req), requireUuid(req.params.projectId, 'projectId'), page);
+      res.json({ items: result.items, total: result.total, limit: page.limit, offset: page.offset });
+    })
+  );
+
+  router.get(
+    '/imports/:batchId',
+    requireSession({ db }),
+    requirePermission('import:read'),
+    asyncHandler(async (req, res) => {
+      const page = parsePagination(req.query);
+      const view = await getImportBatch(db, ctxOf(req), req.params.batchId);
+      // Pagination des lignes : un fichier de 20 000 lignes ne doit pas être
+      // renvoyé en entier à chaque affichage.
+      const rows = view.rows.slice(page.offset, page.offset + page.limit);
+      res.json({ ...view, rows, rowsTotal: view.rows.length, limit: page.limit, offset: page.offset });
+    })
+  );
+
+  router.patch(
+    '/imports/:batchId',
+    requireSession({ db }),
+    requirePermission('import:write'),
+    asyncHandler(async (req, res) => {
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const view = await updateImportMapping(
+        db,
+        ctxOf(req),
+        req.params.batchId,
+        {
+          mapping: isPlainObject(body.mapping) ? (body.mapping as Record<string, string>) : undefined,
+          excludedRows: Array.isArray(body.excludedRows) ? body.excludedRows.map((value) => Number(value)).filter((value) => Number.isInteger(value)) : undefined,
+          categoryOverrides: isPlainObject(body.categoryOverrides) ? (body.categoryOverrides as Record<string, string>) : undefined,
+          offerReferences: isPlainObject(body.offerReferences) ? (body.offerReferences as Record<string, string>) : undefined,
+          sheetName: optionalString(body.sheetName, 'sheetName', 255),
+          mode: body.mode === undefined ? undefined : parseImportMode(body.mode),
+        },
+        requestMeta(req)
+      );
+      res.json(view);
+    })
+  );
+
+  router.post(
+    '/imports/:batchId/commit',
+    requireSession({ db }),
+    requirePermission('import:write'),
+    asyncHandler(async (req, res) => {
+      const result = await commitImportBatch(db, ctxOf(req), req.params.batchId, requestMeta(req));
+      res.status(201).json(result);
+    })
+  );
 
   return router;
 }
