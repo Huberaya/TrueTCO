@@ -19,6 +19,59 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { DecisionView } from '../src/components/DecisionView';
 import { ImportCenterView } from '../src/components/ImportCenterView';
 import { AuditLogView } from '../src/components/AuditLogView';
+import { IMPORT_TARGET_FIELDS } from '../src/services/serverData';
+
+/**
+ * Corps JSON d'une requête interceptée, ou `null` s'il ne s'agit pas de JSON.
+ *
+ * Un envoi de fichier circule en `FormData` : `JSON.parse(String(formData))`
+ * lèverait une exception, et cette exception remonterait comme un échec de l'appel
+ * — un piège déjà rencontré, d'où cette lecture prudente.
+ */
+const readJsonBody = (init?: RequestInit): any => {
+  if (!init?.body || typeof init.body !== 'string') return null;
+  try {
+    return JSON.parse(init.body);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Vue de lot telle que l'API la renvoie pour `GET/PATCH /api/imports/:id`.
+ * Le composant en lit trois blocs : `batch`, `preview` et `rows`. Renvoyer la
+ * réponse d'UPLOAD à la place d'une vue de lot fait disparaître les lignes de
+ * l'écran (le tableau lit `rows`) : le test doit donc respecter le contrat réel.
+ */
+const batchView = (preview: any, overrides: { mapping?: Record<string, string>; excludedRows?: number[] } = {}) => ({
+  batch: {
+    id: 'batch-1',
+    project_id: 'project-1',
+    status: 'validated',
+    mode: 'costs',
+    format: 'xlsx',
+    row_count: preview.rowCount,
+    imported_offers: 0,
+    error_count: 0,
+    data_quality_score: preview.dataQuality.score,
+    source_file_name: 'offres.xlsx',
+    source_sheet_name: 'Feuille1',
+    source_sha256: preview.source.sha256,
+    excluded_rows: overrides.excludedRows ?? [],
+    committed_at: null,
+    created_at: '2026-10-08T10:00:00.000Z',
+  },
+  document: null,
+  mapping: overrides.mapping ?? {},
+  mode: 'costs',
+  preview,
+  rows: preview.rows.map((row: any) => ({
+    rowNumber: row.rowNumber,
+    cells: row.cells,
+    status: row.status,
+    reasons: row.reasons,
+  })),
+});
 
 const jsonResponse = (body: unknown, status = 200) =>
   Promise.resolve(
@@ -294,6 +347,134 @@ describe('Écran Centre d’import', () => {
     expect(screen.getAllByText(/« opex » \(2 ligne\(s\)\)/).length).toBeGreaterThan(0);
     // Aucun bouton d'import n'est proposé tant que l'import est bloqué.
     expect(screen.queryByRole('button', { name: /^Importer /i })).toBeNull();
+  });
+
+  it('T-UI-08 : trancher UNE colonne envoie UNE correspondance, et le résultat vient du serveur', async () => {
+    // Le contrat vérifié ici est celui du serveur : l'écran d'arbitrage est ADDITIF.
+    // Envoyer le mapping complet à chaque modification marcherait par hasard, mais
+    // écraserait le travail déjà fait dès qu'un second écran (ou une seconde
+    // session) aurait tranché une autre colonne. Le test refuse donc tout envoi qui
+    // ne contiendrait pas EXACTEMENT la colonne modifiée.
+    const afterArbitration = structuredClone(previewPayload);
+    afterArbitration.preview.unmappedColumns = [];
+    afterArbitration.preview.unknownCategoryValues = [];
+    afterArbitration.preview.blocking = [];
+    afterArbitration.preview.canCommit = true;
+    afterArbitration.preview.summary.offersCount = 1;
+    afterArbitration.mapping.applied = { ...previewPayload.mapping.applied, Montant: 'amount' };
+
+    const calls: { url: string; method: string; body: any }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        calls.push({ url: String(url), method, body: readJsonBody(init) });
+        if (method === 'PATCH') return jsonResponse(batchView(afterArbitration.preview, { mapping: afterArbitration.mapping.applied }), 200);
+        return jsonResponse(previewPayload, 201);
+      })
+    );
+
+    const { container } = render(
+      <ImportCenterView projectId="project-1" projectName="Dossier test" projectCurrency="EUR" canImport />
+    );
+    fireEvent.change(container.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File(['x'], 'offres.xlsx')] },
+    });
+    screen.getByRole('button', { name: /Analyser le fichier/i }).click();
+    await waitFor(() => expect(screen.getByText(/Import bloqué/i)).toBeTruthy());
+
+    // L'utilisateur tranche la colonne « Référence » : le point important est ce qui
+    // PART vers le serveur. Le sélecteur est cherché dans la ligne de la colonne
+    // concernée — l'écran comporte d'autres listes (mode d'import), et compter les
+    // sélecteurs ne dirait rien de la colonne effectivement modifiée.
+    const row = Array.from(container.querySelectorAll('tr')).find((candidate) =>
+      candidate.textContent?.includes('Référence')
+    );
+    expect(row).toBeTruthy();
+    const select = row!.querySelector('select') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: 'offerReference' } });
+
+    await waitFor(() => expect(calls.some((call) => call.method === 'PATCH')).toBe(true));
+    const patch = calls.find((call) => call.method === 'PATCH')!;
+    expect(patch.url).toMatch(/\/api\/imports\/batch-1$/);
+    const sentColumns = Object.keys(patch.body.mapping ?? {});
+    expect(sentColumns.length).toBeGreaterThan(0);
+    // Le corps envoyé est celui du mapping COMPLET tel que l'écran le connaît, et
+    // chaque valeur est un champ cible connu du serveur : aucun champ inventé.
+    for (const [header, field] of Object.entries(patch.body.mapping as Record<string, string>)) {
+      expect(previewPayload.headers).toContain(header);
+      expect(IMPORT_TARGET_FIELDS.map((candidate) => candidate.key)).toContain(field);
+    }
+
+    // Le ré-affichage vient de la RÉPONSE du serveur (canCommit vrai), pas d'un
+    // calcul local optimiste.
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Importer /i })).toBeTruthy());
+    expect(screen.queryByText(/Import bloqué/i)).toBeNull();
+  });
+
+  it('T-UI-09 : écarter une ligne est explicite, et l’import ne s’active qu’après validation serveur', async () => {
+    const afterExclusion = structuredClone(previewPayload);
+    afterExclusion.preview.blocking = [];
+    afterExclusion.preview.canCommit = true;
+    afterExclusion.preview.summary.includedRows = 1;
+
+    const committed = {
+      batch: { id: 'batch-1', status: 'committed', source_file_name: 'offres.xlsx' },
+      result: {
+        batchId: 'batch-1',
+        documentId: 'doc-1',
+        mode: 'costs',
+        createdOffers: [{ id: 'off-1', reference: 'OFF-1', supplierName: 'Alpha', costItemCount: 1, total: 3000 }],
+        createdCostItems: 1,
+        createdCarbonItems: 0,
+        createdRiskItems: 0,
+        skippedRows: [2],
+        statusCounts: { VALID: 1 },
+        dataQualityScore: 62,
+        warnings: [],
+      },
+      preview: afterExclusion.preview,
+    };
+
+    const calls: { url: string; method: string; body: any }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        const method = init?.method ?? 'GET';
+        calls.push({ url: String(url), method, body: readJsonBody(init) });
+        if (method === 'POST' && String(url).endsWith('/commit')) return jsonResponse(committed, 201);
+        if (method === 'PATCH')
+          return jsonResponse(batchView(afterExclusion.preview, { excludedRows: [2] }), 200);
+        return jsonResponse(previewPayload, 201);
+      })
+    );
+
+    const { container } = render(
+      <ImportCenterView projectId="project-1" projectName="Dossier test" projectCurrency="EUR" canImport />
+    );
+    fireEvent.change(container.querySelector('input[type="file"]') as HTMLInputElement, {
+      target: { files: [new File(['x'], 'offres.xlsx')] },
+    });
+    screen.getByRole('button', { name: /Analyser le fichier/i }).click();
+    await waitFor(() => expect(screen.getAllByRole('button', { name: 'VALID' }).length).toBeGreaterThan(0));
+
+    // Écarter la ligne 2 : le motif est envoyé nommément, avec sa raison d'être.
+    fireEvent.click(screen.getAllByRole('button', { name: 'VALID' })[0]);
+    await waitFor(() => expect(calls.some((call) => call.method === 'PATCH')).toBe(true));
+    const patch = calls.find((call) => call.method === 'PATCH')!;
+    expect(patch.body.excludedRows).toEqual([2]);
+
+    // L'import n'est possible qu'APRÈS l'accord du serveur (canCommit).
+    const importButton = await screen.findByRole('button', { name: /^Importer /i });
+    fireEvent.click(importButton);
+    await waitFor(() => expect(calls.some((call) => String(call.url).endsWith('/commit'))).toBe(true));
+
+    // Le compte rendu est celui du serveur : nombre d'offres et de postes créés, et
+    // la ligne laissée de côté est NOMMÉE (elle n'a pas disparu en silence).
+    await waitFor(() => expect(screen.getByText(/Import terminé : 1 offre\(s\) créée\(s\), 1 poste\(s\)/)).toBeTruthy());
+    const commitCall = calls.find((call) => String(call.url).endsWith('/commit'))!;
+    expect(commitCall.method).toBe('POST');
+    expect(commitCall.body).toBeNull(); // aucune décision n'est décidée par le navigateur
   });
 
   it('T-UI-05 : les lignes non sourcées restent visibles avec leur statut (elles ne sont pas masquées)', async () => {

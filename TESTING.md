@@ -156,3 +156,49 @@ npx vitest run tests/parcours-api.spec.ts
    technique et avec l'identifiant de corrélation du journal.
 6. **Le lot d'origine d'une offre n'était pas exposé** dans la liste des offres : la
    provenance existait en base mais restait invisible à l'écran. Elle est renvoyée.
+
+
+---
+
+## Simulation probabiliste du risque (Phase 3)
+
+`src/engine/riskSimulation.spec.ts` (15 tests) vérifie des propriétés qui rendraient
+l'outil dangereux si elles étaient fausses — et non « un chiffre qui a l'air
+raisonnable » :
+
+| Propriété | Pourquoi elle est critique |
+| --- | --- |
+| Même graine + mêmes entrées ⇒ quantiles identiques au bit près | Un résultat qui change à chaque exécution n'est pas auditable |
+| Graine différente ⇒ tirage différent, mêmes ordres de grandeur | Une simulation instable serait inexploitable |
+| Aucune variabilité déclarée ⇒ P10 = P50 = P90 et le rapport le DIT | Le produit ne fabrique jamais d'incertitude |
+| Moyenne et dispersion d'une loi normale retrouvées par les tirages | Une loi mal implémentée fausserait toute probabilité |
+| Une hausse de l'énergie renverse effectivement la conclusion | L'intérêt de l'outil : montrer ce que le classement ne voit pas |
+| Matrice de corrélations contradictoire ⇒ refus explicite | Une hypothèse incohérente « réparée » en silence produit un faux résultat |
+| Troncature respectée, horizon en années entières | Ce qui est affiché est ce qui a été calculé |
+| Jamais « intervalle de confiance à X % » | Ce sont des quantiles SIMULÉS, pas une inférence statistique |
+
+Le rejeu par l'API est couvert par les tests F4 et F5 de `tests/parcours-api.spec.ts` :
+exécution, trace d'audit contenant la graine, relecture avec contrôle de fraîcheur,
+rejeu strictement identique, refus d'une simulation sans graine, sans variable, à
+corrélations contradictoires, à loi mal paramétrée, à paramètre inconnu, et
+cloisonnement des simulations entre organisations.
+
+## Écrans testés dans un DOM (`tests/ui.spec.tsx`)
+
+Ces tests montent réellement les composants (jsdom) avec une API simulée. Ils portent
+sur ce que l'utilisateur VOIT et sur ce qui PART vers le serveur :
+
+- `T-UI-04` un import bloqué affiche les points à corriger et ne propose pas d'importer ;
+- `T-UI-05` les lignes non sourcées restent visibles avec leur statut ;
+- `T-UI-08` trancher une colonne n'envoie que la correspondance modifiée, et le
+  ré-affichage vient de la réponse du serveur (jamais d'un calcul local optimiste) ;
+- `T-UI-09` écarter une ligne est un acte explicite, transmis avec son motif, et
+  l'import ne s'active qu'après accord du serveur ; le compte rendu nomme la ligne
+  laissée de côté ;
+- `T-UI-01` à `T-UI-03` côté décision : une recommandation « aucune » n'affiche pas de
+  gagnant, un refus de droit est expliqué au lieu d'être contourné, une erreur serveur
+  n'est jamais remplacée par un résultat local.
+
+Ces tests ne remplacent pas un navigateur complet (voir la section Playwright
+ci-dessus) : ils couvrent le rendu, les appels émis et les règles d'honnêteté de
+l'affichage.
