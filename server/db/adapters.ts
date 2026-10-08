@@ -132,6 +132,19 @@ export function translateError(err: unknown): Error {
       );
     case '23514': // check_violation
       return new DataError(e.message ?? 'Valeur refusée par une contrainte de validation.', 'INVALID_INPUT');
+    case '42703': // undefined_column
+    case '42P01': // undefined_table
+    case '42883': // undefined_function
+    case '42601': // syntax_error
+    case '42804': // datatype_mismatch
+      return new DataError(
+        "Cette opération n'a pas pu être exécutée : la requête ne correspond pas au schéma de données. " +
+          "L'incident a été journalisé côté serveur avec son identifiant de corrélation.",
+        'DB_SCHEMA',
+        undefined,
+        e?.message
+      );
+
     case '42501': {
       // Le code 42501 couvre DEUX cas distincts qu'il ne faut pas confondre :
       //   - une violation de policy RLS (fuite ou écriture inter-organisation) ;

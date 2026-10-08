@@ -61,6 +61,13 @@ export interface DbStatus {
 
 /** Erreur métier porteuse d'un code exploitable par la couche HTTP. */
 export class DataError extends Error {
+  /**
+   * Cause technique brute (message du moteur). Elle est destinée à la
+   * journalisation serveur et ne doit jamais être renvoyée au client : les
+   * messages de PostgreSQL exposent tables, colonnes et contraintes.
+   */
+  public readonly technical?: string;
+
   constructor(
     message: string,
     public readonly code:
@@ -70,10 +77,13 @@ export class DataError extends Error {
       | 'INVALID_INPUT'
       | 'TENANT_VIOLATION'
       | 'IMMUTABLE'
+      | 'DB_SCHEMA'
       | 'DB_ERROR',
-    public readonly details?: unknown
+    public readonly details?: unknown,
+    technical?: string
   ) {
     super(message);
+    this.technical = technical;
     this.name = 'DataError';
   }
 }

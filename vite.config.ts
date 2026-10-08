@@ -92,6 +92,23 @@ export default defineConfig(() => {
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // Accessible depuis le réseau (nécessaire pour l'aperçu hébergé) : le
+      // serveur de développement écoute sur toutes les interfaces.
+      host: true,
+      port: Number(process.env.VITE_PORT) || 5173,
+      // Le serveur de développement est accédé via un domaine d'aperçu généré :
+      // tous les hôtes sont acceptés pour cette raison. En production, le front
+      // est servi par le serveur d'API (aucun serveur de développement).
+      allowedHosts: true as const,
+      proxy: {
+        // Le front n'appelle JAMAIS l'API en direct sur une autre origine : il
+        // utilise des URL relatives (/api/...), et ce proxy les achemine vers le
+        // serveur d'API. En production, les deux sont servis par le même hôte.
+        '/api': {
+          target: process.env.TRUETCO_API_URL || 'http://127.0.0.1:3000',
+          changeOrigin: false,
+        },
+      },
     },
   };
 });

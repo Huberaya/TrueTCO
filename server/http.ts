@@ -211,7 +211,8 @@ export function errorHandler(isProd: boolean) {
       // Journalisation serveur systématique : l'utilisateur reçoit un message
       // lisible, l'exploitant dispose de la cause réelle et du corrélateur.
       console.error(
-        `[TrueTCO][${correlationId}] Erreur de données (${err.code}) sur ${req.method} ${req.originalUrl} : ${err.message}`
+        `[TrueTCO][${correlationId}] Erreur de données (${err.code}) sur ${req.method} ${req.originalUrl} : ${err.message}` +
+          (err.technical ? ` | cause technique : ${err.technical}` : '')
       );
       const status =
         err.code === 'NOT_FOUND'
@@ -220,7 +221,7 @@ export function errorHandler(isProd: boolean) {
             ? 409
             : err.code === 'FORBIDDEN' || err.code === 'TENANT_VIOLATION'
               ? 403
-              : err.code === 'INVALID_INPUT'
+              : err.code === 'INVALID_INPUT' || err.code === 'DB_SCHEMA'
                 ? 400
                 : 500;
       res.status(status).json({

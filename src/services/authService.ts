@@ -11,6 +11,11 @@ export interface EnterpriseUser {
   department?: string;
   isActive?: boolean;
   lastLoginAt?: string;
+  /** Organisation de la session, décidée par le serveur (jamais par le client). */
+  organizationId: string;
+  organizationName?: string;
+  /** Vrai si la session provient du mode de recette local (aucun fournisseur d'identité). */
+  isDemoSession?: boolean;
 }
 
 export interface SSOLoginResponse {
@@ -63,7 +68,23 @@ export const AuthService = {
       throw error;
     }
 
-    return (await response.json()) as SSOLoginResponse;
+    // La connexion ne renvoie PAS d'identité : celle-ci est toujours relue
+    // depuis la session serveur (/api/auth/me). Le navigateur ne fabrique donc
+    // jamais son propre utilisateur, de rôle ou d'organisation.
+    const session = (await response.json()) as { expiresAt: string; authMethod?: string; warning?: string };
+    const user = await AuthService.getCurrentUser();
+    if (!user) {
+      throw new Error("La session a été créée mais son identité n'a pas pu être relue : réessayez.");
+    }
+    return {
+      success: true,
+      expiresAt: session.expiresAt,
+      organizationId: user.organizationId,
+      organizationName: user.organizationName,
+      authenticationMode: session.authMethod,
+      warning: session.warning,
+      user,
+    };
   },
 
   /** Vérifie la session courante auprès du serveur. */
@@ -84,6 +105,9 @@ export const AuthService = {
           ssoProvider: data.user.ssoProvider ?? 'demo_local',
           department: data.user.department ?? undefined,
           isActive: data.user.isActive,
+          organizationId: data.organization?.id ?? '',
+          organizationName: data.organization?.name,
+          isDemoSession: Boolean(data.session?.isDemo),
         } as EnterpriseUser;
       }
       return null;

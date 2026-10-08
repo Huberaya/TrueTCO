@@ -32,7 +32,15 @@ import { AutomatedTestsModal } from './components/AutomatedTestsModal';
 import { DataBackupModal } from './components/DataBackupModal';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { StorageService, TrueTCOBackupPayload } from './services/storageService';
-import { NeonService } from './services/neonService';
+import {
+  ApiError,
+  createProjectOnServer,
+  createSupplierOnServer,
+  fetchAuditLogsFromServer,
+  fetchProjectsFromServer,
+  fetchSuppliersFromServer,
+  updateProjectOnServer,
+} from './services/serverData';
 import { useAuth } from './context/AuthContext';
 import { useTenant } from './context/TenantContext';
 import { EnterpriseLoginModal } from './components/EnterpriseLoginModal';
@@ -54,6 +62,14 @@ export default function App() {
   const [benchmarks, setBenchmarks] = useState<ExternalityReferenceBenchmark[]>(() => StorageService.getBenchmarks());
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => StorageService.getAuditLogs());
 
+  /**
+   * Source de vérité effective. « serveur » : les données affichées viennent de
+   * PostgreSQL via l'API. « cache-local » : données de démonstration lues dans le
+   * navigateur (aucune session serveur) — l'interface l'indique explicitement.
+   */
+  const [dataSource, setDataSource] = useState<'serveur' | 'cache-local' | 'chargement'>('chargement');
+  const [serverError, setServerError] = useState<string | null>(null);
+
   // Le rôle affiché provient de la session serveur. Aucun sélecteur de rôle :
   // un changement de rôle doit être effectué par un administrateur, pas par
   // l'utilisateur lui-même.
@@ -66,73 +82,40 @@ export default function App() {
   const [isTestsModalOpen, setIsTestsModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
 
-  // Load remote projects, audit logs, and benchmarks from Neon DB on mount if available
+  /**
+   * Chargement depuis le serveur. Aucune donnée de démonstration n'est injectée
+   * en silence : si aucune session n'est ouverte, l'application reste sur le jeu
+   * de démonstration et l'affiche comme tel.
+   */
+  const loadFromServer = React.useCallback(async () => {
+    if (!user) {
+      setDataSource('cache-local');
+      return;
+    }
+    try {
+      const [serverProjects, serverSuppliers, serverLogs] = await Promise.all([
+        fetchProjectsFromServer(user.organizationId, user.id, user.fullName),
+        fetchSuppliersFromServer(user.organizationId),
+        fetchAuditLogsFromServer(),
+      ]);
+      setProjects(serverProjects);
+      setSuppliers(serverSuppliers);
+      setAuditLogs(serverLogs);
+      setCurrentProjectId((previous) => (serverProjects.some((p) => p.id === previous) ? previous : serverProjects[0]?.id ?? ''));
+      setDataSource('serveur');
+      setServerError(null);
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? `${err.message} (${err.code})` : 'Le serveur est injoignable : affichage des données locales.';
+      console.warn('[TrueTCO] Chargement serveur impossible :', message);
+      setServerError(message);
+      setDataSource('cache-local');
+    }
+  }, [user]);
+
   useEffect(() => {
-    NeonService.fetchProjects().then((remoteProjects) => {
-      if (remoteProjects && remoteProjects.length > 0) {
-        setProjects((prev) => {
-          const existingIds = new Set(prev.map((p) => p.id));
-          const newFromNeon = remoteProjects.filter((p) => !existingIds.has(p.id));
-          if (newFromNeon.length > 0) {
-            console.log(`[TrueTCO] Loaded ${newFromNeon.length} new project(s) from Neon database.`);
-            return [...newFromNeon, ...prev];
-          }
-          return prev;
-        });
-      }
-    });
-
-    NeonService.fetchAuditLogs().then((remoteLogs) => {
-      if (remoteLogs && remoteLogs.length > 0) {
-        setAuditLogs((prev) => {
-          const existingIds = new Set(prev.map((l) => l.id));
-          const newFromNeon = remoteLogs.filter((l) => !existingIds.has(l.id));
-          return newFromNeon.length > 0 ? [...newFromNeon, ...prev] : prev;
-        });
-      }
-    });
-
-    NeonService.fetchBenchmarks().then((remoteBenchmarks) => {
-      if (remoteBenchmarks && remoteBenchmarks.length > 0) {
-        setBenchmarks((prev) => {
-          const existingNames = new Set(prev.map((b) => b.name));
-          const newFromNeon = remoteBenchmarks.filter((b) => !existingNames.has(b.name));
-          return newFromNeon.length > 0 ? [...newFromNeon, ...prev] : prev;
-        });
-      }
-    });
-  }, []);
-
-  // Hermetic Multi-Tenancy: Reload tenant-scoped projects, suppliers, and audit logs on tenant switch
-  useEffect(() => {
-    let isMounted = true;
-
-    NeonService.fetchProjects(currentTenant.id).then((remoteProjects) => {
-      if (!isMounted) return;
-      if (remoteProjects && remoteProjects.length > 0) {
-        setProjects(remoteProjects);
-        setCurrentProjectId(remoteProjects[0].id);
-      }
-    });
-
-    NeonService.fetchSuppliers(currentTenant.id).then((remoteSuppliers) => {
-      if (!isMounted) return;
-      if (remoteSuppliers && remoteSuppliers.length > 0) {
-        setSuppliers(remoteSuppliers);
-      }
-    });
-
-    NeonService.fetchAuditLogs(currentTenant.id).then((remoteLogs) => {
-      if (!isMounted) return;
-      if (remoteLogs && remoteLogs.length > 0) {
-        setAuditLogs(remoteLogs);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentTenant.id]);
+    void loadFromServer();
+  }, [loadFromServer]);
 
   // Sync state to local storage on changes
   useEffect(() => {
@@ -175,59 +158,53 @@ export default function App() {
     setCurrentProjectId(p.id);
   };
 
-  const handleAddProject = (newProject: Project) => {
-    setProjects((prev) => [newProject, ...prev]);
-    setCurrentProjectId(newProject.id);
-
-    // Create corresponding audit log entry
-    const log: AuditLogEntry = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      userId: user?.id || 'session-inconnue',
-      userName: user?.fullName || 'Utilisateur non authentifié',
-      userRole: user?.role || activeRole,
-      projectId: newProject.id,
-      entityName: 'Projet d\'Achat',
-      fieldChanged: 'Création de projet',
-      oldValue: 'N/A',
-      newValue: newProject.name,
-      justification: 'Ouverture de consultation pour arbitrage TCO pluriannuel.',
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-
-    // Persist directly to Neon PostgreSQL in background
-    NeonService.saveProject(newProject);
-    NeonService.saveAuditLog(log);
+  /**
+   * Création d'un dossier. L'écriture est faite par le serveur, qui journalise
+   * l'action dans le journal d'audit. En cas d'échec, l'état local n'est PAS
+   * modifié : l'utilisateur voit l'erreur exacte.
+   */
+  const handleAddProject = async (newProject: Project) => {
+    if (!user) {
+      setServerError("Création impossible : aucune session serveur ouverte. Connectez-vous pour enregistrer un dossier.");
+      return;
+    }
+    try {
+      const created = await createProjectOnServer(newProject);
+      setProjects((prev) => [created, ...prev]);
+      setCurrentProjectId(created.id);
+      await loadFromServer();
+    } catch (err) {
+      const message = err instanceof ApiError ? `${err.message} (${err.code})` : 'Erreur inattendue du serveur.';
+      setServerError(message);
+    }
   };
 
+  /**
+   * Les offres et leurs postes de coût : l'enregistrement serveur exige la
+   * correspondance entre le modèle métier de l'interface et les tables
+   * `supplier_offers` / `cost_items`. Cette correspondance est réalisée avec le
+   * branchement du moteur de calcul (Phase 3) : d'ici là, l'offre reste locale et
+   * l'interface l'indique. Aucune écriture partielle n'est envoyée au serveur.
+   */
   const handleAddOffer = (newOffer: SupplierOffer) => {
     setOffers((prev) => [...prev, newOffer]);
-
-    // Create corresponding audit log entry
-    const log: AuditLogEntry = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      userId: user?.id || 'session-inconnue',
-      userName: user?.fullName || 'Utilisateur non authentifié',
-      userRole: user?.role || activeRole,
-      projectId: currentProject.id,
-      offerId: newOffer.id,
-      entityName: `Offre ${newOffer.supplierName}`,
-      fieldChanged: 'Importation d\'offre',
-      oldValue: '0 €',
-      newValue: `${newOffer.apparentTotal.toLocaleString('fr-FR')} €`,
-      justification: 'Intégration d\'une proposition fournisseur pour normalisation TCO.',
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-
-    // Persist directly to Neon PostgreSQL
-    NeonService.saveOffer(newOffer);
-    NeonService.saveAuditLog(log);
+    setServerError(
+      "Cette offre est conservée localement : l'enregistrement serveur des offres et de leurs postes de coût sera branché avec le moteur de calcul (Phase 3). Aucune donnée n'a été écrite en base."
+    );
   };
 
-  const handleUpdateProject = (updated: Project) => {
-    setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
-    NeonService.saveProject(updated);
+  const handleUpdateProject = async (updated: Project) => {
+    if (dataSource !== 'serveur') {
+      setProjects((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+      return;
+    }
+    try {
+      const saved = await updateProjectOnServer(updated);
+      setProjects((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+    } catch (err) {
+      const message = err instanceof ApiError ? `${err.message} (${err.code})` : 'Erreur inattendue du serveur.';
+      setServerError(message);
+    }
   };
 
   const handleDuplicateProject = (p: Project) => {
@@ -243,78 +220,50 @@ export default function App() {
     handleAddProject(clone);
   };
 
-  const handleAddSupplier = (newSupplier: Supplier) => {
-    setSuppliers((prev) => [newSupplier, ...prev]);
-
-    const log: AuditLogEntry = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      userId: user?.id || 'session-inconnue',
-      userName: user?.fullName || 'Utilisateur non authentifié',
-      userRole: user?.role || activeRole,
-      entityName: `Fournisseur ${newSupplier.name}`,
-      fieldChanged: 'Référencement & Qualification Tiers',
-      oldValue: 'N/A',
-      newValue: `${newSupplier.name} (${newSupplier.country})`,
-      justification: `Enregistrement du fournisseur avec un score qualité données de ${newSupplier.dataQualityScore}%.`,
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-    NeonService.saveAuditLog(log);
-    NeonService.saveSupplier(newSupplier);
+  const handleAddSupplier = async (newSupplier: Supplier) => {
+    if (!user) {
+      setServerError("Création impossible : aucune session serveur ouverte.");
+      return;
+    }
+    try {
+      const created = await createSupplierOnServer(newSupplier, user.organizationId);
+      setSuppliers((prev) => [created, ...prev]);
+      await loadFromServer();
+    } catch (err) {
+      const message = err instanceof ApiError ? `${err.message} (${err.code})` : 'Erreur inattendue du serveur.';
+      setServerError(message);
+    }
   };
 
   const handleUpdateSupplier = (updated: Supplier) => {
-    setSuppliers((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-    NeonService.saveSupplier(updated);
+    // La modification d'un fournisseur reste locale tant que la route serveur de
+    // mise à jour n'existe pas : aucun appel réseau fictif n'est effectué.
+    setSuppliers((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
   };
 
-  const handleUpdateBenchmark = (updated: ExternalityReferenceBenchmark, justification: string) => {
-    const old = benchmarks.find((b) => b.id === updated.id);
+  /**
+   * Référentiel de facteurs : géré localement (les facteurs de plateforme ne
+   * disposent pas encore de route d'écriture serveur). Toute modification est
+   * présentée à l'utilisateur comme une hypothèse, jamais comme une valeur
+   * institutionnelle vérifiée.
+   */
+  const handleUpdateBenchmark = (updated: ExternalityReferenceBenchmark, _justification: string) => {
     setBenchmarks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
-    NeonService.saveBenchmark(updated);
-
-    if (old) {
-      const log: AuditLogEntry = {
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`,
-        timestamp: new Date().toISOString(),
-        userId: user?.id || 'session-inconnue',
-        userName: user?.fullName || 'Utilisateur non authentifié',
-        userRole: user?.role || activeRole,
-        projectId: currentProject.id,
-        entityName: updated.name,
-        fieldChanged: 'Valeur de référence pivot',
-        oldValue: `${old.value} ${old.unit}`,
-        newValue: `${updated.value} ${updated.unit}`,
-        justification: justification || 'Mise à jour périodique du référentiel institutionnel.',
-      };
-      setAuditLogs((prev) => [log, ...prev]);
-      NeonService.saveAuditLog(log);
-    }
   };
 
   const handleAddBenchmark = (newBench: ExternalityReferenceBenchmark) => {
     setBenchmarks((prev) => [...prev, newBench]);
-    NeonService.saveBenchmark(newBench);
-
-    const log: AuditLogEntry = {
-      id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`,
-      timestamp: new Date().toISOString(),
-      userId: user?.id || 'session-inconnue',
-      userName: user?.fullName || 'Utilisateur non authentifié',
-      userRole: user?.role || activeRole,
-      entityName: newBench.name,
-      fieldChanged: 'Création facteur référentiel',
-      oldValue: 'N/A',
-      newValue: `${newBench.value} ${newBench.unit}`,
-      justification: `Intégration d'un nouveau facteur institutionnel (${newBench.source}).`,
-    };
-    setAuditLogs((prev) => [log, ...prev]);
-    NeonService.saveAuditLog(log);
   };
 
-  const handleAddAuditLog = (entry: AuditLogEntry) => {
-    setAuditLogs((prev) => [entry, ...prev]);
-    NeonService.saveAuditLog(entry);
+  /**
+   * Le journal d'audit est en écriture serveur uniquement : une entrée produite
+   * par le navigateur n'aurait aucune valeur probante. Cette fonction ne fait
+   * donc rien d'autre que prévenir l'utilisateur.
+   */
+  const handleAddAuditLog = (_entry: AuditLogEntry) => {
+    setServerError(
+      "Le journal d'audit est tenu par le serveur : les actions y sont enregistrées automatiquement avec l'identité de la session."
+    );
   };
 
   const handleRestoreData = (payload: TrueTCOBackupPayload) => {
@@ -362,6 +311,25 @@ export default function App() {
 
         {/* Main Content Area */}
         <main className="flex-1 overflow-y-auto p-6 lg:p-8">
+          {dataSource === 'cache-local' && (
+            <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+              <strong>Données locales de démonstration.</strong> Aucune session serveur n’est ouverte : les dossiers,
+              fournisseurs et journaux affichés proviennent du jeu de démonstration du navigateur et ne sont pas
+              enregistrés dans la base PostgreSQL.
+              {serverError && <span className="block mt-1 text-amber-300/90">Détail : {serverError}</span>}
+            </div>
+          )}
+          {dataSource === 'serveur' && serverError && (
+            <div className="mb-4 rounded-xl border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+              {serverError}
+            </div>
+          )}
+          {dataSource === 'serveur' && (
+            <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-200">
+              Données servies par PostgreSQL (session authentifiée). Les offres restent locales jusqu’au branchement du
+              moteur de calcul (Phase 3).
+            </div>
+          )}
           {currentView === 'chantier1' && (
             <Chantier1View
               project={currentProject}

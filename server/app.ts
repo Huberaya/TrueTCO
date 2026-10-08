@@ -108,22 +108,56 @@ function rateLimit(options: { windowMs: number; max: number; name: string }) {
 
 export function createApp(options: AppOptions): Express {
   const app = express();
+  let devOriginWarningLogged = false;
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
 
   app.use(correlationId());
   app.use(securityHeaders(options.isProd));
 
-  // CORS : par défaut, aucune origine tierce n'est autorisée.
+  // CORS : par défaut, aucune origine tierce n'est autorisée. Les requêtes de
+  // MÊME ORIGINE que l'hôte servent le front : elles doivent être acceptées quel
+  // que soit le domaine d'hébergement (l'application ne connaît pas son domaine
+  // à l'avance, et un déploiement sur un domaine d'aperçu ou de recette ne doit
+  // pas se traduire par un refus systématique).
+  const isSameOrigin = (origin: string, host: string | undefined): boolean => {
+    if (!host) return false;
+    try {
+      return new URL(origin).host === host;
+    } catch {
+      return false;
+    }
+  };
+
   app.use((req, res, next) => {
     const origin = req.headers.origin;
     if (typeof origin === 'string' && origin.length > 0) {
+      if (isSameOrigin(origin, req.headers.host)) {
+        // Même origine : aucun en-tête CORS n'est nécessaire, mais la requête
+        // est légitime.
+        next();
+        return;
+      }
       if (options.allowedOrigins.includes(origin)) {
         res.setHeader('Access-Control-Allow-Origin', origin);
         res.setHeader('Vary', 'Origin');
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Request-Id');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+      } else if (!options.isProd && options.allowedOrigins.length === 0) {
+        // Développement sans liste d'origines configurée : le serveur de
+        // développement Vite peut être accédé par plusieurs noms d'hôte
+        // (localhost, IP du conteneur, domaine d'aperçu). En production, cette
+        // tolérance n'existe pas : la liste est obligatoire.
+        if (!devOriginWarningLogged) {
+          devOriginWarningLogged = true;
+          console.warn(
+            '[TrueTCO] CORS de développement : TRUETCO_ALLOWED_ORIGINS est vide, les origines tierces sont acceptées. ' +
+              'Renseignez la liste avant toute mise en production (interdit en production).'
+          );
+        }
+        next();
+        return;
       } else if (req.path.startsWith('/api/')) {
         // Une origine inconnue sur une route d'API est refusée : le navigateur
         // d'un site tiers ne doit pas pouvoir déclencher d'appel porteur de
