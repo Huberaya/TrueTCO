@@ -20,6 +20,7 @@
  *   R6  secrets en clair dans le code            → fuite par dépôt
  *   R7  évaluation dynamique (eval / new Function) → exécution de code arbitraire
  *   R8  dépendance du serveur envers les composants d'interface → couches inversées
+ *   R9  certification ou conformité revendiquée dans l'interface → fausse preuve
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -162,8 +163,49 @@ for (const file of serverFiles) {
   });
 }
 
+/**
+ * R9 — aucune certification ni conformité revendiquée dans l'interface.
+ *
+ * Le produit affichait « ISO 27001 · SOC 2 Type II », « Certifié ISO 15686-5 »,
+ * « Conformité CAC & Article L. 823-10 », « Certifié Quantum », etc. Aucune de ces
+ * mentions ne correspondait à un document, un audit ou une habilitation réelle.
+ * Une revendication de conformité est une preuve : elle doit exister hors du code
+ * avant d'être affichée.
+ *
+ * La règle est volontairement sensible à la négation : écrire « aucune certification
+ * de conformité n'est délivrée » est exact et doit rester possible.
+ */
+const CLAIM_TOKENS = [
+  /\bISO\s?27001\b/i,
+  /\bSOC\s?2\b/i,
+  /\b823-10\b/,
+  /\bCertEurope\b/i,
+  /\bANSSI\b/,
+  /\bimmuable\b/i,
+  /\bNeon\s+PostgreSQL\b/i,
+  /\bcertifi[ée]e?s?\b/i,
+];
+const NEGATION = /\b(pas|aucun|aucune|sans|non|jamais|ne)\b|n['’]/i;
+
+for (const file of allSource) {
+  if (!file.split(path.sep).join('/').includes('/src/components/')) continue;
+  const content = await fs.readFile(file, 'utf8');
+  content.split('\n').forEach((line, index) => {
+    const isComment = /^\s*(\/\/|\*|\/\*)/.test(line);
+    if (isComment) return;
+    if (!CLAIM_TOKENS.some((token) => token.test(line))) return;
+    if (NEGATION.test(line)) return;
+    report(
+      'R9',
+      file,
+      index + 1,
+      "Revendication de certification ou de conformité sans preuve : la formuler comme non certifiée, ou retirer la mention."
+    );
+  });
+}
+
 if (violations.length === 0) {
-  console.log(`Contrôles statiques (8 règles) : aucun écart sur ${allSource.length + testFiles.length} fichiers analysés.`);
+  console.log(`Contrôles statiques (9 règles) : aucun écart sur ${allSource.length + testFiles.length} fichiers analysés.`);
   process.exit(0);
 }
 

@@ -44,19 +44,49 @@ export interface SSOLoginResponse {
  *   - le rôle n'est jamais choisi par le client : il provient de la session
  *     serveur et conditionne les vérifications de permissions côté API.
  */
+export interface AuthInstanceConfig {
+  /** Connecteurs OIDC/SAML réellement déployés (liste vide tant qu'aucun ne l'est). */
+  federatedProviders: string[];
+  /** Mode démonstration local activé par l'exploitant (sans mot de passe ni second facteur). */
+  demoMode: boolean;
+  mfa: boolean;
+  scim: boolean;
+  ssoFederation: boolean;
+  note: string;
+}
+
 export const AuthService = {
+  /**
+   * Configuration d'authentification de l'instance, telle que le serveur la
+   * déclare. L'interface ne doit afficher aucun fournisseur d'identité, aucun
+   * second facteur et aucune fédération qui ne figure pas ici.
+   */
+  async getAuthConfig(): Promise<AuthInstanceConfig | null> {
+    try {
+      const response = await fetch('/api/auth/config', { credentials: 'same-origin' });
+      if (!response.ok) return null;
+      return (await response.json()) as AuthInstanceConfig;
+    } catch {
+      // Serveur injoignable : l'interface n'invente pas de configuration, elle
+      // annonce simplement ne pas pouvoir la lire.
+      return null;
+    }
+  },
+
   /** Connexion. En production, échoue tant qu'aucun IdP n'est branché (501). */
   async loginWithSSO(params: {
     email: string;
-    ssoProvider: SSOProvider;
-    fullName?: string;
-    department?: string;
+    /** Domaine d'organisation, pour lever l'ambiguïté si l'adresse existe ailleurs. */
+    domain?: string;
   }): Promise<SSOLoginResponse> {
     const response = await fetch('/api/auth/sso/login', {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify({
+        email: params.email,
+        domain: params.domain ?? null,
+      }),
     });
 
     if (!response.ok) {

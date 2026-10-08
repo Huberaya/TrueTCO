@@ -123,7 +123,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
         valid: true,
         messages: [
           `Validation réussie : ${projects.length} projet(s), ${offers.length} offre(s), ${suppliers.length} fournisseur(s) et ${auditLogs.length} traces d'audit conformes.`,
-          'Toutes les contraintes financières (WACC, budget, CBS) et ESG sont certifiées pour la migration.',
+          'Les contraintes de format (WACC, budget, structure de coûts) et ESG ont été vérifiées pour la migration.',
         ],
       });
     } else {
@@ -168,7 +168,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
       onResetSeed();
       setFeedback({
         type: 'success',
-        msg: 'Données réinitialisées aux valeurs initiales certifiées.',
+        msg: 'Données réinitialisées au jeu de DÉMONSTRATION.',
       });
     }
   };
@@ -305,7 +305,8 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               <div>
                 <div className="font-semibold text-rose-300">Réinitialiser aux valeurs de référence</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">
-                  Rétablit les jeux d'essais initiaux certifiés (50 VUL électriques vs thermiques).
+                  Rétablit le jeu de DÉMONSTRATION d'origine (50 VUL électriques vs thermiques) : ce sont des données
+                  fictives, à ne pas confondre avec des données client.
                 </div>
               </div>
               <button
@@ -489,7 +490,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                       <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                     )}
                     {zodValidationReport.valid
-                      ? 'Toutes les données sont certifiées et conformes aux schémas DTO Zod.'
+                      ? 'Toutes les données respectent les schémas de validation (Zod). Aucune certification externe n’est en jeu.'
                       : 'Erreurs de validation détectées :'}
                   </div>
                   <ul className="list-disc list-inside space-y-0.5 text-slate-300">

@@ -168,6 +168,7 @@ export function projectFromRow(row: ProjectRow, organizationId: string, ownerNam
     ownerId,
     ownerName,
     status: STATUS_FROM_SERVER[row.status] ?? 'brouillon',
+    serverWorkflowStatus: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     discountRate: Number(row.discount_rate),
@@ -697,6 +698,56 @@ export async function fetchHealth(): Promise<HealthStatus> {
  * postes. Les détails sont chargés en parallèle, avec un plafond pour ne pas
  * saturer un serveur modeste quand un dossier compte beaucoup d'offres.
  */
+/** Historique d'audit d'un dossier : les approbations y sont enregistrées par le serveur. */
+export async function fetchProjectAuditLogsFromServer(
+  projectId: string,
+  limit = 100
+): Promise<{ items: AuditLogEntry[]; total: number }> {
+  const data = await api<{ items: any[]; total: number }>(
+    `/api/audit-logs?limit=${limit}&projectId=${encodeURIComponent(projectId)}`
+  );
+  return {
+    items: (data.items ?? []).map((row) => ({
+      id: String(row.id),
+      timestamp: row.occurred_at,
+      userId: row.actor_id ?? 'système',
+      userName: row.actor_name ?? 'Système',
+      userRole: (row.actor_role as UserRole) ?? 'lecteur',
+      projectId: row.project_id ?? undefined,
+      offerId: row.entity_type === 'supplier_offer' ? row.entity_id ?? undefined : undefined,
+      entityName: row.entity_type ?? '',
+      fieldChanged: row.field_changed ?? row.action,
+      oldValue: row.old_value ?? '—',
+      newValue: row.new_value ?? '—',
+      justification: row.justification ?? 'Action enregistrée par le serveur.',
+    })) as AuditLogEntry[],
+    total: data.total ?? 0,
+  };
+}
+
+/**
+ * Transition de cycle de vie adressée au SERVEUR, en nommant l'étape serveur.
+ *
+ * `changeProjectStatusOnServer` convertit un statut d'affichage en statut serveur :
+ * pratique pour les écrans qui raisonnent en statuts d'affichage, mais ambigu là où
+ * deux statuts d'affichage distincts retombent sur le même statut serveur. L'écran
+ * d'approbations, qui doit nommer l'étape réellement visée, passe donc par cette
+ * fonction : le serveur valide la transition (`PROJECT_TRANSITIONS`) et la
+ * justification, journalise l'action avec l'identité de la session, puis renvoie
+ * l'état enregistré — que l'interface affiche tel quel.
+ */
+export async function changeProjectWorkflowStatusOnServer(
+  project: Project,
+  serverStatus: string,
+  justification: string
+): Promise<Project> {
+  const row = await api<ProjectRow>(`/api/projects/${project.id}/status`, {
+    method: 'POST',
+    body: JSON.stringify({ status: serverStatus, justification }),
+  });
+  return projectFromRow(row, project.organizationId, project.ownerName, project.ownerId);
+}
+
 export async function fetchOffersFromServer(
   organizationId: string,
   userId: string,

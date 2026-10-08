@@ -15,11 +15,18 @@ npm run verify        # typecheck + tests + build
 | Fichier | Objet | Nombre |
 |---|---|---|
 | `src/engine/tcoEngine.spec.ts` | Non-régression du moteur : invariants (somme des flux nominaux = TCO, somme actualisée = LCC, pureté des entrées), baselines vérifiées | 27 |
+| `src/engine/decisionReversal.spec.ts` | Inversion de décision : seuils atteignables, vocabulaire des zones, déterminisme | 9 |
+| `src/engine/riskSimulation.spec.ts` | Simulation probabiliste : graine obligatoire, reproductibilité au bit près, quantiles (jamais « intervalle de confiance »), refus des lois mal paramétrées | 15 |
 | `tests/isolation.spec.ts` | Cloisonnement multi-tenant sur PostgreSQL réel (RLS) : IDOR, UPDATE/DELETE croisés, jointures, échec fermé, audit immuable, sessions | 15 |
 | `tests/api-security.spec.ts` | API complète : session, RBAC, transitions de statut, écriture transactionnelle, journal non forgeable, CSRF, parcours inscription/invitation | 37 |
 | `tests/pg-adapter.spec.ts` | **Pilote de production** (`pg`) sur le protocole réseau PostgreSQL, exposé par PGlite en socket | 6 |
+| `tests/import.spec.ts` | Import XLSX/CSV : détection, mapping, validation, refus d'inventer, traçabilité | 20 |
+| `tests/decision.spec.ts` | Décision serveur : classement, seuil de fermeté, empreinte de fraîcheur, rejeu | 17 |
+| `tests/parcours-api.spec.ts` | Parcours PME complet par HTTP (tests de réalité A, C, D, F), simulation et rejeu, configuration d'authentification déclarée | 18 |
+| `tests/ui.spec.tsx` | Rendu des écrans (jsdom) : décision, import, journal, approbations, dossier décisionnel | 17 |
 
-Total : **85 tests**.
+Total : **181 tests**. Les contrôles de compilation (`tsc --noEmit`), statiques
+(`check:static`, 9 règles) et de taille de paquet (`bundle:check`) s'ajoutent à la suite.
 
 ## Moteur de test PostgreSQL
 
@@ -61,7 +68,7 @@ ESLint **ne peut pas être utilisé dans ce dépôt** : son moteur TypeScript
 (`typescript-eslint` 8.x, dernière version publiée) refuse TypeScript 7 et
 interrompt son chargement (`typescript-eslint does not support TS 7.0`). Plutôt
 que d'afficher une étape « lint » qui ne vérifierait rien, `scripts/check-static-rules.mjs`
-applique huit règles vérifiables, chacune liée à un défaut réel :
+applique neuf règles vérifiables, chacune liée à un défaut réel :
 
 | Règle | Ce qu'elle empêche |
 | --- | --- |
@@ -73,6 +80,7 @@ applique huit règles vérifiables, chacune liée à un défaut réel :
 | R6 | Secrets en clair dans le code |
 | R7 | Évaluation dynamique (`eval`, `new Function`) |
 | R8 | Dépendance du serveur envers les composants d'interface |
+| R9 | Revendication de certification ou de conformité dans l'interface (« ISO 27001 », « SOC 2 », « immuable », « certifié »…) sans preuve — négation reconnue, pour que « aucune certification n'est délivrée » reste possible |
 
 Chaque exception doit être inscrite dans le script **avec sa raison** : il n'existe
 pas de désactivation silencieuse.
@@ -197,7 +205,16 @@ sur ce que l'utilisateur VOIT et sur ce qui PART vers le serveur :
   laissée de côté ;
 - `T-UI-01` à `T-UI-03` côté décision : une recommandation « aucune » n'affiche pas de
   gagnant, un refus de droit est expliqué au lieu d'être contourné, une erreur serveur
-  n'est jamais remplacée par un résultat local.
+  n'est jamais remplacée par un résultat local ;
+- `T-UI-10` à `T-UI-14` côté approbations (écran qui a remplacé la « signature
+  électronique ») : le cycle de vie et les approbations viennent du serveur ; l'écran
+  démentit explicitement toute signature qualifiée ; sans motif écrit de 10 caractères
+  rien n'est envoyé ; une approbation valide est enregistrée par l'API puis l'historique
+  est relu ; un refus du serveur est affiché tel quel ; un rôle sans `project:write` ne
+  peut pas faire avancer le dossier ;
+- `T-UI-15` à `T-UI-17` côté dossier décisionnel : aucun signataire inventé ni badge
+  « signé », l'absence d'approbation est écrite noir sur blanc, les approbations
+  affichées sont celles du journal d'audit, et aucune transition ne part sans motif.
 
 Ces tests ne remplacent pas un navigateur complet (voir la section Playwright
 ci-dessus) : ils couvrent le rendu, les appels émis et les règles d'honnêteté de

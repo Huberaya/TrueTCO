@@ -111,7 +111,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <Sparkles className="w-4 h-4 text-emerald-400" />
-            Chantier 2 · Dashboard Direction & Pilotage Stratégique
+            Pilotage stratégique & vue direction
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Tableau de Bord Exécutif & Arbitrages Achats
@@ -414,7 +414,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {portfolioAvoidedEmissions.toLocaleString('fr-FR')} tCO2e
             </div>
             <div className="text-[11px] text-slate-400">
-              Trajectoire conforme aux engagements RSE
+              Tonnage évité calculé par le moteur à partir des facteurs saisis — aucune conformité à un engagement
+              externe n’est vérifiée ici
             </div>
           </div>
 

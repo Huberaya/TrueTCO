@@ -166,6 +166,39 @@ export function createApiRouter(deps: ApiDependencies): Router {
   // ---------------------------------------------------------------------------
   // Authentification
   // ---------------------------------------------------------------------------
+
+  /**
+   * Configuration d'authentification RÉELLE de cette instance.
+   *
+   * L'interface avait besoin de cette information : elle affichait auparavant un
+   * « portail SSO entreprise » avec des fournisseurs d'identité (Okta SAML,
+   * Entra ID…) et des certificats (ISO 27001, SOC 2) qu'aucune configuration ne
+   * corroborait. Cette route dit ce qui est branché, et rien de plus :
+   *   - `federatedProviders` : liste vide tant qu'aucun connecteur OIDC/SAML réel
+   *     n'est déployé (aucun n'est déployé aujourd'hui) ;
+   *   - `demoMode` : vrai uniquement si l'exploitant a activé la connexion de
+   *     démonstration locale (sans mot de passe, sans second facteur) ;
+   *   - `mfa` / `scim` / `ssoFederation` : à faux tant qu'ils ne sont pas
+   *     effectivement implémentés — jamais « prêts » par anticipation.
+   */
+  router.get(
+    '/auth/config',
+    asyncHandler(async (_req, res) => {
+      res.json({
+        federatedProviders: [],
+        demoMode: Boolean(deps.allowDemoAuth),
+        mfa: false,
+        scim: false,
+        ssoFederation: false,
+        note:
+          "Aucun fournisseur d'identité fédéré n'est déployé sur cette instance. " +
+          (deps.allowDemoAuth
+            ? "Le mode démonstration local est activé : session sans mot de passe et sans second facteur, réservée aux environnements de recette et de démonstration."
+            : "Le mode démonstration local est désactivé : sans fournisseur d'identité configuré, aucune connexion n'est possible."),
+      });
+    })
+  );
+
   router.post(
     '/auth/register',
     asyncHandler(async (req, res) => {

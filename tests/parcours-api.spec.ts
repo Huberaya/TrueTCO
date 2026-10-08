@@ -907,3 +907,20 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
     expect(anonymous.status).toBe(401);
   });
 });
+
+describe('Configuration d’authentification déclarée par le serveur (anti-revendication)', () => {
+  it('déclare l’état réel : aucun connecteur fédéré, mode démo explicite, MFA/SCIM à faux', async () => {
+    const response = await api<any>('GET', '/api/auth/config');
+    expect(response.status).toBe(200);
+    // Aucun fournisseur d'identité n'est déployé : la réponse ne doit pas en inventer.
+    expect(response.body.federatedProviders).toEqual([]);
+    expect(response.body.ssoFederation).toBe(false);
+    expect(response.body.mfa).toBe(false);
+    expect(response.body.scim).toBe(false);
+    // Le mode démonstration est activé dans cet environnement de test : il doit être
+    // DIT, et l'interface s'appuie dessus pour afficher l'avertissement.
+    expect(response.body.demoMode).toBe(true);
+    expect(String(response.body.note)).toMatch(/mode démonstration/i);
+    expect(String(response.body.note)).toMatch(/aucun fournisseur d'identité fédéré/i);
+  });
+});

@@ -34,7 +34,7 @@ export const AutomatedTestsModal: React.FC<AutomatedTestsModalProps> = ({ isOpen
         <div className="flex items-start justify-between pb-4 border-b border-slate-800">
           <div>
             <div className="text-xs uppercase tracking-wider text-emerald-400 font-semibold mb-1 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4" /> Certification Algorithmique · Chantier 1
+              <ShieldCheck className="w-4 h-4" /> Auto-vérification du moteur de calcul
             </div>
             <h3 className="text-xl font-bold text-white">
               Suite de Tests Automatisés du Moteur TrueTCO
@@ -134,7 +134,10 @@ export const AutomatedTestsModal: React.FC<AutomatedTestsModalProps> = ({ isOpen
 
         {/* Footer */}
         <div className="flex justify-between items-center pt-3 border-t border-slate-800 text-xs text-slate-400">
-          <div>Certifié ISO 15686-5 (Lifecycle Costing) & GHG Protocol</div>
+          <div>
+            Démarche de coût du cycle de vie inspirée d’ISO 15686-5 et comptabilité carbone de type GHG Protocol :
+            aucune certification de conformité n’est délivrée.
+          </div>
           <button
             onClick={onClose}
             className="px-4 py-2 text-xs font-medium text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"

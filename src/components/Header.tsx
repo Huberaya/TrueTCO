@@ -136,7 +136,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenBackupModal}
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-colors"
-            title="Base Neon PostgreSQL connectée. Cliquez pour ouvrir le gestionnaire de sauvegarde."
+            title="Base PostgreSQL connectée. Cliquez pour ouvrir le gestionnaire de sauvegarde."
           >
             <Database className="w-3.5 h-3.5 text-emerald-400" />
             <span className="hidden lg:inline text-emerald-300 font-mono text-[11px]">Neon DB</span>

@@ -179,7 +179,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-sky-400 mb-1 flex items-center gap-1.5">
             <Network className="w-4 h-4" />
-            Chantier 7 · Connecteurs ERP & e-Procurement d'Entreprise
+            Connecteurs ERP & e-procurement
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Intégration Amont / Aval (SAP Ariba, Coupa, Ivalua, Jaggaer)
@@ -660,7 +660,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
         <div className="p-6 bg-slate-900/90 border border-slate-800 rounded-xl space-y-4 text-xs text-slate-300">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Spécifications Techniques CIBLES — Chantier 7 (non implémentées)
+              Spécifications techniques cibles — non implémentées
             </h3>
             <span className="text-amber-400 font-mono font-bold">À construire</span>
           </div>

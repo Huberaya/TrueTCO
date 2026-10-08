@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Upload, FileText, CheckCircle2, AlertTriangle, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 import { SupplierOffer, Project, Supplier } from '../types/domain';
 import { SupplierOfferSchema, formatZodError } from '../schemas/validationSchemas';
+import { useAuth } from '../context/AuthContext';
 
 interface ImportOfferModalProps {
   isOpen: boolean;
@@ -18,17 +19,22 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
   suppliers,
   onAddOffer,
 }) => {
-  const [activeTab, setActiveTab] = useState<'csv' | 'ai_quote' | 'manual'>('csv');
+  const [activeTab, setActiveTab] = useState<'csv' | 'manual'>('csv');
   const [zodErrors, setZodErrors] = useState<string[]>([]);
-  
+
   // CSV / Structured Data state
   const [csvContent, setCsvContent] = useState('');
   const [parsedPreview, setParsedPreview] = useState<Partial<SupplierOffer> | null>(null);
 
-  // AI / Quote text extractor state
-  const [quoteText, setQuoteText] = useState('');
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractedCandidate, setExtractedCandidate] = useState<SupplierOffer | null>(null);
+  /**
+   * Auteur de la saisie : l'utilisateur de la session, ou une mention explicite
+   * « saisie locale non attribuée » hors session. Auparavant, la saisie manuelle
+   * était signée de noms de personnes inventées (« Sophie Valéry », « Alexandre
+   * Meyer », « Éléonore Chen »), ce qui attribuait une donnée financière à des
+   * gens qui ne l'avaient jamais saisie.
+   */
+  const { user } = useAuth();
+  const authorName = user?.fullName ?? 'saisie locale non attribuée';
 
   // Manual form state
   const [supplierId, setSupplierId] = useState(suppliers[0]?.id || '');
@@ -44,147 +50,6 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSimulateQuoteExtraction = () => {
-    setIsExtracting(true);
-    setTimeout(() => {
-      const selectedSup = suppliers.find((s) => s.id === supplierId) || suppliers[0];
-      const parsed: SupplierOffer = {
-        id: `off-extracted-${Date.now()}`,
-        projectId: project.id,
-        supplierId: selectedSup.id,
-        supplierName: selectedSup.name,
-        offerReference: 'EXTRACTED-DEV-2026-B',
-        isResponsibleCandidate: true,
-        apparentUnitPrice: {
-          value: 34500,
-          unit: '€/unité',
-          sourceType: 'verifiee',
-          sourceName: 'Devis PDF analysé automatiquement',
-          confidenceLevel: 94,
-          lastUpdated: new Date().toISOString().split('T')[0],
-          updatedBy: 'IA Assistant Achats',
-        },
-        quantity: project.plannedVolume,
-        apparentTotal: 34500 * project.plannedVolume,
-        deliveryLeadTimeWeeks: 6,
-        warrantyMonths: 48,
-        expectedLifespanYears: project.horizonYears,
-        costItems: [
-          {
-            id: `ci-1-${Date.now()}`,
-            category: 'acquisition',
-            label: 'Acquisition matériels selon spécifications',
-            amount: {
-              value: 34500 * project.plannedVolume,
-              unit: '€',
-              sourceType: 'verifiee',
-              sourceName: 'Extrait devis ligne CAPEX',
-              confidenceLevel: 95,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              updatedBy: 'IA Extract',
-            },
-            isRecurringYearly: false,
-          },
-          {
-            id: `ci-2-${Date.now()}`,
-            category: 'energie_consommables',
-            label: 'Consommation énergétique modélisée',
-            amount: {
-              value: 32000,
-              unit: '€/an',
-              sourceType: 'estimee',
-              sourceName: 'Fiche technique constructeur kWh',
-              confidenceLevel: 88,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              updatedBy: 'IA Extract',
-            },
-            isRecurringYearly: true,
-            yearlyInflationType: 'energy',
-          },
-          {
-            id: `ci-3-${Date.now()}`,
-            category: 'maintenance_reparations',
-            label: 'Maintenance préventive constructeur',
-            amount: {
-              value: 14000,
-              unit: '€/an',
-              sourceType: 'verifiee',
-              sourceName: 'Contrat entretien attaché',
-              confidenceLevel: 92,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              updatedBy: 'IA Extract',
-            },
-            isRecurringYearly: true,
-            yearlyInflationType: 'maintenance',
-          },
-          {
-            id: `ci-4-${Date.now()}`,
-            category: 'valeur_residuelle',
-            label: 'Valeur de cession estimée à terme',
-            amount: {
-              value: 75000,
-              unit: '€',
-              sourceType: 'estimee',
-              sourceName: 'Barème professionnel',
-              confidenceLevel: 75,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              updatedBy: 'IA Extract',
-            },
-            isRecurringYearly: false,
-          },
-        ],
-        carbonItems: [
-          {
-            scope: 'Scope 2',
-            lifecyclePhase: 'utilisation_annuelle',
-            emissionsPerUnitTonneCO2e: {
-              value: 1.2,
-              unit: 'tCO2e/unité/an',
-              sourceType: 'source_externe',
-              sourceName: 'Calculé d\'après consommation déclarée & ADEME',
-              confidenceLevel: 92,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              updatedBy: 'IA Extract',
-            },
-            totalLifecycleEmissions: 1.2 * project.plannedVolume * project.horizonYears,
-            emissionFactorSource: 'ADEME 2026',
-          },
-        ],
-        riskItems: [
-          {
-            id: `ri-1-${Date.now()}`,
-            label: 'Risque de délai d\'approvisionnement pièces',
-            category: 'interruption_service',
-            probability: {
-              value: 0.15,
-              unit: 'proba (0-1)',
-              sourceType: 'donnee_sectorielle',
-              sourceName: 'Estimation sectorielle délai',
-              confidenceLevel: 80,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              updatedBy: 'IA Extract',
-            },
-            financialImpact: {
-              value: 20000,
-              unit: '€',
-              sourceType: 'estimee',
-              sourceName: 'Pénalité de service',
-              confidenceLevel: 75,
-              lastUpdated: new Date().toISOString().split('T')[0],
-              updatedBy: 'IA Extract',
-            },
-            expectedLoss: 3000,
-            probabilityType: 'donnee_sectorielle',
-          },
-        ],
-        technicalSuitabilityScore: 88,
-      };
-
-      setExtractedCandidate(parsed);
-      setIsExtracting(false);
-    }, 600);
-  };
-
   const handleCommitManual = () => {
     const selectedSup = suppliers.find((s) => s.id === supplierId) || suppliers[0];
     const totalApparent = unitPrice * quantity;
@@ -199,11 +64,11 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
       apparentUnitPrice: {
         value: unitPrice,
         unit: '€/unité',
-        sourceType: 'verifiee',
-        sourceName: `Devis direct ${offerRef}`,
-        confidenceLevel: 95,
+        sourceType: 'utilisateur',
+        sourceName: `Saisie manuelle au titre du devis ${offerRef} — pièce justificative non jointe`,
+        confidenceLevel: 70,
         lastUpdated: new Date().toISOString().split('T')[0],
-        updatedBy: 'Sophie Valéry',
+        updatedBy: authorName,
       },
       quantity,
       apparentTotal: totalApparent,
@@ -222,7 +87,7 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
             sourceName: 'Devis commercial ferme',
             confidenceLevel: 98,
             lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'Sophie Valéry',
+            updatedBy: authorName,
           },
           isRecurringYearly: false,
         },
@@ -237,7 +102,7 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
             sourceName: 'Données techniques déclarées',
             confidenceLevel: 85,
             lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'Alexandre Meyer',
+            updatedBy: authorName,
           },
           isRecurringYearly: true,
           yearlyInflationType: 'energy',
@@ -253,7 +118,7 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
             sourceName: 'Contrat de maintenance contractuel',
             confidenceLevel: 90,
             lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'Sophie Valéry',
+            updatedBy: authorName,
           },
           isRecurringYearly: true,
           yearlyInflationType: 'maintenance',
@@ -269,7 +134,7 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
             sourceName: 'Cote de marché occasion',
             confidenceLevel: 75,
             lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'Alexandre Meyer',
+            updatedBy: authorName,
           },
           isRecurringYearly: false,
         },
@@ -281,14 +146,14 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
           emissionsPerUnitTonneCO2e: {
             value: carbonTonnePerUnit,
             unit: 'tCO2e/unité/an',
-            sourceType: 'source_externe',
-            sourceName: 'Facteur d\'émission ADEME',
-            confidenceLevel: 90,
+            sourceType: 'utilisateur',
+            sourceName: 'Facteur carbone saisi par l’acheteur — référence non fournie avec la saisie',
+            confidenceLevel: 60,
             lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'Éléonore Chen',
+            updatedBy: authorName,
           },
           totalLifecycleEmissions: carbonTonnePerUnit * quantity * project.horizonYears,
-          emissionFactorSource: 'ADEME 2026',
+          emissionFactorSource: 'non renseignée (valeur saisie, facteur à rattacher à une source)',
         },
       ],
       riskItems: [
@@ -303,7 +168,7 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
             sourceName: 'Évaluation des risques achats',
             confidenceLevel: 80,
             lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'Sophie Valéry',
+            updatedBy: authorName,
           },
           financialImpact: {
             value: 25000,
@@ -312,7 +177,7 @@ export const ImportOfferModal: React.FC<ImportOfferModalProps> = ({
             sourceName: 'Impact financier estimé',
             confidenceLevel: 75,
             lastUpdated: new Date().toISOString().split('T')[0],
-            updatedBy: 'Alexandre Meyer',
+            updatedBy: authorName,
           },
           expectedLoss: 2500,
           probabilityType: 'estimation',
@@ -359,6 +224,16 @@ EcoMobility France,DEV-CSV-2026-X,35000,${project.plannedVolume},35000,12000,700
           </button>
         </div>
 
+        {/*
+          L'onglet « Extraction Devis PDF (Assistant IA) » a été RETIRÉ : il produisait,
+          après un délai de 600 ms, une offre complète pré-remplie (prix, garanties,
+          pénalités, « score de confiance : 94 % ») identique quel que soit le texte
+          collé. Ce n'était pas une extraction, c'était une démonstration figée, et
+          elle faisait entrer dans le moteur des montants que personne n'avait
+          vérifiés. L'extraction assistée par IA sera rebranchée en phase IA, avec
+          fournisseur de modèle, stockage du document, provenance par passage et
+          validation humaine bloquante (voir docs/ et le plan de phases).
+        */}
         {/* Tab switchers */}
         <div className="py-3 flex items-center gap-2 border-b border-slate-800/80">
           <button
@@ -371,17 +246,6 @@ EcoMobility France,DEV-CSV-2026-X,35000,${project.plannedVolume},35000,12000,700
           >
             <FileText className="w-3.5 h-3.5" />
             Import Fichier Excel / CSV
-          </button>
-          <button
-            onClick={() => setActiveTab('ai_quote')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
-              activeTab === 'ai_quote'
-                ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/60'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            Extraction Devis PDF (Assistant IA)
           </button>
           <button
             onClick={() => setActiveTab('manual')}
@@ -433,7 +297,12 @@ EcoMobility France,DEV-CSV-2026-X,35000,${project.plannedVolume},35000,12000,700
 
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg text-slate-400 space-y-1 text-[11px]">
                 <div className="font-semibold text-slate-300">Norme d'importation TrueTCO :</div>
-                <div>Les champs non renseignés sont automatiquement complétés par les référentiels sectoriels (ADEME, Banque Mondiale, WACC) et marqués avec le tag 🟡 Donnée estimée.</div>
+                <div>
+                  Aucun champ n’est complété automatiquement par un référentiel : ce que vous ne renseignez pas reste
+                  manquant et sera signalé comme tel dans l’analyse. Les valeurs carbone saisies ici sont marquées
+                  « fournies par l’acheteur » tant qu’une source (facteur d’émission, millésime, périmètre) ne leur est
+                  pas rattachée.
+                </div>
               </div>
 
               {csvContent.trim() && (
@@ -448,83 +317,6 @@ EcoMobility France,DEV-CSV-2026-X,35000,${project.plannedVolume},35000,12000,700
                   >
                     Valider l'import
                   </button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === 'ai_quote' && (
-            <div className="space-y-3">
-              <div className="p-3 bg-amber-950/30 border border-amber-800/50 rounded-lg text-amber-300 flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-                <div>
-                  <strong>Principe de Sécurité Financière :</strong> Aucune donnée extraite par l'IA n'est appliquée sans validation explicite de l'acheteur. Vous pouvez réviser chaque poste ci-dessous avant engagement.
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">
-                  Texte ou Devis Fournisseur à analyser :
-                </label>
-                <textarea
-                  rows={4}
-                  value={quoteText}
-                  onChange={(e) => setQuoteText(e.target.value)}
-                  placeholder="Collez ici le texte d'un devis reçu (ex: Offre N°8491 - Fourniture de 50 unités @ 34 500 € HT unitaire. Entretien préventif 14 000 €/an. Garantie 4 ans...)"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
-                />
-              </div>
-
-              <div className="flex justify-end">
-                <button
-                  type="button"
-                  onClick={handleSimulateQuoteExtraction}
-                  disabled={isExtracting}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 text-white rounded-lg font-medium text-xs flex items-center gap-1.5 transition-colors"
-                >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  {isExtracting ? 'Extraction des données en cours...' : 'Extraire les coûts & garanties'}
-                </button>
-              </div>
-
-              {extractedCandidate && (
-                <div className="mt-4 p-4 bg-slate-950 border border-slate-800 rounded-lg space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                    <span className="font-semibold text-white">Données détectées pour validation</span>
-                    <span className="text-emerald-400 font-mono text-xs">Score de confiance : 94%</span>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <span className="text-slate-400">Prix unitaire extrait :</span>
-                      <div className="font-bold text-white font-mono">{extractedCandidate?.apparentUnitPrice?.value?.toLocaleString() ?? 0} €</div>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">Total acquisition :</span>
-                      <div className="font-bold text-white font-mono">{extractedCandidate.apparentTotal.toLocaleString()} €</div>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">Garantie constructeur :</span>
-                      <div className="font-bold text-white font-mono">{extractedCandidate.warrantyMonths} mois</div>
-                    </div>
-                    <div>
-                      <span className="text-slate-400">Coûts de maintenance détectés :</span>
-                      <div className="font-bold text-white font-mono">14 000 €/an</div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex justify-end">
-                    <button
-                      onClick={() => {
-                        onAddOffer(extractedCandidate);
-                        onClose();
-                      }}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold text-xs flex items-center gap-1.5 transition-colors"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      Approuver et intégrer au comparateur
-                    </button>
-                  </div>
                 </div>
               )}
             </div>

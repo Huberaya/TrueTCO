@@ -130,7 +130,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <Database className="w-4 h-4 text-emerald-400" />
-            Chantier 5 · Module « Référentiels d'Externalités & Traçabilité »
+            Référentiels d'externalités & traçabilité
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Base de Données des Externalités (ADEME / Quinet / WACC)

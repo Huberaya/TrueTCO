@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { X, Plus, FolderPlus, Info, AlertTriangle } from 'lucide-react';
 import { Project, ProcurementCategory, HorizonYears } from '../types/domain';
 import { CreateProjectDTOSchema, formatZodError } from '../schemas/validationSchemas';
+import { useAuth } from '../context/AuthContext';
 
 interface NewProjectModalProps {
   isOpen: boolean;
@@ -15,7 +16,13 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   onAddProject,
 }) => {
   const [name, setName] = useState('');
-  const [companyName, setCompanyName] = useState('Acme Industrial Europe');
+  /*
+   * L'entité et le porteur du dossier ne sont PAS pré-remplis avec des valeurs
+   * inventées : ils viennent de la session (organisation et utilisateur réels)
+   * lorsque celle-ci existe, sinon ils restent vides et l'utilisateur les saisit.
+   */
+  const { user } = useAuth();
+  const [companyName, setCompanyName] = useState(user?.organizationName ?? '');
   const [reference, setReference] = useState(`AO-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
   const [category, setCategory] = useState<ProcurementCategory>('flotte_automobile');
   const [budgetCap, setBudgetCap] = useState(1200000);
@@ -26,7 +33,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [unitName, setUnitName] = useState('unités');
   const [purchaseFrequency, setPurchaseFrequency] = useState<'unique' | 'annuel' | 'pluriannuel'>('unique');
   const [objective, setObjective] = useState('');
-  const [ownerName, setOwnerName] = useState('Sophie Valéry');
+  const [ownerName, setOwnerName] = useState(user?.fullName ?? '');
   const [discountRate, setDiscountRate] = useState(0.045);
   const [carbonPrice, setCarbonPrice] = useState(120);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -103,7 +110,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       purchaseFrequency,
       objective: objective.trim() || 'Arbitrage économique et ESG multicritères TrueTCO',
       ownerId: 'u-acheteur',
-      ownerName: ownerName.trim() || 'Acheteur Lead',
+      ownerName: ownerName.trim() || 'porteur non renseigné',
       status: 'collecte_offres' as const,
       discountRate: Number(discountRate),
       carbonScenario: 'central' as const,

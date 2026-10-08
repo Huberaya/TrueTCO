@@ -10,15 +10,17 @@ interface AuthContextType {
   isLoginModalOpen: boolean;
   openLoginModal: () => void;
   closeLoginModal: () => void;
-  loginWithSSO: (params: {
-    email: string;
-    ssoProvider: SSOProvider;
-    fullName?: string;
-    department?: string;
-  }) => Promise<EnterpriseUser>;
+  loginWithSSO: (params: { email: string; domain?: string }) => Promise<EnterpriseUser>;
   logout: () => Promise<void>;
   /** Droits renvoyés par le serveur — utilisés uniquement pour l'affichage. */
   permissions: string[];
+  /**
+   * Avertissement émis par le SERVEUR au moment de la connexion (par exemple :
+   * « session de démonstration, aucun second facteur, aucune fédération »).
+   * Il est affiché tel quel : la version précédente le recevait puis le perdait,
+   * ce qui laissait croire à une connexion d'entreprise sécurisée.
+   */
+  authWarning: string | null;
   refreshSession: () => Promise<void>;
 }
 
@@ -45,6 +47,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [permissions, setPermissions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [authWarning, setAuthWarning] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   const refreshSession = useCallback(async () => {
@@ -67,18 +70,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     };
   }, [refreshSession]);
 
-  const loginWithSSO = async (params: {
-    email: string;
-    ssoProvider: SSOProvider;
-    fullName?: string;
-    department?: string;
-  }) => {
+  const loginWithSSO = async (params: { email: string; domain?: string }) => {
     setIsLoading(true);
     setAuthError(null);
     try {
       const res = await AuthService.loginWithSSO(params);
       setUser(res.user);
       setPermissions(await AuthService.getSessionPermissions());
+      setAuthWarning(res.warning ?? null);
       setIsLoginModalOpen(false);
       return res.user;
     } catch (err: any) {
@@ -95,6 +94,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       await AuthService.logout();
       setUser(null);
       setPermissions([]);
+      setAuthWarning(null);
     } finally {
       setIsLoading(false);
     }
@@ -113,6 +113,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         loginWithSSO,
         logout,
         permissions,
+        authWarning,
         refreshSession,
       }}
     >

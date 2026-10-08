@@ -129,7 +129,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <Building2 className="w-4 h-4 text-emerald-400" />
-            Chantier 4 · Module « Base Fournisseurs & Qualité des Données »
+            Base fournisseurs & qualité des données
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Référentiel Fournisseurs, Incoterms & Scoring Qualité
@@ -180,7 +180,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Certifiés ISO 14001 / EcoVadis</div>
+          <div className="text-slate-400 text-[11px]">Déclarent ISO 14001 / EcoVadis</div>
           <div className="text-xl font-bold font-mono text-indigo-400 mt-0.5">{iso14001Count}</div>
           <div className="text-[10px] text-slate-500">Management environnemental</div>
         </div>
@@ -530,7 +530,8 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                   <Award className="w-4 h-4 text-emerald-400" />
                 </div>
                 <p className="text-[11px] text-slate-400">
-                  Fournisseurs certifiés avec score ESG &gt; 80 et taux de qualité &gt; 85%. Relation de co-développement recommandée.
+                  Fournisseurs dont les scores saisis (ESG &gt; 80, qualité &gt; 85 %) sont élevés. Ces scores sont
+                  déclarés ou saisis dans le dossier : ils ne sont pas vérifiés par un tiers.
                 </p>
                 <div className="space-y-1.5 pt-2">
                   {suppliers

@@ -9,6 +9,11 @@ décident réellement un arbitrage :
 3. Quelle option est préférable, et de combien ?
 4. Dans quelles hypothèses la décision change-t-elle ?
 
+Les fonctionnalités **retirées parce qu'elles étaient fausses** (certificat de
+signature fabriqué, signataires inventés, extraction IA simulée, certifications
+revendiquées) sont recensées, avec leur remplacement et le test qui verrouille la
+correction, dans [`REMOVED-FEATURES.md`](./REMOVED-FEATURES.md).
+
 > **État du produit : MVP à terminer.** Le score d'audit est de **38/100**, la
 > maturité est de **2/7**, et les verdicts « commercialisable », « enterprise
 > ready » et « world-class » sont **NON**. Le détail complet, y compris ce qui ne
@@ -31,7 +36,11 @@ décident réellement un arbitrage :
 | Écriture métier transactionnelle (offre + postes de coût) | Implémenté et testé | `server/repositories/offers.ts`, tests T-API-22 → T-API-25 |
 | Protection CSRF par contrôle d'origine | Implémenté et testé | tests T-API-31 → T-API-33 |
 | Migration du front vers le serveur (dossiers, fournisseurs, audit) | Implémenté | `src/services/serverData.ts`, `src/App.tsx` |
-| Offres et postes de coût vus par l'interface | **Partiel** | les offres restent locales ; le mapping complet est branché avec le moteur (Phase 3) |
+| Offres et postes de coût vus par l'interface | Implémenté et testé | lues depuis l'API (`src/services/serverData.ts`), PGlite :3000 ; `tests/parcours-api.spec.ts` A4/A5 |
+| Approbations du dossier (cycle de vie serveur + journal d'audit) | Implémenté et testé | écran `Approbations`, `POST /api/projects/:id/status`, tests `T-UI-10` → `T-UI-14` |
+| Décision serveur et inversion de décision | Implémenté et testé | `tests/decision.spec.ts`, `src/engine/decisionReversal.ts` |
+| Simulation probabiliste du risque (Monte-Carlo, graine explicite) | Implémenté et testé | `src/engine/riskSimulation.ts` (15 tests), `tests/parcours-api.spec.ts` F4/F5, migration `0005` |
+| Centre d'import XLSX/CSV (détection, mapping, validation, traçabilité) | Implémenté et testé | `tests/import.spec.ts` (20 tests), `tests/ui.spec.tsx` T-UI-04/05/08/09 |
 | Moteur de calcul v2 | Préservé | `src/engine/tcoEngine.ts`, 27 tests |
 | Import XLSX/CSV, ERP, IA d'extraction, benchmark, PDF | **Absent** | ces routes répondent `501` avec la raison exacte |
 
@@ -39,7 +48,8 @@ décident réellement un arbitrage :
 
 - **Aucun connecteur ERP** (SAP, Odoo, Sage…) : les routes `/api/erp/*` répondent
   `501 ERP_CONNECTOR_NOT_IMPLEMENTED`.
-- **Aucune extraction IA** : `/api/ai/extract` répond `501`.
+- **Aucune extraction IA** : `/api/ai/extract` répond `501`, et l'onglet d'extraction
+  simulée qui pré-remplissait une offre a été **retiré** (voir `REMOVED-FEATURES.md`).
 - **Aucun référentiel de benchmark** : `/api/benchmarks` répond `501`.
 - **Aucun mot de passe, MFA, OIDC, SAML ni SCIM.** La connexion réelle dépend d'un
   fournisseur d'identité, non branché. Le mode `TRUETCO_ALLOW_DEMO_AUTH` est une

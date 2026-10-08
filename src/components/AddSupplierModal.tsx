@@ -27,8 +27,15 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   const [warrantyMonths, setWarrantyMonths] = useState(36);
   const [historicalDefectRate, setHistoricalDefectRate] = useState(1.5);
   const [esgScore, setEsgScore] = useState(85);
-  const [certificationsText, setCertificationsText] = useState('ISO 9001, ISO 14001, EcoVadis Gold');
-  const [envDataText, setEnvDataText] = useState('Bilan Carbone certifié, Fiche ACV ISO 14044');
+  /*
+   * Ces champs étaient pré-remplis avec des certifications et des documents
+   * (« ISO 9001, ISO 14001, EcoVadis Gold », « Bilan Carbone certifié ») que le
+   * fournisseur n'avait pas fournis : un dossier ouvert ainsi créait un fournisseur
+   * certifié sans aucune pièce. Un champ vide oblige à saisir ce qui est réellement
+   * détenu, avec sa référence.
+   */
+  const [certificationsText, setCertificationsText] = useState('');
+  const [envDataText, setEnvDataText] = useState('');
 
   if (!isOpen) return null;
 

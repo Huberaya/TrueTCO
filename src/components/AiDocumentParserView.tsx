@@ -88,7 +88,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-purple-400 mb-1 flex items-center gap-1.5">
             <Sparkles className="w-4 h-4" />
-            Chantier 8 · Parser IA & OCR Multimodal de Devis & Fiches FDES / EPD
+            Extraction documentaire de devis & fiches FDES / EPD
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Extraction Automatisée de Devis & Empreinte Carbone ACV
@@ -305,7 +305,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                         Confiance IA : {parseResult.confidenceScore}%
                       </div>
                       <div className="text-[10px] text-slate-500 font-mono">
-                        Normalisé ISO 15686-5
+                        Structure de coûts alignée sur la démarche LCC (aucune certification)
                       </div>
                     </div>
                   </div>
@@ -421,7 +421,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     <div className="space-y-2">
                       <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                         <span>Empreinte Carbone & Facteurs ACV ({parseResult.carbonItems.length})</span>
-                        <span className="text-[10px] text-emerald-400 font-mono">Conforme GHG Protocol / CSRD</span>
+                        <span className="text-[10px] text-slate-400 font-mono">Répartition par scope — à valider</span>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -494,7 +494,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
         <div className="p-6 bg-slate-900/90 border border-slate-800 rounded-xl space-y-4 text-xs text-slate-300">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Méthodologie du Parser IA & Conformité Réglementaire — Chantier 8
+              Méthodologie d'extraction documentaire
             </h3>
             <span className="text-purple-400 font-mono font-bold">Norme ISO 14025 / EN 15804</span>
           </div>

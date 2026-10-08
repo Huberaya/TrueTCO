@@ -155,14 +155,16 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <History className="w-4 h-4 text-emerald-400" />
-            Chantier 5 · Module « Traçabilité & Contrôle Interne »
+            Traçabilité & contrôle interne
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            Journal d'Audit Immuable (Conformité Légale & Commissaires aux Comptes)
+            Journal d’audit du serveur — écriture serveur uniquement, chaîne de hachage vérifiable
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Conforme à la Section 26 : chaque révision d'hypothèse (prix, WACC, inflation, facteurs ADEME/Quinet)
-            est enregistrée de manière infalsifiable avec horodatage strict, auteur, rôle, ancienne valeur, nouvelle valeur et justification probante.
+            Chaque action est enregistrée par le serveur avec horodatage, auteur issu de la session, rôle, ancienne et
+            nouvelle valeur, et justification. Les entrées sont chaînées par empreinte : toute modification ou
+            suppression rompt la chaîne, ce que le contrôle d’intégrité signale. Aucune conformité légale particulière
+            (Section 26, commissariat aux comptes) n’est revendiquée par ce produit.
           </p>
         </div>
 

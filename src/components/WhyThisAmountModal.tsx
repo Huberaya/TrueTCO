@@ -131,7 +131,7 @@ export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
               <div className="flex items-start justify-between gap-4 pt-1">
                 <span className="text-slate-400 text-xs">Source documentaire :</span>
                 <span className="text-right text-xs font-medium text-slate-200">
-                  {auditedValue?.sourceName || 'Formule algorithmique certifiée du moteur TrueTCO'}
+                  {auditedValue?.sourceName || 'Moteur de calcul TrueTCO — source non renseignée pour cette valeur'}
                   {auditedValue?.sourceUrl && (
                     <a
                       href={auditedValue.sourceUrl}

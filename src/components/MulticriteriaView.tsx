@@ -48,7 +48,6 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
 
   const [activePreset, setActivePreset] = useState<string>('balanced');
   const [justificationNote, setJustificationNote] = useState<string>('');
-  const [auditFeedback, setAuditFeedback] = useState<string | null>(null);
 
   const totalWeights = weights.tcoWeight + weights.carbonWeight + weights.riskWeight + weights.esgWeight;
 
@@ -137,28 +136,6 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
     }
   };
 
-  const handleAuditValidation = () => {
-    if (!onLogAudit) return;
-
-    const log: AuditLogEntry = {
-      id: `log-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      userId: 'u-dir-achats',
-      userName: 'Sophie Valéry',
-      userRole: activeRole,
-      projectId: project.id,
-      entityName: 'Grille Multicritères 360°',
-      fieldChanged: 'Pondérations officielles d\'attribution',
-      oldValue: 'Grille standard 45/25/15/15',
-      newValue: `TCO: ${weights.tcoWeight}% | Climat: ${weights.carbonWeight}% | Risque: ${weights.riskWeight}% | RSE: ${weights.esgWeight}%`,
-      justification: justificationNote.trim() || `Validation de la grille multicritères (${activePreset}) pour arbitrage en commission d'appels d'offres.`,
-    };
-
-    onLogAudit(log);
-    setAuditFeedback('Pondération multicritères consignée avec succès dans le Journal d\'Audit.');
-    setTimeout(() => setAuditFeedback(null), 5000);
-  };
-
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -172,7 +149,8 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
             Arbitrage Global : Coût Complet, Climat, Risques & RSE
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Conforme aux règles de la commande responsable : personnalisez les 4 piliers d'attribution pour concilier performance financière (LCC), neutralité carbone et sûreté d'exploitation.
+            Pondérations d'attribution : coût complet (LCC), climat, risque et RSE. Les poids sont une décision de
+            gouvernance à documenter — le produit n'impose aucune règle de conformité.
           </p>
         </div>
 
@@ -588,21 +566,25 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
             />
           </div>
+          {/*
+            Le bouton « Consigner au Journal d'Audit » a été RETIRÉ : il créait côté
+            navigateur une entrée signée d'un nom inventé (« Sophie Valéry ») et d'un
+            identifiant d'utilisateur fictif, puis l'ajoutait au journal local. Le
+            journal d'audit du serveur refuse toute écriture cliente : une entrée
+            fabriquée par l'interface n'aurait aucune valeur et donnerait une fausse
+            impression de traçabilité.
+          */}
           <button
-            onClick={handleAuditValidation}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+            type="button"
+            disabled
+            title="Le journal d’audit est en écriture serveur uniquement : une entrée créée par l’interface serait dépourvue de valeur probante."
+            className="px-4 py-2 bg-slate-800 text-slate-400 rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 cursor-not-allowed"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            Consigner au Journal d'Audit
+            Enregistrement au journal : côté serveur uniquement
           </button>
         </div>
 
-        {auditFeedback && (
-          <div className="p-2.5 bg-emerald-950/60 border border-emerald-800 rounded-lg text-xs text-emerald-300 flex items-center gap-2 animate-fadeIn">
-            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            {auditFeedback}
-          </div>
-        )}
       </div>
     </div>
   );

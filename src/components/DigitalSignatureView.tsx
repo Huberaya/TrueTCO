@@ -1,481 +1,360 @@
-import React, { useState, useRef, useEffect } from 'react';
+/**
+ * TrueTCO — Approbations et verrouillage du dossier
+ * ---------------------------------------------------------------------------
+ * CE QUI A ÉTÉ SUPPRIMÉ, ET POURQUOI
+ * Cet écran était auparavant intitulé « Signature électronique ». Il produisait, dans
+ * le navigateur, un « certificat d'adjudication » : identifiant, empreintes calculées
+ * localement, paraphe dessiné à la souris sur un canevas, enregistrement dans le
+ * stockage local. Ce document ressemblait à une pièce signée. Il n'en était pas une :
+ *   - rien n'était vérifié par le serveur ;
+ *   - le paraphe n'établissait l'identité de personne ;
+ *   - le certificat disparaissait avec le navigateur, ou y survivait en modifiable ;
+ *   - il continuait d'afficher l'ancienne valeur si le dossier changeait.
+ * Une signature qui n'engage personne est pire qu'aucune signature : elle fait croire
+ * qu'une décision a été approuvée par quelqu'un. C'est exactement le type de fausse
+ * preuve que ce produit s'interdit.
+ *
+ * CE QUI LE REMPLACE — des approbations réelles, tracées par le serveur
+ *   1. Le dossier suit un cycle de vie contrôlé par l'API :
+ *      draft → data_review → finance_review → esg_review → approval → decision → locked.
+ *      Chaque transition exige une justification écrite (10 caractères minimum) et
+ *      une permission précise ; le verrouillage exige `project:lock`, distincte du
+ *      droit de saisie `project:write`.
+ *   2. L'historique affiché est celui du JOURNAL D'AUDIT du serveur : identité de
+ *      session, rôle, horodatage, justification. L'interface n'écrit jamais dans ce
+ *      journal, elle le lit.
+ *   3. L'écran dit ce qu'il ne fait pas : aucun certificat qualifié, aucun horodatage
+ *      qualifié, aucune signature au sens du règlement eIDAS. Le branchement d'un
+ *      prestataire de confiance reste à faire, et rien ici ne le simule.
+ */
+
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  Fingerprint,
+  AlertTriangle,
   CheckCircle2,
   Clock,
-  ShieldCheck,
-  Download,
-  Printer,
-  FileCheck2,
+  FileSignature,
+  Loader2,
   Lock,
-  QrCode,
-  PenTool,
-  RotateCcw,
-  AlertTriangle,
-  UserCheck,
-  FileText,
-  BadgeCheck,
-  Copy,
-  Check,
+  RefreshCw,
+  ShieldAlert,
 } from 'lucide-react';
-import { AdjudicationCertificate, DigitalSignatureRecord, Project, SupplierOffer, SignatureRole } from '../types/domain';
-import { SignatureService } from '../services/signatureService';
-import { TCOEngine } from '../engine/tcoEngine';
+import { AuditLogEntry, Project } from '../types/domain';
+import {
+  ApiError,
+  changeProjectWorkflowStatusOnServer,
+  fetchProjectAuditLogsFromServer,
+} from '../services/serverData';
+import {
+  WORKFLOW_STEPS,
+  nextWorkflowStep,
+  resolveServerWorkflowStatus,
+  workflowStepIndex,
+} from '../services/workflow';
 
-interface DigitalSignatureViewProps {
+interface ApprovalsViewProps {
   project: Project;
-  offers: SupplierOffer[];
+  /** Permissions réellement accordées à la session, telles que le serveur les a renvoyées. */
+  permissions?: string[];
+  onProjectUpdated?: (project: Project) => void;
 }
 
-export const DigitalSignatureView: React.FC<DigitalSignatureViewProps> = ({
+export const DigitalSignatureView: React.FC<ApprovalsViewProps> = ({
   project,
-  offers,
+  permissions = [],
+  onProjectUpdated,
 }) => {
-  const winningOffer = offers.find((o) => o.isResponsibleCandidate) || offers[0];
+  const [history, setHistory] = useState<AuditLogEntry[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [justification, setJustification] = useState('');
+  const [notice, setNotice] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  /** Statut serveur affiché : mis à jour uniquement par une réponse du serveur. */
+  const [serverStatus, setServerStatus] = useState<string>(resolveServerWorkflowStatus(project));
 
-  const [certificate, setCertificate] = useState<AdjudicationCertificate>(() => {
-    // Le TCO affiché sur l'attestation provient du moteur de calcul, jamais
-    // d'un coefficient appliqué au prix facial (l'ancienne version majorait le
-    // montant facial de 8 % sans aucune justification méthodologique).
-    let computed: { totalComprehensiveTCO?: number; totalLifecycleCO2eTonnes?: number } | undefined;
-    if (winningOffer) {
-      try {
-        const result = TCOEngine.calculateOfferTCO(project, winningOffer);
-        computed = {
-          totalComprehensiveTCO: result.lifecycleCostLCC,
-          totalLifecycleCO2eTonnes: result.totalLifecycleCO2eTonnes,
-        };
-      } catch {
-        computed = undefined;
-      }
-    }
-    return SignatureService.getCertificate(project.id, winningOffer, project, computed);
-  });
-
-  const [activeSignModalRole, setActiveSignModalRole] = useState<SignatureRole | null>(null);
-  const [signerNameInput, setSignerNameInput] = useState('');
-  const [signerTitleInput, setSignerTitleInput] = useState('');
-  const [signerEmailInput, setSignerEmailInput] = useState('');
-  const [signerComment, setSignerComment] = useState('');
-  const [consentChecked, setConsentChecked] = useState(false);
-  const [copiedHash, setCopiedHash] = useState(false);
-
-  // Canvas ref for signature
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [hasDrawn, setHasDrawn] = useState(false);
+  const canWrite = permissions.includes('project:write');
+  const canLock = permissions.includes('project:lock');
 
   useEffect(() => {
-    if (activeSignModalRole) {
-      const existing = certificate.signatures.find((s) => s.role === activeSignModalRole);
-      if (existing) {
-        setSignerNameInput(existing.signerName);
-        setSignerTitleInput(existing.signerTitle);
-        setSignerEmailInput(existing.signerEmail);
-      }
-      setHasDrawn(false);
-      setConsentChecked(false);
+    setServerStatus(resolveServerWorkflowStatus(project));
+  }, [project.serverWorkflowStatus, project.status]);
+
+  /**
+   * L'historique vient du serveur, jamais d'un journal local. En cas d'échec de
+   * lecture, l'écran affiche l'erreur et se tait : il ne fabrique pas de lignes.
+   */
+  const loadHistory = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await fetchProjectAuditLogsFromServer(project.id, 100);
+      setHistory(result.items);
+      setHistoryTotal(result.total);
+      setHistoryError(null);
+    } catch (caught) {
+      setHistory([]);
+      setHistoryTotal(0);
+      setHistoryError(
+        caught instanceof ApiError
+          ? `${caught.message} (${caught.code})`
+          : "L'historique du dossier n'a pas pu être lu depuis le serveur."
+      );
+    } finally {
+      setLoading(false);
     }
-  }, [activeSignModalRole, certificate]);
+  }, [project.id]);
 
-  // Canvas drawing handlers
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
 
-    setIsDrawing(true);
-    setHasDrawn(true);
-    const rect = canvas.getBoundingClientRect();
-    const x = 'clientX' in e ? e.clientX - rect.left : e.touches[0].clientX - rect.left;
-    const y = 'clientY' in e ? e.clientY - rect.top : e.touches[0].clientY - rect.top;
+  const rawIndex = workflowStepIndex(serverStatus);
+  /** Statut serveur absent de la table : on le DIT au lieu de le ranger au hasard. */
+  const unknownStatus = rawIndex < 0;
+  const currentIndex = unknownStatus ? 0 : rawIndex;
+  const currentStep = WORKFLOW_STEPS[currentIndex];
+  const nextStep = unknownStatus ? null : nextWorkflowStep(serverStatus);
+  const isLocked = serverStatus === 'locked';
 
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    ctx.strokeStyle = '#38bdf8'; // sky-400
-    ctx.lineWidth = 2.5;
-    ctx.lineCap = 'round';
-  };
-
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const rect = canvas.getBoundingClientRect();
-    const x = 'clientX' in e ? e.clientX - rect.left : e.touches[0].clientX - rect.left;
-    const y = 'clientY' in e ? e.clientY - rect.top : e.touches[0].clientY - rect.top;
-
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    setHasDrawn(false);
-  };
-
-  const handleConfirmSignature = () => {
-    if (!activeSignModalRole || !consentChecked) return;
-
-    let signatureDataUrl: string | undefined = undefined;
-    if (canvasRef.current && hasDrawn) {
-      signatureDataUrl = canvasRef.current.toDataURL('image/png');
+  /**
+   * Une approbation sans motif écrit ne vaut rien : le motif est exigé par le
+   * serveur, l'interface le vérifie aussi pour éviter un aller-retour inutile.
+   */
+  const applyTransition = async (target: string) => {
+    const motive = justification.trim();
+    if (motive.length < 10) {
+      setActionError(
+        'Une justification écrite d’au moins 10 caractères est exigée : sans motif, une approbation ne serait qu’un clic anonyme.'
+      );
+      return;
     }
-
-    const updated = SignatureService.signRole(
-      project.id,
-      activeSignModalRole,
-      signerNameInput,
-      signerTitleInput,
-      signerEmailInput,
-      signerComment,
-      signatureDataUrl
-    );
-
-    setCertificate(updated);
-    setActiveSignModalRole(null);
+    setBusy(true);
+    setActionError(null);
+    setNotice(null);
+    try {
+      const updated = await changeProjectWorkflowStatusOnServer(project, target, motive);
+      setServerStatus(updated.serverWorkflowStatus ?? target);
+      onProjectUpdated?.(updated);
+      // Relecture depuis le serveur : l'interface n'ajoute elle-même aucune ligne
+      // à la chronologie du dossier.
+      await loadHistory();
+      setJustification('');
+      setNotice(
+        `Étape « ${WORKFLOW_STEPS.find((step) => step.serverStatus === target)?.label ?? target} » ` +
+          'enregistrée par le serveur et inscrite au journal d’audit avec votre identité de session.'
+      );
+    } catch (caught) {
+      setActionError(
+        caught instanceof ApiError
+          ? `${caught.message} (${caught.code})`
+          : "Le changement de statut a échoué : l'étape n'a pas été enregistrée."
+      );
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const handleCopyHash = () => {
-    navigator.clipboard.writeText(certificate.sealedHash);
-    setCopiedHash(true);
-    setTimeout(() => setCopiedHash(false), 3000);
-  };
-
-  const signedCount = certificate.signatures.filter((s) => s.status === 'signe').length;
+  const statusChanges = history.filter((entry) => entry.fieldChanged === 'workflow_status');
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner */}
-      <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-slate-800">
-        <div>
-          <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
-            <Fingerprint className="w-4 h-4" />
-            Chantier 9 · Signature Électronique Certifiée & Scellé Numérique
-          </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">
-            Circuit Interne de Validation de la Décision d'Achat
-          </h2>
-          <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Formalisation probante de la décision d'arbitrage Comex : scellement cryptographique SHA-256 de l'offre retenue, horodatage certifié RFC 3161 et signatures quadripartites qualifiées (Acheteur, RSE, Finance, DG).
-          </p>
+    <div className="space-y-4">
+      {/* Bandeau de vérité : ce que cet écran fait, et ce qu'il ne fait pas */}
+      <section className="bg-slate-900 border border-amber-800/60 rounded-xl p-4 space-y-2">
+        <div className="flex items-center gap-2 text-sm font-bold text-amber-200">
+          <ShieldAlert className="w-4 h-4" />
+          Approbations tracées par le serveur — pas de signature qualifiée
         </div>
+        <p className="text-xs text-slate-300 leading-relaxed">
+          Les approbations enregistrées ici sont des <strong>décisions horodatées et attribuées</strong> à une session
+          authentifiée, conservées dans un journal d’audit en écriture serveur uniquement. Ce n’est <strong>pas</strong>{' '}
+          une signature électronique qualifiée au sens du règlement eIDAS : aucun prestataire de confiance, aucun
+          certificat d’identité et aucun horodatage qualifié ne sont raccordés sur cette instance. Le produit ne génère
+          donc <strong>aucun certificat de signature</strong>. L’écran précédent en produisait un dans le navigateur :
+          ce document n’avait aucune valeur probante et a été retiré.
+        </p>
+      </section>
 
-        <div className="flex items-center gap-2 no-print">
-          <button
-            onClick={() => window.print()}
-            className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-          >
-            <Printer className="w-3.5 h-3.5 text-slate-400" />
-            Imprimer l'Attestation
-          </button>
+      {/* Position du dossier dans le cycle de vie */}
+      <section className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div className="text-sm font-bold text-white flex items-center gap-2">
+          <FileSignature className="w-4 h-4 text-emerald-400" />
+          Cycle de vie du dossier
         </div>
-      </div>
-
-      {/* Bandeau de statut juridique — obligatoire */}
-      <div className="p-3.5 bg-amber-950/40 border border-amber-800/70 rounded-xl text-xs text-amber-200 flex items-start gap-2.5">
-        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
-        <div className="space-y-1">
-          <div className="font-semibold">
-            Document de travail interne — aucune signature électronique qualifiée n'est produite par cette version.
-          </div>
-          <div className="text-amber-200/80 leading-relaxed">
-            {SignatureService.LEGAL_DISCLAIMER}
-          </div>
-        </div>
-      </div>
-
-      {/* Case Seal Status Card */}
-      <div className="p-5 bg-slate-900/90 border border-slate-800 rounded-xl space-y-4 shadow-lg">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className={`p-2.5 rounded-xl border ${certificate.isFullyExecuted ? 'bg-emerald-950/80 border-emerald-500 text-emerald-400' : 'bg-amber-950/80 border-amber-500 text-amber-400'}`}>
-              <ShieldCheck className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-white">{certificate.certificateId}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${certificate.isFullyExecuted ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'}`}>
-                  {certificate.isFullyExecuted ? 'VALIDATIONS INTERNES COMPLÈTES' : 'EN COURS DE VALIDATION INTERNE'}
-                </span>
-              </div>
-              <div className="text-xs text-slate-400 mt-0.5">
-                Projet : <strong className="text-white">{certificate.projectReference}</strong> · Candidat retenu : <strong className="text-emerald-400">{certificate.winningSupplierName}</strong>
-              </div>
-            </div>
-          </div>
-
-          <div className="text-right">
-            <div className="text-xs font-mono font-bold text-white">
-              Progression : {signedCount} / {certificate.signatures.length} validations internes enregistrées
-            </div>
-            <div className="text-[10px] text-slate-500 mt-0.5 font-mono">
-              Horodatage : {new Date(certificate.generatedAt).toLocaleString('fr-FR')}
-            </div>
-          </div>
-        </div>
-
-        {/* SHA-256 Hash Display */}
-        <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between gap-3 text-xs font-mono">
-          <div className="flex items-center gap-2 truncate">
-            <Lock className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-            <span className="text-slate-500 shrink-0">Empreinte SHA-256 :</span>
-            <span className="text-sky-300 truncate">{certificate.sealedHash}</span>
-          </div>
-          <button
-            onClick={handleCopyHash}
-            className="p-1 text-slate-400 hover:text-white rounded hover:bg-slate-900 shrink-0 transition-colors"
-            title="Copier l'empreinte de sécurité"
-          >
-            {copiedHash ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-          </button>
-        </div>
-
-        {/* Financial Recap Bar */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 font-mono text-xs pt-1">
-          <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-lg">
-            <div className="text-[10px] text-slate-400 font-sans">Montant Facial Retenu</div>
-            <div className="text-sm font-bold text-white mt-0.5">
-              {certificate.awardedTotalAmount.toLocaleString('fr-FR')} € HT
-            </div>
-          </div>
-          <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-lg">
-            <div className="text-[10px] text-slate-400 font-sans">TCO Global LCC</div>
-            <div className="text-sm font-bold text-emerald-400 mt-0.5">
-              {certificate.awardedTcoAmount.toLocaleString('fr-FR')} €
-            </div>
-          </div>
-          <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-lg">
-            <div className="text-[10px] text-slate-400 font-sans">
-              Carbone du scénario retenu
-            </div>
-            <div className="text-sm font-bold text-teal-400 mt-0.5">
-              {(certificate.awardedCarbonTonnes ?? 0).toLocaleString('fr-FR')} tCO2e
-            </div>
-          </div>
-          <div className="p-2.5 bg-slate-950/60 border border-slate-800/80 rounded-lg">
-            <div className="text-[10px] text-slate-400 font-sans">Statut juridique</div>
-            <div className="text-sm font-bold text-amber-400 mt-0.5">
-              Non qualifiée (interne)
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 4 Signatures Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {certificate.signatures.map((sig) => {
-          const isSigned = sig.status === 'signe';
-
-          return (
-            <div
-              key={sig.id}
-              className={`p-4 rounded-xl border flex flex-col justify-between space-y-3 transition-colors ${
-                isSigned
-                  ? 'bg-slate-900/90 border-slate-800'
-                  : 'bg-amber-950/10 border-amber-900/40'
-              }`}
-            >
-              <div className="space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`p-1.5 rounded-lg ${
-                        isSigned ? 'bg-emerald-950 text-emerald-400' : 'bg-amber-950 text-amber-400'
-                      }`}
-                    >
-                      {isSigned ? <BadgeCheck className="w-4 h-4" /> : <Clock className="w-4 h-4" />}
-                    </span>
-                    <div>
-                      <div className="text-xs uppercase tracking-wider font-bold text-slate-400 font-mono">
-                        Visa {sig.role.toUpperCase()}
-                      </div>
-                      <div className="font-bold text-white text-sm">{sig.signerName}</div>
-                      <div className="text-[11px] text-slate-400">{sig.signerTitle}</div>
-                    </div>
-                  </div>
-
-                  <span
-                    className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold uppercase ${
-                      isSigned
-                        ? 'bg-emerald-950 text-emerald-400 border border-emerald-800'
-                        : 'bg-amber-950 text-amber-400 border border-amber-800'
-                    }`}
-                  >
-                    {isSigned ? 'VALIDATION ENREGISTRÉE' : 'EN ATTENTE'}
-                  </span>
-                </div>
-
-                {isSigned ? (
-                  <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-lg space-y-2 text-xs font-mono">
-                    <div className="text-slate-300 italic font-sans text-[11px]">"{sig.comment}"</div>
-                    <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-900">
-                      <span>Certificat : {sig.certificateSerial}</span>
-                      <span>Horodaté : {new Date(sig.signedAt).toLocaleDateString('fr-FR')}</span>
-                    </div>
-                    {sig.signatureDataUrl && (
-                      <div className="pt-1 border-t border-slate-900 flex justify-center">
-                        <img src={sig.signatureDataUrl} alt="Signature manuscrite" className="h-9 opacity-85 invert" />
-                      </div>
-                    )}
-                  </div>
+        <ol className="space-y-1.5">
+          {WORKFLOW_STEPS.map((step, index) => {
+            const state = index < currentIndex ? 'passe' : index === currentIndex ? 'courant' : 'a_venir';
+            return (
+              <li key={step.serverStatus} className="flex items-start gap-2 text-xs">
+                {state === 'passe' ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 mt-0.5 shrink-0" />
+                ) : state === 'courant' ? (
+                  <Clock className="w-3.5 h-3.5 text-amber-400 mt-0.5 shrink-0" />
                 ) : (
-                  <div className="p-3 bg-amber-950/20 border border-amber-900/30 rounded-lg text-xs text-amber-300">
-                    En attente de signature par le signataire habilité.
-                  </div>
+                  <span className="w-3.5 h-3.5 mt-0.5 shrink-0 rounded-full border border-slate-700" />
                 )}
-              </div>
-
-              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                <span className="text-[10px] text-slate-500 font-mono">
-                  {isSigned ? `Réf: ${sig.auditTrailRef}` : 'Action requise'}
+                <span className={state === 'courant' ? 'text-white font-semibold' : 'text-slate-400'}>
+                  {step.label}
+                  <span className="block text-[11px] text-slate-500">{step.meaning}</span>
                 </span>
+              </li>
+            );
+          })}
+        </ol>
+        {unknownStatus && (
+          <p className="text-[11px] text-rose-300 bg-rose-950/50 border border-rose-800/60 rounded-lg px-3 py-2">
+            Le serveur rapporte le statut « {serverStatus} », que cette interface ne sait pas situer dans le cycle de
+            vie. Aucune étape n’est proposée : mieux vaut ne rien proposer que proposer la mauvaise transition.
+          </p>
+        )}
+        <p className="text-[11px] text-slate-400">
+          État enregistré côté serveur :{' '}
+          <span className="text-slate-200 font-semibold">
+            {unknownStatus ? serverStatus : currentStep?.label}
+          </span>
+          {nextStep
+            ? ` — étape suivante possible : ${nextStep.label} (permission ${nextStep.requires}).`
+            : ' — le dossier est figé, aucune étape supplémentaire n’est autorisée.'}
+        </p>
+      </section>
 
+      {/* Geste d'approbation */}
+      <section className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div className="text-sm font-bold text-white">Enregistrer une étape</div>
+        {isLocked ? (
+          <p className="text-xs text-slate-300 flex items-start gap-2">
+            <Lock className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
+            Ce dossier est verrouillé : aucune étape supplémentaire ne peut être enregistrée. Une correction passe par
+            une nouvelle version du dossier, afin que la décision approuvée reste consultable telle qu’elle a été
+            validée.
+          </p>
+        ) : (
+          <>
+            <label className="block text-[11px] text-slate-400" htmlFor="approval-justification">
+              Motif de la décision (obligatoire, 10 caractères minimum) — conservé dans le journal d’audit
+            </label>
+            <textarea
+              id="approval-justification"
+              value={justification}
+              onChange={(event) => setJustification(event.target.value)}
+              rows={3}
+              className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+              placeholder="Exemple : hypothèses vérifiées avec la direction financière le 08/10/2026 ; périmètre carbone validé par le service RSE."
+            />
+            <div className="flex flex-wrap gap-2">
+              {nextStep && (
                 <button
-                  onClick={() => setActiveSignModalRole(sig.role)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                    isSigned
-                      ? 'bg-slate-800 hover:bg-slate-700 text-slate-300'
-                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-950/40'
-                  }`}
+                  type="button"
+                  disabled={busy || !permissions.includes(nextStep.requires)}
+                  onClick={() => void applyTransition(nextStep.serverStatus)}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-semibold flex items-center gap-2"
                 >
-                  <PenTool className="w-3.5 h-3.5" />
-                  <span>{isSigned ? 'Modifier le visa' : 'Signer électroniquement'}</span>
+                  {busy ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  )}
+                  Enregistrer : {nextStep.label}
                 </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Signature Modal */}
-      {activeSignModalRole && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <div className="flex items-center gap-2">
-                <Fingerprint className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-white text-base">
-                  Signature Électronique Certifiée · Visa {activeSignModalRole.toUpperCase()}
-                </h3>
-              </div>
-              <button onClick={() => setActiveSignModalRole(null)} className="text-slate-400 hover:text-white">
-                ✕
+              )}
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => void loadHistory()}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-2"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Recharger l’historique
               </button>
             </div>
+            {nextStep && !permissions.includes(nextStep.requires) && (
+              <p className="text-[11px] text-amber-300 flex items-start gap-1.5">
+                <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+                {nextStep.requires === 'project:lock'
+                  ? 'Le verrouillage exige la permission d’approbation, distincte du droit de saisie : votre rôle ne la porte pas.'
+                  : `Votre rôle ne porte pas la permission « ${nextStep.requires} » requise pour cette étape.`}
+              </p>
+            )}
+            {nextStep?.requires === 'project:lock' && canLock && !canWrite && (
+              <p className="text-[11px] text-slate-400">
+                Votre rôle permet d’approuver et de figer, mais pas de modifier les données du dossier.
+              </p>
+            )}
+          </>
+        )}
+        {notice && (
+          <p className="text-xs text-emerald-300 bg-emerald-950/50 border border-emerald-800/60 rounded-lg px-3 py-2">
+            {notice}
+          </p>
+        )}
+        {actionError && (
+          <p className="text-xs text-rose-300 bg-rose-950/50 border border-rose-800/60 rounded-lg px-3 py-2">
+            {actionError}
+          </p>
+        )}
+      </section>
 
-            <div className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-400 mb-1">Nom du signataire</label>
-                  <input
-                    type="text"
-                    value={signerNameInput}
-                    onChange={(e) => setSignerNameInput(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-400 mb-1">Fonction / Titre</label>
-                  <input
-                    type="text"
-                    value={signerTitleInput}
-                    onChange={(e) => setSignerTitleInput(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-slate-400 mb-1">Motivation / Visa décisionnel</label>
-                <textarea
-                  rows={2}
-                  value={signerComment}
-                  onChange={(e) => setSignerComment(e.target.value)}
-                  className="w-full p-2.5 bg-slate-950 border border-slate-800 rounded-lg text-white"
-                />
-              </div>
-
-              {/* Signature Canvas */}
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-slate-400">Tracé de signature manuscrite (Tactile ou Souris)</label>
-                  <button
-                    type="button"
-                    onClick={clearCanvas}
-                    className="text-[11px] text-sky-400 hover:text-sky-300 flex items-center gap-1"
-                  >
-                    <RotateCcw className="w-3 h-3" /> Effacer
-                  </button>
-                </div>
-                <div className="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden cursor-crosshair">
-                  <canvas
-                    ref={canvasRef}
-                    width={450}
-                    height={110}
-                    onMouseDown={startDrawing}
-                    onMouseMove={draw}
-                    onMouseUp={stopDrawing}
-                    onMouseLeave={stopDrawing}
-                    onTouchStart={startDrawing}
-                    onTouchMove={draw}
-                    onTouchEnd={stopDrawing}
-                    className="w-full h-[110px] block"
-                  />
-                </div>
-                <div className="text-[10px] text-slate-500 mt-1 font-mono">
-                  Empreinte d'intégrité SHA-256 calculée localement · AUCUN certificat n'est délivré par TrueTCO
-                </div>
-              </div>
-
-              {/* Consent checkbox */}
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-lg flex items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  id="consentCheck"
-                  checked={consentChecked}
-                  onChange={(e) => setConsentChecked(e.target.checked)}
-                  className="mt-0.5 rounded border-slate-700 text-emerald-500 focus:ring-0"
-                />
-                <label htmlFor="consentCheck" className="text-[11px] text-slate-300 leading-relaxed cursor-pointer select-none">
-                  Je confirme avoir vérifié l'exactitude de l'arbitrage TCO/LCC exposé ci-dessus et j'approuve la décision d'achat. Je comprends que cette validation est enregistrée dans l'application et ne constitue pas une signature électronique qualifiée au sens du règlement (UE) n° 910/2014.
-                </label>
-              </div>
-
-              {/* Modal buttons */}
-              <div className="pt-2 border-t border-slate-800 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveSignModalRole(null)}
-                  className="px-3 py-2 text-slate-400 hover:text-white"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="button"
-                  onClick={handleConfirmSignature}
-                  disabled={!consentChecked || !signerNameInput.trim()}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold rounded-lg shadow-lg shadow-emerald-950/40"
-                >
-                  Apposer la Signature Électronique Scellée
-                </button>
-              </div>
-            </div>
-          </div>
+      {/* Historique réel, lu depuis le journal d'audit du serveur */}
+      <section className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-3">
+        <div className="text-sm font-bold text-white">
+          Journal d’audit du dossier
+          <span className="ml-2 text-[11px] font-normal text-slate-400">
+            {statusChanges.length} changement(s) de statut parmi {history.length} action(s) affichée(s)
+            {historyTotal > history.length ? ` sur ${historyTotal} au total` : ''}
+          </span>
         </div>
-      )}
+        {loading ? (
+          <p className="text-xs text-slate-400 flex items-center gap-2">
+            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Lecture du journal d’audit…
+          </p>
+        ) : historyError ? (
+          <p className="text-xs text-rose-300 bg-rose-950/50 border border-rose-800/60 rounded-lg px-3 py-2">
+            {historyError}
+          </p>
+        ) : history.length === 0 ? (
+          <p className="text-xs text-slate-400">
+            Aucune action n’est encore tracée pour ce dossier. Créations, modifications, imports, décisions et changements
+            de statut apparaîtront ici, avec l’identité de la session qui les a effectués.
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="text-slate-400">
+                <tr>
+                  <th className="text-left py-1.5 font-semibold">Horodatage</th>
+                  <th className="text-left py-1.5 font-semibold">Auteur (session)</th>
+                  <th className="text-left py-1.5 font-semibold">Rôle</th>
+                  <th className="text-left py-1.5 font-semibold">Action</th>
+                  <th className="text-left py-1.5 font-semibold">Justification</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                {history.map((entry) => (
+                  <tr key={entry.id}>
+                    <td className="py-1.5 text-slate-400 whitespace-nowrap">
+                      {entry.timestamp
+                        ? new Date(entry.timestamp).toLocaleString('fr-FR')
+                        : 'horodatage non fourni'}
+                    </td>
+                    <td className="py-1.5 text-slate-200">{entry.userName}</td>
+                    <td className="py-1.5 text-slate-400">{entry.userRole}</td>
+                    <td className="py-1.5 text-slate-300 font-mono">
+                      {entry.fieldChanged}
+                      {entry.fieldChanged === 'workflow_status' && entry.oldValue && entry.newValue && (
+                        <span className="block text-[10px] text-slate-500 font-sans">
+                          {entry.oldValue} → {entry.newValue}
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-1.5 text-slate-400 max-w-[420px]">{entry.justification}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
     </div>
   );
 };

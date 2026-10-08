@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project, SupplierOffer } from '../types/domain';
-import { TCOEngine } from '../engine/tcoEngine';
+import { TCOEngine, TCO_ENGINE_VERSION } from '../engine/tcoEngine';
 import { runAllTCOEngineTests, TestResultItem } from '../engine/tcoEngine.test';
 import {
   ShieldCheck,
@@ -76,17 +76,19 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
             Validation des Fondations · Jalons du Produit
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            Chantier 1 — Architecture, Modèle de Données & Moteur TCO
+            Moteur de calcul — architecture, modèle de données & décomposition
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Vérification formelle des 10 exigences du Chantier 1 : modèle d'entités, typage strict, formules mathématiques certifiées, neutralité ESG, suite de tests unitaires et banc d'essai interactif.
+            Décomposition pas-à-pas des résultats du moteur pour une offre donnée, formules appliquées, hypothèses
+            utilisées et sources des données. Les vérifications automatisées du moteur sont exécutées par la suite de
+            tests du dépôt (`npm run test:engine`) : cet écran les affiche, il ne les remplace pas.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-950/60 border border-emerald-800/80 rounded-lg text-emerald-400 text-xs font-semibold">
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Chantier 1 Validé (100%)</span>
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-slate-300 text-xs font-semibold">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>Résultats calculés par le moteur v{TCO_ENGINE_VERSION}</span>
           </div>
         </div>
       </div>
@@ -150,7 +152,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
           }`}
         >
           <FileCheck className="w-3.5 h-3.5 text-amber-400" />
-          Rapport de Clôture du Chantier 1
+          Formules & hypothèses auditées
         </button>
       </div>
 
@@ -349,7 +351,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
         )
       )}
 
-      {/* TAB 2: TESTS AUTOMATISÉS CERTIFIÉS */}
+      {/* TAB 2 : TESTS AUTOMATISÉS DU MOTEUR */}
       {activeTab === 'tests' && (
         <div className="space-y-4">
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between gap-4">
@@ -516,7 +518,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-1">
                 <div className="font-bold text-emerald-400 font-mono">TCOCalculationResult</div>
                 <div className="text-slate-300">
-                  Sortie immuable du moteur : TCO standard, LCC actualisé, intervalle d'incertitude et cash flows.
+                  Sortie reproductible du moteur : TCO standard, LCC actualisé, dispersion estimée et flux de trésorerie.
                 </div>
                 <div className="text-[10px] text-slate-500">Prêt pour l'exportation et le reporting de direction</div>
               </div>
@@ -530,7 +532,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
         <div className="p-6 bg-slate-900 border border-slate-800 rounded-xl space-y-4 text-xs text-slate-300">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Rapport de Clôture & Revue de Code — Chantier 1
+              Formules, hypothèses et limites du moteur
             </h3>
             <span className="text-emerald-400 font-mono font-bold text-xs">Statut : Validé 100%</span>
           </div>

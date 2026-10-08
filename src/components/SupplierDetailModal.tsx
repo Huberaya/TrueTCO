@@ -139,7 +139,7 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Chantier 4 · Référentiel Tiers, Incoterms & Indice de Fiabilité Documentaire
+                Référentiel tiers, Incoterms & fiabilité documentaire
               </p>
             </div>
           </div>

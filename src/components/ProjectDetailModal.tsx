@@ -131,7 +131,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Chantier 3 · Cadrage, Gouvernance des statuts et Hypothèses Financières
+                Cadrage, gouvernance des statuts et hypothèses financières
               </p>
             </div>
           </div>

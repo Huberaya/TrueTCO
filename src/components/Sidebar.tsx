@@ -34,7 +34,7 @@ export type NavView =
   | 'report'
   | 'erp_connectors'
   | 'ai_parser'
-  | 'digital_signature'
+  | 'approvals'
   | 'csrd_taxonomy'
   | 'import_center'
   | 'decision';
@@ -100,7 +100,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'projects',
-      label: 'Chantier 3 (Appels d\'Offres)',
+      label: 'Projets & appels d\'offres',
       icon: <FolderKanban className="w-4 h-4 text-emerald-400" />,
     },
     {
@@ -134,8 +134,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       icon: <Sparkles className="w-4 h-4 text-purple-400" />,
     },
     {
-      id: 'digital_signature',
-      label: 'Signature électronique',
+      id: 'approvals',
+      label: 'Approbations',
       icon: <Fingerprint className="w-4 h-4 text-emerald-400" />,
     },
     {

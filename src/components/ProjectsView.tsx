@@ -103,7 +103,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <FolderKanban className="w-4 h-4 text-emerald-400" />
-            Chantier 3 · Module « Projets & Appels d'Offres »
+            Dossiers & appels d'offres
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Gestion du Cycle de Vie des Projets d'Achat

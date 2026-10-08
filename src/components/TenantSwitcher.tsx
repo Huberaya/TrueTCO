@@ -46,7 +46,7 @@ export const TenantSwitcher: React.FC = () => {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-lg transition-all text-xs group"
-        title="Changer d'espace entreprise (Partitionnement étanche Neon PostgreSQL)"
+        title="Changer d'espace entreprise — chaque organisation est isolée en base (RLS)"
       >
         <div className="w-5 h-5 rounded bg-emerald-950 border border-emerald-800/80 flex items-center justify-center text-emerald-400">
           <Building2 className="w-3 h-3" />

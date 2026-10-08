@@ -68,6 +68,16 @@ export interface Project {
   ownerId: string;
   ownerName: string;
   status: ProjectStatus;
+  /**
+   * Statut de cycle de vie tel que le SERVEUR le connaît (`draft`, `data_review`,
+   * `finance_review`, `esg_review`, `approval`, `decision`, `locked`).
+   *
+   * L'interface ne dispose que de 9 statuts d'affichage, dont plusieurs
+   * correspondent au même statut serveur (`analyse` couvre `finance_review` ET
+   * `esg_review`). Sans ce champ, un écran ne peut pas dire avec honnêteté où en
+   * est réellement le dossier, ni quelle est l'étape suivante autorisée.
+   */
+  serverWorkflowStatus?: string;
   createdAt: string;
   updatedAt: string;
   discountRate: number; // Taux d'actualisation WACC (e.g. 0.045)
@@ -540,53 +550,6 @@ export interface DocumentParseResult {
   keyDifferentiators: string[];
 }
 
-/**
- * =============================================================================
- * CHANTIER 9 : SIGNATURE ÉLECTRONIQUE CERTIFIÉE (eIDAS & SCELLÉ NUMÉRIQUE)
- * =============================================================================
- */
-export type SignatureRole = 'acheteur' | 'rse' | 'finance' | 'direction';
-
-export interface DigitalSignatureRecord {
-  id: string;
-  role: SignatureRole;
-  signerName: string;
-  signerTitle: string;
-  signerEmail: string;
-  signedAt: string;
-  status: 'signe' | 'en_attente' | 'refuse';
-  sha256Hash: string;
-  certificateSerial: string;
-  certificateAuthority: string; // e.g. 'CertEurope / ANSSI eIDAS QES'
-  signatureDataUrl?: string; // handwritten canvas PNG
-  ipAddress: string;
-  auditTrailRef: string;
-  comment?: string;
-}
-
-export interface AdjudicationCertificate {
-  certificateId: string;
-  projectId: string;
-  projectReference: string;
-  winningOfferId: string;
-  winningSupplierName: string;
-  awardedTotalAmount: number;
-  awardedTcoAmount: number;
-  awardedCarbonAvoidedTonnes: number;
-  generatedAt: string;
-  sealedHash: string;
-  signatures: DigitalSignatureRecord[];
-  isFullyExecuted: boolean;
-  /** Statut juridique réel du document. 'non_qualifiee' tant qu'aucun
-   *  prestataire de confiance eIDAS n'est intégré. */
-  legalStatus?: 'non_qualifiee' | 'qualifiee';
-  /** Avertissement légal affiché et imprimé avec le document. */
-  legalDisclaimer?: string;
-  /** Marqueur interne : 'false' = aucun contenu fabriqué (identités, séries, IP). */
-  containsFabricatedIdentity?: boolean;
-  /** Carbone du scénario retenu (tCO2e) — jamais un « évitement » sans base de comparaison. */
-  awardedCarbonTonnes?: number;
-}
 
 /**
  * =============================================================================

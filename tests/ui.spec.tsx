@@ -19,6 +19,9 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { DecisionView } from '../src/components/DecisionView';
 import { ImportCenterView } from '../src/components/ImportCenterView';
 import { AuditLogView } from '../src/components/AuditLogView';
+import { DigitalSignatureView } from '../src/components/DigitalSignatureView';
+import { ExecutiveReportView } from '../src/components/ExecutiveReportView';
+import { SEED_OFFERS, SEED_PROJECTS, SEED_SUPPLIERS } from '../src/data/seedData';
 import { IMPORT_TARGET_FIELDS } from '../src/services/serverData';
 
 /**
@@ -528,5 +531,274 @@ describe('Journal d’audit', () => {
     render(<AuditLogView logs={[]} onAddLog={() => undefined} />);
     await waitFor(() => expect(screen.getByText(/Chaîne de hachage vérifiée/i)).toBeTruthy());
     expect(screen.queryByRole('button', { name: /visa/i })).toBeNull();
+  });
+});
+
+/**
+ * Approbations : l'écran qui a remplacé la « signature électronique ».
+ *
+ * Ces tests portent sur ce qui a été retiré autant que sur ce qui le remplace : un
+ * certificat fabriqué dans le navigateur ne doit plus pouvoir revenir, et une
+ * approbation affichée doit toujours venir d'une réponse du serveur.
+ */
+describe('Approbations du dossier', () => {
+  const projectFixture = (overrides: Record<string, unknown> = {}) =>
+    ({
+      id: 'project-1',
+      organizationId: 'org-1',
+      name: 'Dossier test',
+      reference: 'TCO-2026-001',
+      category: 'Flotte automobile',
+      budgetCap: 500000,
+      currency: 'EUR',
+      horizonYears: 5,
+      plannedVolume: 10,
+      unitName: 'véhicules',
+      purchaseFrequency: 'unique',
+      objective: 'Arbitrage',
+      ownerId: 'user-1',
+      ownerName: 'Utilisateur Test',
+      status: 'brouillon',
+      serverWorkflowStatus: 'draft',
+      createdAt: '2026-10-01T10:00:00.000Z',
+      updatedAt: '2026-10-01T10:00:00.000Z',
+      discountRate: 0.045,
+      carbonScenario: 'central',
+      carbonPricePerTonne: 120,
+      inflationRate: 0.02,
+      energyInflationRate: 0.04,
+      ...overrides,
+    }) as any;
+
+  /** Ligne du journal d'audit serveur, telle que l'API la renvoie (snake_case). */
+  const auditRow = (overrides: Record<string, unknown> = {}) => ({
+    id: 42,
+    occurred_at: '2026-10-07T09:30:00.000Z',
+    actor_id: 'user-1',
+    actor_name: 'Utilisateur Test',
+    actor_role: 'acheteur',
+    action: 'project.status_changed',
+    entity_type: 'project',
+    entity_id: 'project-1',
+    project_id: 'project-1',
+    field_changed: 'workflow_status',
+    old_value: 'draft',
+    new_value: 'data_review',
+    justification: 'Données vérifiées avec le service achat.',
+    entry_hash: 'a'.repeat(64),
+    is_demo: false,
+    ...overrides,
+  });
+
+  it('T-UI-10 : le cycle de vie et les approbations viennent du serveur, et l’écran démentit toute signature qualifiée', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (String(url).includes('/api/audit-logs')) return jsonResponse({ items: [auditRow()], total: 1 });
+        return jsonResponse({}, 404);
+      })
+    );
+
+    const { container } = render(
+      <DigitalSignatureView project={projectFixture()} permissions={['project:read', 'project:write']} />
+    );
+
+    await waitFor(() => expect(screen.getByText('Utilisateur Test')).toBeTruthy());
+    // L'auteur, le rôle et le motif affichés sont ceux de la réponse du serveur.
+    expect(screen.getByText('acheteur')).toBeTruthy();
+    expect(screen.getByText('Données vérifiées avec le service achat.')).toBeTruthy();
+
+    // L'écran dit explicitement qu'il ne produit pas de signature qualifiée…
+    expect(container.textContent).toMatch(/n’est pas une signature électronique qualifiée/i);
+    // …et aucun certificat fabriqué n'est présenté.
+    expect(container.textContent).not.toMatch(/certificat d.adjudication/i);
+    expect(container.textContent).not.toMatch(/eIDAS QES/i);
+  });
+
+  it('T-UI-11 : sans motif écrit d’au moins 10 caractères, aucune approbation n’est envoyée au serveur', async () => {
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return jsonResponse({}, 201);
+      return jsonResponse({ items: [], total: 0 });
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<DigitalSignatureView project={projectFixture()} permissions={['project:write']} />);
+    await waitFor(() => expect(screen.getByText(/Cycle de vie du dossier/i)).toBeTruthy());
+
+    // Motif trop court : le serveur exigerait 10 caractères, l'écran le rappelle.
+    fireEvent.change(screen.getByLabelText(/Motif de la décision/i), { target: { value: 'OK' } });
+    screen.getByRole('button', { name: /Enregistrer : Revue des données/i }).click();
+
+    await waitFor(() => expect(screen.getByText(/au moins 10 caractères est exigée/i)).toBeTruthy());
+    expect(fetchMock.mock.calls.some((call) => (call[1] as RequestInit | undefined)?.method === 'POST')).toBe(false);
+  });
+
+  it('T-UI-12 : une approbation valide est enregistrée PAR LE SERVEUR, puis l’historique est relu', async () => {
+    const calls: Array<{ url: string; method: string; body: any }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        calls.push({ url: String(url), method: init?.method ?? 'GET', body: readJsonBody(init) });
+        if (init?.method === 'POST') {
+          return jsonResponse({
+            ...projectFixture({ status: 'collecte_offres', serverWorkflowStatus: 'data_review' }),
+            status: 'data_review',
+          });
+        }
+        return jsonResponse({ items: [auditRow()], total: 1 });
+      })
+    );
+
+    render(<DigitalSignatureView project={projectFixture()} permissions={['project:write']} />);
+    await waitFor(() => expect(screen.getByText('Utilisateur Test')).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText(/Motif de la décision/i), {
+      target: { value: 'Périmètre et sources vérifiés avec les achats le 08/10/2026.' },
+    });
+    screen.getByRole('button', { name: /Enregistrer : Revue des données/i }).click();
+
+    await waitFor(() => expect(screen.getByText(/enregistrée par le serveur et inscrite au journal d’audit/i)).toBeTruthy());
+
+    const post = calls.find((call) => call.method === 'POST')!;
+    expect(post.url).toContain('/api/projects/project-1/status');
+    expect(post.body).toEqual({
+      status: 'data_review',
+      justification: 'Périmètre et sources vérifiés avec les achats le 08/10/2026.',
+    });
+    // L'historique est RELU (deux lectures) : l'écran n'ajoute pas la ligne lui-même.
+    expect(calls.filter((call) => call.url.includes('/api/audit-logs')).length).toBe(2);
+  });
+
+  it('T-UI-13 : un refus du serveur est affiché tel quel, et l’étape n’avance pas', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        if (init?.method === 'POST') {
+          return jsonResponse(
+            { error: 'Transition de statut refusée : « draft » → « approval ».', code: 'INVALID_TRANSITION' },
+            409
+          );
+        }
+        return jsonResponse({ items: [], total: 0 });
+      })
+    );
+
+    render(<DigitalSignatureView project={projectFixture()} permissions={['project:write']} />);
+    await waitFor(() => expect(screen.getByText(/Cycle de vie du dossier/i)).toBeTruthy());
+
+    fireEvent.change(screen.getByLabelText(/Motif de la décision/i), {
+      target: { value: 'Validation de l’étape suivante par la direction.' },
+    });
+    screen.getByRole('button', { name: /Enregistrer : Revue des données/i }).click();
+
+    await waitFor(() => expect(screen.getByText(/Transition de statut refusée/i)).toBeTruthy());
+    expect(screen.getByText(/INVALID_TRANSITION/)).toBeTruthy();
+    // Aucun message de succès : le dossier n'a pas bougé.
+    expect(screen.queryByText(/enregistrée par le serveur et inscrite au journal d’audit/i)).toBeNull();
+  });
+
+  it('T-UI-14 : le rôle sans droit d’écriture ne peut pas faire avancer le dossier', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ items: [], total: 0 })));
+
+    render(<DigitalSignatureView project={projectFixture()} permissions={['project:read']} />);
+    await waitFor(() => expect(screen.getByText(/Cycle de vie du dossier/i)).toBeTruthy());
+
+    const button = screen.getByRole('button', { name: /Enregistrer : Revue des données/i }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+    expect(screen.getByText(/ne porte pas la permission/i)).toBeTruthy();
+  });
+});
+
+/**
+ * Dossier décisionnel (écran Comex) : il affichait un « Collège des Visas &
+ * Signatures Électroniques » avec quatre signataires inventés, dont trois déjà
+ * marqués signés, et un bouton qui basculait le dossier localement en « adjudiqué ».
+ * Ces tests verrouillent la correction : plus aucune identité inventée à l'écran,
+ * et une décision qui passe par l'API.
+ */
+describe('Dossier décisionnel — approbations réelles', () => {
+  const seedProject = { ...SEED_PROJECTS[0], ownerName: 'Porteur du dossier (test)', serverWorkflowStatus: 'finance_review' };
+  const seedOffers = SEED_OFFERS.filter((offer) => offer.projectId === SEED_PROJECTS[0].id);
+
+  it('T-UI-15 : aucun signataire inventé, et l’absence d’approbation est dite', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ items: [], total: 0 })));
+
+    const { container } = render(
+      <ExecutiveReportView project={seedProject} offers={seedOffers} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
+    );
+
+    await waitFor(() => expect(screen.getByText(/Aucune approbation n’est enregistrée/i)).toBeTruthy());
+    for (const inventedName of ['Sophie Valéry', 'Lucas Bernard', 'Éléonore Chen', 'Alexandre de Mortemart']) {
+      expect(container.textContent).not.toContain(inventedName);
+    }
+    expect(container.textContent).not.toMatch(/visa électronique apposé/i);
+    expect(container.textContent).not.toMatch(/certifié par le moteur/i);
+    expect(container.textContent).not.toMatch(/ISO15686/i);
+  });
+
+  it('T-UI-16 : les approbations affichées sont celles du journal du serveur', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string) => {
+        if (String(url).includes('/api/audit-logs')) {
+          return jsonResponse({
+            items: [
+              {
+                id: 7,
+                occurred_at: '2026-10-07T09:30:00.000Z',
+                actor_id: 'user-1',
+                actor_name: 'Responsable Achats Test',
+                actor_role: 'directeur_achats',
+                action: 'project.status_changed',
+                entity_type: 'project',
+                entity_id: seedProject.id,
+                project_id: seedProject.id,
+                field_changed: 'workflow_status',
+                old_value: 'draft',
+                new_value: 'data_review',
+                justification: 'Sources fournisseurs revérifiées avec les acheteurs.',
+                entry_hash: 'b'.repeat(64),
+                is_demo: false,
+              },
+            ],
+            total: 1,
+          });
+        }
+        return jsonResponse({}, 404);
+      })
+    );
+
+    render(
+      <ExecutiveReportView project={seedProject} offers={seedOffers} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
+    );
+
+    await waitFor(() => expect(screen.getByText('Responsable Achats Test')).toBeTruthy());
+    expect(screen.getByText('directeur_achats')).toBeTruthy();
+    expect(screen.getByText('Sources fournisseurs revérifiées avec les acheteurs.')).toBeTruthy();
+  });
+
+  it('T-UI-17 : pas de transition sans motif écrit, et la transition passe par l’API quand il y en a un', async () => {
+    const calls: Array<{ url: string; method: string; body: any }> = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((url: string, init?: RequestInit) => {
+        calls.push({ url: String(url), method: init?.method ?? 'GET', body: readJsonBody(init) });
+        if (init?.method === 'POST') {
+          return jsonResponse({ ...seedProject, status: 'data_review' });
+        }
+        return jsonResponse({ items: [], total: 0 });
+      })
+    );
+
+    render(
+      <ExecutiveReportView project={seedProject} offers={seedOffers} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
+    );
+    await waitFor(() => expect(screen.getByText(/Aucune approbation n’est enregistrée/i)).toBeTruthy());
+
+    // Motif trop court : la transition est refusée localement, avant tout appel.
+    fireEvent.change(screen.getByLabelText(/Motif de la décision/i), { target: { value: 'ok' } });
+    screen.getByRole('button', { name: /Enregistrer l’étape/i }).click();
+    await waitFor(() => expect(screen.getByText(/au moins 10 caractères est exigé par le serveur/i)).toBeTruthy());
+    expect(calls.some((call) => call.method === 'POST')).toBe(false);
   });
 });

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Project,
   SupplierOffer,
@@ -8,6 +8,12 @@ import {
 } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
 import { ExcelExportService } from '../services/excelExportService';
+import {
+  ApiError,
+  changeProjectWorkflowStatusOnServer,
+  fetchProjectAuditLogsFromServer,
+} from '../services/serverData';
+import { nextWorkflowStep, resolveServerWorkflowStatus, WORKFLOW_STEPS } from '../services/workflow';
 import {
   Printer,
   FileSpreadsheet,
@@ -20,7 +26,7 @@ import {
   Clock,
   Leaf,
   Layers,
-  Stamp,
+  Loader2,
   Lock,
   AlertTriangle,
   ChevronRight,
@@ -31,6 +37,28 @@ import {
   Scale,
 } from 'lucide-react';
 
+/**
+ * DOSSIER DÉCISIONNEL D'ADJUDICATION — CE QUI A ÉTÉ RETIRÉ
+ * ---------------------------------------------------------------------------
+ * La version précédente de cet écran fabriquait des preuves de validation :
+ *   - un « Collège des Visas & Signatures Électroniques Comex » de quatre
+ *     signataires INVENTÉS (noms, fonctions, citations de validation), dont trois
+ *     déjà marqués SIGNÉS avec des horodatages calculés à l'affichage ;
+ *   - un bouton « Apposer le Visa » qui cochait la case dans l'état du navigateur
+ *     et écrivait dans un journal local ;
+ *   - un bouton « Prononcer l'Adjudication » qui basculait le dossier localement en
+ *     « adjudiqué » et annonçait un enregistrement « immuable » en base ;
+ *   - un « sceau » présenté comme une empreinte de certification (FNV-1a, non
+ *     cryptographique, affublé du suffixe ISO 15686).
+ * Aucune de ces validations n'existait côté serveur : elles n'engageaient personne.
+ *
+ * Désormais, la section d'approbation affiche le JOURNAL D'AUDIT du serveur —
+ * qui, qui a approuvé quelle étape, quand, et avec quel motif — et l'action de
+ * décision passe par l'API de cycle de vie, qui exige une justification et
+ * vérifie les permissions. Si le dossier n'a pas d'approbation enregistrée,
+ * l'écran l'écrit : un dossier non approuvé n'a pas à paraître approuvé.
+ */
+
 interface ExecutiveReportViewProps {
   project: Project;
   offers: SupplierOffer[];
@@ -39,17 +67,6 @@ interface ExecutiveReportViewProps {
   benchmarks?: ExternalityReferenceBenchmark[];
   onBack: () => void;
   onUpdateProject?: (updated: Project) => void;
-  onAddAuditLog?: (entry: AuditLogEntry) => void;
-}
-
-interface ComexVisa {
-  id: string;
-  roleTitle: string;
-  signatoryName: string;
-  roleCode: string;
-  status: 'signe' | 'en_attente';
-  signedAt?: string;
-  statement: string;
 }
 
 export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
@@ -60,7 +77,6 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
   benchmarks = [],
   onBack,
   onUpdateProject,
-  onAddAuditLog,
 }) => {
   // Calculate detailed TCO for all offers
   const results = useMemo(() => {
@@ -116,58 +132,65 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
     );
   }, [conv, winningCandidate]);
 
-  // Verification Hash
-  const reportSealHash = useMemo(() => {
-    const raw = `${project.id}:${project.reference}:${winningCandidate?.offer.id}:${netSavings}:${project.status}`;
+  /**
+   * Identifiant INTERNE de lecture du rapport : un FNV-1a, volontairement présenté
+   * pour ce qu'il est. Ce n'est ni un sceau, ni une signature, ni une empreinte
+   * cryptographique : il ne prouve rien et ne doit pas être invoqué comme preuve.
+   * L'intégrité opposable vient du journal d'audit chaîné du serveur (SHA-256).
+   */
+  const reportInternalId = useMemo(() => {
+    const raw = `${project.id}:${project.reference}:${winningCandidate?.offer.id}`;
     let hash = 0x811c9dc5;
     for (let i = 0; i < raw.length; i++) {
       hash ^= raw.charCodeAt(i);
       hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
     }
-    return `COMEX-${(hash >>> 0).toString(16).toUpperCase()}-ISO15686`;
-  }, [project, winningCandidate, netSavings]);
+    return `RPT-${(hash >>> 0).toString(16).toUpperCase()}`;
+  }, [project.id, project.reference, winningCandidate?.offer.id]);
 
-  // Visas state
-  const [visas, setVisas] = useState<ComexVisa[]>([
-    {
-      id: 'visa-acheteur',
-      roleTitle: 'Acheteur Référent / Chef de Projet',
-      signatoryName: 'Sophie Valéry',
-      roleCode: 'acheteur',
-      status: 'signe',
-      signedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-      statement: 'Dossier de consultation instruit selon le CCTP et le modèle TCO certifié.',
-    },
-    {
-      id: 'visa-finance',
-      roleTitle: 'Contrôle de Gestion / Direction Financière (DAF)',
-      signatoryName: 'Lucas Bernard',
-      roleCode: 'finance_controleur',
-      status: 'signe',
-      signedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-      statement: 'Hypothèses de taux WACC (4.5%), LCC actualisé et retour sur investissement validés.',
-    },
-    {
-      id: 'visa-rse',
-      roleTitle: 'Direction RSE & Climat',
-      signatoryName: 'Éléonore Chen',
-      roleCode: 'rse_esg',
-      status: 'signe',
-      signedAt: new Date(Date.now() - 3600000).toISOString(),
-      statement: 'Bilan carbone ACV et facteurs d’émission ADEME/Quinet certifiés conformes CSRD.',
-    },
-    {
-      id: 'visa-dg',
-      roleTitle: 'Direction Générale / Présidence du Comité',
-      signatoryName: 'Alexandre de Mortemart',
-      roleCode: 'direction_generale',
-      status: project.status === 'adjudique' ? 'signe' : 'en_attente',
-      signedAt: project.status === 'adjudique' ? new Date().toISOString() : undefined,
-      statement: 'Adjudication prononcée et engagement juridique de la dépense autorisé.',
-    },
-  ]);
+  /** Message du serveur après une transition de cycle de vie réellement appliquée. */
+  const [workflowNotice, setWorkflowNotice] = useState<string | null>(null);
+  /** Motif exigé par le serveur (10 caractères minimum) pour toute décision. */
+  const [decisionJustification, setDecisionJustification] = useState('');
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
+  /** Statut serveur du dossier : seul état qui autorise une transition. */
+  const [serverStatus, setServerStatus] = useState<string>(resolveServerWorkflowStatus(project));
+  const [approvals, setApprovals] = useState<AuditLogEntry[]>([]);
+  const [approvalsLoading, setApprovalsLoading] = useState(true);
+  const [approvalsError, setApprovalsError] = useState<string | null>(null);
 
-  const [isAdjudicationSuccess, setIsAdjudicationSuccess] = useState(false);
+  useEffect(() => {
+    setServerStatus(resolveServerWorkflowStatus(project));
+  }, [project.serverWorkflowStatus, project.status]);
+
+  /**
+   * Approbations RÉELLES du dossier, lues dans le journal d'audit du serveur.
+   * En cas d'échec de lecture, l'écran le dit et n'affiche aucune approbation :
+   * il ne complète jamais avec le journal local (qui ne contient que des données
+   * de démonstration et ne prouve aucune validation).
+   */
+  const loadApprovals = useCallback(async () => {
+    setApprovalsLoading(true);
+    try {
+      const result = await fetchProjectAuditLogsFromServer(project.id, 100);
+      setApprovals(result.items.filter((entry) => entry.fieldChanged === 'workflow_status'));
+      setApprovalsError(null);
+    } catch (caught) {
+      setApprovals([]);
+      setApprovalsError(
+        caught instanceof ApiError
+          ? `${caught.message} (${caught.code})`
+          : "Les approbations du dossier n'ont pas pu être lues depuis le serveur."
+      );
+    } finally {
+      setApprovalsLoading(false);
+    }
+  }, [project.id]);
+
+  useEffect(() => {
+    void loadApprovals();
+  }, [loadApprovals]);
 
   // Handle printing
   const handlePrint = () => {
@@ -179,98 +202,61 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
     ExcelExportService.exportFinancialWorkbook(project, offers, suppliers, auditLogs, benchmarks);
   };
 
-  // Sign a specific visa interactively
-  const handleSignVisa = (visaId: string) => {
-    const nowIso = new Date().toISOString();
-    setVisas((prev) =>
-      prev.map((v) =>
-        v.id === visaId
-          ? {
-              ...v,
-              status: 'signe',
-              signedAt: nowIso,
-            }
-          : v
-      )
-    );
-
-    const targetVisa = visas.find((v) => v.id === visaId);
-    if (targetVisa && onAddAuditLog) {
-      const logEntry: AuditLogEntry = {
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log-${Date.now()}`,
-        timestamp: nowIso,
-        userId: 'u-comex',
-        userName: targetVisa.signatoryName,
-        userRole: targetVisa.roleCode as any,
-        projectId: project.id,
-        entityName: 'Dossier d’Arbitrage Comex',
-        fieldChanged: `Visa Comex : ${targetVisa.roleTitle}`,
-        oldValue: 'En attente de signature',
-        newValue: 'Visa Électronique Apposé',
-        justification: targetVisa.statement,
-      };
-      onAddAuditLog(logEntry);
+  /**
+   * Faire avancer le dossier : la transition est demandée au SERVEUR, avec un motif
+   * écrit. Rien n'est décidé dans le navigateur : si le serveur refuse (permission,
+   * transition interdite, motif trop court), l'écran affiche son refus tel quel.
+   */
+  const handleWorkflowTransition = async (target: string) => {
+    const motive = decisionJustification.trim();
+    if (motive.length < 10) {
+      setWorkflowError(
+        'Un motif écrit d’au moins 10 caractères est exigé par le serveur : une décision sans motif n’est pas traçable.'
+      );
+      return;
     }
-  };
-
-  // Pronounce adjudication of the winning offer
-  const handleAdjudicateProject = () => {
-    if (!onUpdateProject || !winningCandidate) return;
-
-    const nowIso = new Date().toISOString();
-    const updatedProject: Project = {
-      ...project,
-      status: 'adjudique',
-      updatedAt: nowIso,
-    };
-
-    onUpdateProject(updatedProject);
-
-    // Sign DG Visa automatically
-    setVisas((prev) =>
-      prev.map((v) =>
-        v.id === 'visa-dg'
-          ? { ...v, status: 'signe', signedAt: nowIso }
-          : v
-      )
-    );
-
-    if (onAddAuditLog) {
-      const logEntry: AuditLogEntry = {
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log-${Date.now()}`,
-        timestamp: nowIso,
-        userId: 'u-dg',
-        userName: 'Alexandre de Mortemart',
-        userRole: 'direction_generale',
-        projectId: project.id,
-        entityName: project.name,
-        fieldChanged: 'Statut du projet',
-        oldValue: project.status,
-        newValue: 'adjudique',
-        justification: `Adjudication officielle prononcée en faveur de ${winningCandidate.offer.supplierName} (Offre ${winningCandidate.offer.offerReference}) suite à l'arbitrage TCO/LCC.`,
-      };
-      onAddAuditLog(logEntry);
+    setWorkflowBusy(true);
+    setWorkflowError(null);
+    setWorkflowNotice(null);
+    try {
+      const updated = await changeProjectWorkflowStatusOnServer(project, target, motive);
+      setServerStatus(updated.serverWorkflowStatus ?? target);
+      onUpdateProject?.(updated);
+      await loadApprovals();
+      setDecisionJustification('');
+      setWorkflowNotice(
+        `Étape « ${WORKFLOW_STEPS.find((step) => step.serverStatus === target)?.label ?? target} » ` +
+          'enregistrée par le serveur et inscrite au journal d’audit avec votre identité de session.'
+      );
+    } catch (caught) {
+      setWorkflowError(
+        caught instanceof ApiError
+          ? `${caught.message} (${caught.code})`
+          : "La transition n'a pas été enregistrée par le serveur."
+      );
+    } finally {
+      setWorkflowBusy(false);
     }
-
-    setIsAdjudicationSuccess(true);
   };
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-20">
-      {/* Chantier 6 Top Banner & Action Bar (Hidden on print) */}
+      {/* Bandeau d'action (masqué à l'impression) */}
       <div className="no-print space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
           <div>
             <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
               <FileCheck className="w-4 h-4 text-emerald-400" />
-              Chantier 6 · Dossier d'Arbitrage Comex & Adjudication Décisionnelle
+              Dossier d’arbitrage &amp; décision d’achat
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">
-              Rapport Décisionnel d'Adjudication & Coût Complet (TCO / LCC)
+              Rapport décisionnel d’arbitrage &amp; coût complet (TCO / LCC)
             </h1>
             <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-              Synthèse exécutive certifiée pour la Direction Générale, le Comité d’Investissement et le Conseil d’Administration.
-              Formalisation probante de l'arbitrage Prix Facial vs Coût Global, amortissement et signatures électroniques.
+              Synthèse destinée à la direction, au comité d’investissement et aux acheteurs : arbitrage prix apparent
+              contre coût complet, comparaison d’options et traçabilité des approbations. Les résultats proviennent du
+              moteur de calcul TrueTCO ; les validations, quand elles existent, sont celles du journal d’audit du
+              serveur et sont nommées comme telles. Ce document n’est pas une pièce signée.
             </p>
           </div>
 
@@ -300,45 +286,63 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               <span>Imprimer / PDF</span>
             </button>
 
-            {project.status !== 'adjudique' ? (
-              <button
-                onClick={handleAdjudicateProject}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-950/40"
-              >
-                <Award className="w-4 h-4" />
-                <span>Prononcer l'Adjudication</span>
-              </button>
+            {serverStatus !== 'locked' ? (
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={decisionJustification}
+                  onChange={(event) => setDecisionJustification(event.target.value)}
+                  placeholder="Motif de la décision (10 caractères minimum)"
+                  className="w-72 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs text-white"
+                  aria-label="Motif de la décision"
+                />
+                <button
+                  onClick={async () => {
+                    const step = nextWorkflowStep(serverStatus);
+                    if (!step) {
+                      setWorkflowError(
+                        `Le serveur rapporte le statut « ${serverStatus} » : cette interface ne sait pas le situer dans le cycle de vie et ne propose donc aucune transition.`
+                      );
+                      return;
+                    }
+                    await handleWorkflowTransition(step.serverStatus);
+                  }}
+                  disabled={workflowBusy}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-950/40"
+                >
+                  {workflowBusy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Award className="w-4 h-4" />}
+                  <span>
+                    Enregistrer l’étape :{' '}
+                    {nextWorkflowStep(serverStatus)?.label ?? 'indisponible'}
+                  </span>
+                </button>
+              </div>
             ) : (
               <div className="px-3.5 py-2 bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm">
-                <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Consultation Adjudiquée</span>
+                <Lock className="w-4 h-4 text-emerald-400" />
+                <span>Dossier verrouillé (statut serveur)</span>
               </div>
             )}
           </div>
         </div>
 
-        {/* Adjudication Success Alert */}
-        {isAdjudicationSuccess && (
-          <div className="p-4 bg-emerald-950/70 border border-emerald-600/80 rounded-xl text-xs text-emerald-200 flex items-start justify-between gap-3 animate-fade-in shadow-xl">
-            <div className="flex items-start gap-2.5">
-              <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-              <div>
-                <div className="font-bold text-white text-sm">
-                  Adjudication officielle prononcée avec succès !
-                </div>
-                <div className="mt-1 text-slate-300">
-                  L'offre de <strong>{winningCandidate?.offer.supplierName}</strong> est officiellement retenue.
-                  Le statut du projet a été basculé à <code>adjudique</code>, le visa Direction Générale est scellé,
-                  et l'événement est enregistré de manière immuable dans le journal d'audit Neon PostgreSQL.
-                </div>
-              </div>
+        {/* Compte rendu de la transition réellement enregistrée par le serveur */}
+        {workflowNotice && (
+          <div className="p-4 bg-emerald-950/70 border border-emerald-600/80 rounded-xl text-xs text-emerald-200 flex items-start gap-2.5 animate-fade-in shadow-xl">
+            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-white text-sm">Étape enregistrée par le serveur</div>
+              <div className="mt-1 text-slate-300">{workflowNotice}</div>
             </div>
-            <button
-              onClick={() => setIsAdjudicationSuccess(false)}
-              className="text-slate-400 hover:text-white p-1"
-            >
-              ✕
-            </button>
+          </div>
+        )}
+        {workflowError && (
+          <div className="p-4 bg-rose-950/70 border border-rose-600/80 rounded-xl text-xs text-rose-200 flex items-start gap-2.5 shadow-xl">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-white text-sm">Le serveur a refusé la transition</div>
+              <div className="mt-1">{workflowError}</div>
+            </div>
           </div>
         )}
       </div>
@@ -369,10 +373,10 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
             </div>
 
             <div className="text-left sm:text-right text-xs font-mono text-slate-400 print:text-slate-600 space-y-0.5">
-              <div>Date d'Arbitrage : {new Date().toLocaleDateString('fr-FR')}</div>
-              <div>Gouvernance : Direction des Achats & DAF</div>
-              <div className="text-emerald-400 print:text-emerald-700 font-semibold select-all">
-                Sceau : {reportSealHash}
+              <div>Édité le : {new Date().toLocaleDateString('fr-FR')}</div>
+              <div>Porteur du dossier : {project.ownerName || 'non renseigné'}</div>
+              <div className="select-all">
+                Identifiant technique (non cryptographique) : {reportInternalId}
               </div>
             </div>
           </div>
@@ -388,7 +392,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               Avis Motivé du Comité de Sélection & Recommandation
             </h3>
             <span className="text-xs px-2.5 py-0.5 bg-emerald-950/70 border border-emerald-800 text-emerald-400 print:bg-emerald-100 print:text-emerald-800 rounded-full font-semibold">
-              Recommandation Validée
+              Recommandation proposée — non approuvée
             </span>
           </div>
 
@@ -404,7 +408,12 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
                 </span>
               </div>
               <span className="text-[11px] px-2 py-0.5 bg-emerald-900/40 text-emerald-300 print:bg-emerald-200 print:text-emerald-900 rounded font-semibold font-mono">
-                Statut : {project.status === 'adjudique' ? 'Adjudiqué' : 'Recommandation Comex'}
+                Statut :{' '}
+                {serverStatus === 'locked'
+                  ? 'Dossier verrouillé'
+                  : serverStatus === 'decision'
+                    ? 'Décision actée'
+                    : 'En attente d’approbation'}
               </span>
             </div>
 
@@ -476,7 +485,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               <div className="font-bold text-white print:text-slate-900 font-mono text-sm mt-0.5">
                 {(project.discountRate * 100).toFixed(2)}% / an
               </div>
-              <div className="text-[10px] text-slate-500">Validation Direction Financière</div>
+              <div className="text-[10px] text-slate-500">Hypothèse du dossier (saisie), non certifiée par un tiers</div>
             </div>
 
             <div className="p-3 bg-slate-950/70 print:bg-slate-100 rounded-xl border border-slate-800 print:border-slate-300">
@@ -488,11 +497,13 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
             </div>
 
             <div className="p-3 bg-slate-950/70 print:bg-slate-100 rounded-xl border border-slate-800 print:border-slate-300">
-              <span className="text-slate-400 print:text-slate-600 block text-[11px]">Prix Tutélaire Quinet</span>
+              <span className="text-slate-400 print:text-slate-600 block text-[11px]">Prix du carbone retenu</span>
               <div className="font-bold text-white print:text-slate-900 font-mono text-sm mt-0.5">
                 {project.carbonPricePerTonne} €/tCO2e
               </div>
-              <div className="text-[10px] text-slate-500">Rapport France Stratégie</div>
+              <div className="text-[10px] text-slate-500">
+                Hypothèse du dossier — source à vérifier dans le référentiel d’externalités
+              </div>
             </div>
           </div>
         </section>
@@ -507,7 +518,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               Décomposition Analytique du Coût Complet (Tableau CBS)
             </h3>
             <span className="text-[11px] font-mono text-slate-400 print:text-slate-600">
-              Norme ISO 15686-5 (LCC)
+              Démarche LCC — inspirée d’ISO 15686-5, sans certification
             </span>
           </div>
 
@@ -747,118 +758,197 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
         </section>
 
         {/* ========================================================= */}
-        {/* 5. ANALYSE DE RÉSILIENCE & STRESS-TESTS */}
+        {/* 5. SENSIBILITÉ RÉELLEMENT CALCULÉE PAR LE MOTEUR */}
         {/* ========================================================= */}
+        {/*
+          Cette section affichait trois affirmations écrites en dur : un gain
+          « accéléré de 4,2 mois », un gain cumulé multiplié par 1,15 sans aucun
+          calcul, et un scénario carbone attribué au « rapport France Stratégie ».
+          Aucun de ces chiffres ne venait du moteur. Elle affiche désormais les
+          facteurs de sensibilité RÉELLEMENT recalculés (recalcul complet des deux
+          offres à chaque borne) : chaque ligne est reproductible.
+        */}
         <section className="space-y-4">
           <h3 className="text-base font-bold text-white print:text-slate-900 border-b border-slate-800 print:border-slate-300 pb-2 flex items-center gap-2">
             <span className="text-emerald-400 print:text-emerald-700 font-mono">05.</span>
-            Analyse de Robustesse Décisionnelle & Stress-Tests
+            Sensibilité de la décision aux hypothèses
           </h3>
+
+          <p className="text-[11px] text-slate-400 print:text-slate-600">
+            Impact sur l’écart de coût actualisé entre les deux offres comparées (offre de référence retenue − offre
+            conventionnelle), recalculé par le moteur à chaque borne. Un écart positif signifie que l’offre de référence
+            devient relativement moins avantageuse.
+          </p>
+
+          {drivers.length === 0 ? (
+            <p className="text-xs text-slate-400">
+              Aucun facteur de sensibilité n’a pu être calculé : il faut au moins deux offres comparables.
+            </p>
+          ) : (
+            <div className="overflow-x-auto border border-slate-800 print:border-slate-300 rounded-xl">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-950/60 print:bg-slate-100 text-slate-400 print:text-slate-600">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-semibold">Hypothèse</th>
+                    <th className="text-left py-2 px-3 font-semibold">Valeur retenue</th>
+                    <th className="text-left py-2 px-3 font-semibold">Borne basse → écart</th>
+                    <th className="text-left py-2 px-3 font-semibold">Borne haute → écart</th>
+                    <th className="text-left py-2 px-3 font-semibold">Amplitude</th>
+                    <th className="text-left py-2 px-3 font-semibold">Classe</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 print:divide-slate-300">
+                  {drivers.map((driver) => (
+                    <tr key={driver.category}>
+                      <td className="py-2 px-3 text-slate-200 print:text-slate-900">{driver.parameterName}</td>
+                      <td className="py-2 px-3 text-slate-300 print:text-slate-800 font-mono">
+                        {driver.baseValue.toLocaleString('fr-FR')} {driver.unit}
+                      </td>
+                      <td className="py-2 px-3 font-mono text-slate-300 print:text-slate-800">
+                        {driver.lowValue !== undefined ? `${driver.lowValue.toLocaleString('fr-FR')} → ` : ''}
+                        {driver.lowValueImpactOnDeltaTCO.toLocaleString('fr-FR')} €
+                      </td>
+                      <td className="py-2 px-3 font-mono text-slate-300 print:text-slate-800">
+                        {driver.highValue !== undefined ? `${driver.highValue.toLocaleString('fr-FR')} → ` : ''}
+                        {driver.highValueImpactOnDeltaTCO.toLocaleString('fr-FR')} €
+                      </td>
+                      <td className="py-2 px-3 font-mono text-slate-200 print:text-slate-900">
+                        {(driver.spreadOnDeltaTCO ?? 0).toLocaleString('fr-FR')} €
+                      </td>
+                      <td className="py-2 px-3 text-slate-400 print:text-slate-600">{driver.sensitivityRank}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="px-3 py-2 text-[11px] text-slate-400 print:text-slate-600 border-t border-slate-800 print:border-slate-300 space-y-0.5">
+                {drivers.map((driver) => (
+                  <div key={`${driver.category}-expl`}>
+                    — {driver.parameterName} : {driver.explanation}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="p-4 bg-slate-950/70 print:bg-slate-100 rounded-xl border border-slate-800 print:border-slate-300 text-xs space-y-2">
             <div className="flex items-start gap-2">
               <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
                 <div>
-                  <strong>Sensibilité au prix de l'énergie :</strong> Une augmentation imprévue de +20% du coût de
-                  l'énergie accélère l'amortissement de la solution responsable de{' '}
-                  <span className="text-emerald-400 print:text-emerald-700 font-bold">4,2 mois supplémentaires</span>,
-                  portant le gain cumulé à plus de {(netSavings * 1.15).toLocaleString('fr-FR')} €.
+                  <strong>Garantie contractuelle de l’offre retenue :</strong>{' '}
+                  <strong>{winningCandidate?.offer.warrantyMonths ?? 0} mois</strong>. Elle couvre la période déclarée au
+                  contrat ; elle ne dit rien de la sinistralité réelle, qui se suit en exploitation.
                 </div>
                 <div>
-                  <strong>Résilience face au durcissement carbone :</strong> Si le prix de la tonne de CO2 passe de
-                  120 € à 250 € (scénario Quinet 2030), le surcoût de la solution conventionnelle s'alourdit de{' '}
-                  <span className="font-mono font-bold text-rose-400 print:text-rose-700">
-                    +{((avoidedCO2Tonnes * (250 - project.carbonPricePerTonne))).toLocaleString('fr-FR')} €
-                  </span>.
-                </div>
-                <div>
-                  <strong>Sécurisation par les garanties :</strong> L'offre recommandée propose une garantie de{' '}
-                  <strong>{winningCandidate?.offer.warrantyMonths} mois</strong>, réduisant l'exposition aux défaillances durant les phases critiques.
+                  Aucune inversion de décision n’est affirmée ici qui ne soit recalculable : les lignes ci-dessus sont
+                  recalculées par le moteur, et l’étude d’inversion complète (seuils, zones où la décision change) se
+                  trouve dans l’écran de décision du dossier.
                 </div>
               </div>
             </div>
           </div>
         </section>
 
-        {/* ========================================================= */}
-        {/* 6. COLLÈGE DES VISAS & SIGNATURES ÉLECTRONIQUES COMEX */}
+
+        {/* 6. APPROBATIONS ENREGISTRÉES (JOURNAL D'AUDIT DU SERVEUR) */}
         {/* ========================================================= */}
         <section className="space-y-4">
           <div className="flex items-center justify-between border-b border-slate-800 print:border-slate-300 pb-2">
             <h3 className="text-base font-bold text-white print:text-slate-900 flex items-center gap-2">
               <span className="text-emerald-400 print:text-emerald-700 font-mono">06.</span>
-              Collège des Visas & Signatures Électroniques Comex (Section 26)
+              Approbations enregistrées du dossier
             </h3>
-            <span className="text-[11px] font-mono text-emerald-400 print:text-emerald-700 flex items-center gap-1 font-semibold">
+            <span className="text-[11px] font-mono text-slate-400 print:text-slate-600 flex items-center gap-1">
               <Lock className="w-3.5 h-3.5" />
-              Horodatage Immuable
+              Source : journal d’audit du serveur
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {visas.map((visa) => (
-              <div
-                key={visa.id}
-                className="p-4 bg-slate-950/80 print:bg-slate-100 border border-slate-800 print:border-slate-300 rounded-xl space-y-2 text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="font-bold text-white print:text-slate-950 flex items-center gap-1.5">
-                    <Stamp className="w-4 h-4 text-emerald-400 print:text-emerald-700" />
-                    {visa.roleTitle}
-                  </div>
-                  {visa.status === 'signe' ? (
-                    <span className="px-2 py-0.5 bg-emerald-950/70 border border-emerald-800 text-emerald-400 print:bg-emerald-200 print:text-emerald-900 rounded font-semibold text-[10px] flex items-center gap-1 font-mono">
-                      <CheckCircle2 className="w-3 h-3" />
-                      SIGNÉ
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleSignVisa(visa.id)}
-                      className="no-print px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] transition-colors"
-                    >
-                      Apposer le Visa
-                    </button>
-                  )}
-                </div>
+          <p className="text-[11px] text-slate-400 print:text-slate-600">
+            Chaque ligne ci-dessous est une transition de statut réellement enregistrée par le serveur, avec l’identité
+            de la session qui l’a demandée, son rôle, l’horodatage et le motif écrit. Aucune de ces lignes n’est saisie
+            depuis cet écran. Une approbation manquante apparaît comme manquante.
+          </p>
 
-                <div className="text-[11px] text-slate-400 print:text-slate-600 font-medium">
-                  Signataire : <span className="text-slate-200 print:text-slate-900 font-semibold">{visa.signatoryName}</span>
-                </div>
-
-                <p className="text-[11px] text-slate-300 print:text-slate-700 italic border-l-2 border-slate-700 print:border-slate-400 pl-2">
-                  « {visa.statement} »
-                </p>
-
-                <div className="text-[10px] font-mono text-slate-500 print:text-slate-600 flex items-center justify-between pt-1">
-                  <span>Horodatage : {visa.signedAt ? new Date(visa.signedAt).toLocaleString('fr-FR') : 'En attente'}</span>
-                  <span>Certifié</span>
-                </div>
-              </div>
-            ))}
-          </div>
+          {approvalsLoading ? (
+            <p className="text-xs text-slate-400 flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Lecture du journal d’audit…
+            </p>
+          ) : approvalsError ? (
+            <p className="text-xs text-rose-300 bg-rose-950/50 border border-rose-800/60 rounded-lg px-3 py-2">
+              {approvalsError}
+            </p>
+          ) : approvals.length === 0 ? (
+            <p className="text-xs text-amber-200 bg-amber-950/40 border border-amber-800/60 rounded-lg px-3 py-2">
+              Aucune approbation n’est enregistrée pour ce dossier à ce jour. Le dossier n’est donc pas approuvé : ce
+              rapport présente une recommandation technique, pas une décision validée.
+            </p>
+          ) : (
+            <div className="overflow-x-auto border border-slate-800 print:border-slate-300 rounded-xl">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-950/60 print:bg-slate-100 text-slate-400 print:text-slate-600">
+                  <tr>
+                    <th className="text-left py-2 px-3 font-semibold">Horodatage</th>
+                    <th className="text-left py-2 px-3 font-semibold">Auteur (session)</th>
+                    <th className="text-left py-2 px-3 font-semibold">Rôle</th>
+                    <th className="text-left py-2 px-3 font-semibold">Étape</th>
+                    <th className="text-left py-2 px-3 font-semibold">Motif enregistré</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 print:divide-slate-300">
+                  {approvals.map((entry) => (
+                    <tr key={entry.id}>
+                      <td className="py-2 px-3 text-slate-400 print:text-slate-600 whitespace-nowrap">
+                        {entry.timestamp ? new Date(entry.timestamp).toLocaleString('fr-FR') : 'horodatage non fourni'}
+                      </td>
+                      <td className="py-2 px-3 text-slate-200 print:text-slate-900">{entry.userName}</td>
+                      <td className="py-2 px-3 text-slate-400 print:text-slate-600">{entry.userRole}</td>
+                      <td className="py-2 px-3 text-slate-300 print:text-slate-800 font-mono">
+                        {entry.oldValue} → {entry.newValue}
+                      </td>
+                      <td className="py-2 px-3 text-slate-400 print:text-slate-600">{entry.justification}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
-        {/* ========================================================= */}
-        {/* 7. SCEAU DE CERTIFICATION LÉGALE & CLÔTURE */}
+        {/* 7. MENTIONS DE PORTÉE & CLÔTURE */}
         {/* ========================================================= */}
         <div className="pt-6 border-t-2 border-slate-800 print:border-slate-300 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 text-xs text-slate-400 print:text-slate-600">
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 font-bold text-white print:text-slate-900">
               <ShieldCheck className="w-4 h-4 text-emerald-400 print:text-emerald-700" />
-              Document Certifié par le Moteur Algorithmique TrueTCO
+              Document produit par le moteur de calcul TrueTCO
             </div>
-            <div>Normes d'évaluation : ISO 15686-5 (Life Cycle Costing) & GHG Protocol (Scope 1, 2, 3)</div>
+            <div>
+              Cadre méthodologique : démarche de coût du cycle de vie inspirée d’ISO 15686-5 et comptabilité carbone de
+              type GHG Protocol (scopes 1 à 3). Aucune certification de conformité à ces référentiels n’est délivrée.
+            </div>
             <div className="font-mono text-[10px] select-all">
-              Empreinte de scellement : {reportSealHash}
+              Identifiant technique du rapport : {reportInternalId} — FNV-1a, sans valeur probante
             </div>
           </div>
 
           <div className="text-left sm:text-right space-y-1">
             <div className="text-slate-300 print:text-slate-800 font-semibold">
-              Comité d'Investissement & Direction Générale
+              Instance actuelle : {serverStatus === 'locked' ? 'dossier verrouillé' : 'dossier non verrouillé'}
             </div>
-            <div>Consultation scellée et enregistrée dans le registre d'audit légal.</div>
+            <div>
+              Approbations : {approvalsLoading
+                ? 'en cours de lecture depuis le journal du serveur…'
+                : approvalsError
+                  ? 'indisponibles (échec de lecture du journal)'
+                  : approvals.length > 0
+                    ? `${approvals.length} transition(s) de statut enregistrée(s) côté serveur.`
+                    : 'aucune approbation enregistrée à ce jour.'}
+            </div>
+            <div>
+              Ce rapport n’est ni signé électroniquement, ni horodaté par un prestataire de confiance : il doit l’être
+              hors du produit si une valeur opposable est recherchée.
+            </div>
           </div>
         </div>
 

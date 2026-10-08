@@ -55,7 +55,7 @@ import { DigitalSignatureView } from './components/DigitalSignatureView';
 import { CsrdTaxonomyView } from './components/CsrdTaxonomyView';
 
 export default function App() {
-  const { user, isLoginModalOpen, closeLoginModal, permissions } = useAuth();
+  const { user, isLoginModalOpen, closeLoginModal, permissions, authWarning } = useAuth();
   const { currentTenant, isNewTenantModalOpen, closeNewTenantModal } = useTenant();
   const [projects, setProjects] = useState<Project[]>(() => StorageService.getProjects());
   const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
@@ -85,7 +85,7 @@ export default function App() {
    * qui vérifie le rôle enregistré en base.
    */
   const can = React.useCallback((permission: string) => permissions.includes(permission), [permissions]);
-  const [currentView, setCurrentView] = useState<NavView>('chantier1');
+  const [currentView, setCurrentView] = useState<NavView>('dashboard');
 
   // Modals state
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -386,8 +386,13 @@ export default function App() {
           )}
           {dataSource === 'serveur' && (
             <div className="mb-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-2 text-xs text-emerald-200">
-              Données servies par PostgreSQL (session authentifiée). Les offres restent locales jusqu’au branchement du
-              moteur de calcul (Phase 3).
+              Données servies par PostgreSQL (session authentifiée) : dossiers, offres, postes de coût, décisions,
+              simulations et journal d’audit.
+            </div>
+          )}
+          {authWarning && (
+            <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+              <strong>Avertissement du serveur sur cette session :</strong> {authWarning}
             </div>
           )}
           {currentView === 'chantier1' && (
@@ -517,7 +522,6 @@ export default function App() {
               benchmarks={benchmarks}
               onBack={() => setCurrentView('comparator')}
               onUpdateProject={handleUpdateProject}
-              onAddAuditLog={handleAddAuditLog}
             />
           )}
 
@@ -538,10 +542,20 @@ export default function App() {
             />
           )}
 
-          {currentView === 'digital_signature' && (
+          {currentView === 'approvals' && (
             <DigitalSignatureView
               project={currentProject}
-              offers={currentOffers}
+              permissions={permissions}
+              /*
+               * Mise à jour d'AFFICHAGE uniquement : l'écriture d'approbation a
+               * déjà été faite et journalisée par le serveur, qui a renvoyé l'état
+               * enregistré. Repasser par un enregistrement complet du dossier
+               * enverrait le statut d'affichage arrondi et risquerait d'annuler
+               * l'étape serveur qui vient d'être validée.
+               */
+              onProjectUpdated={(updated) =>
+                setProjects((prev) => prev.map((item) => (item.id === updated.id ? updated : item)))
+              }
             />
           )}
 

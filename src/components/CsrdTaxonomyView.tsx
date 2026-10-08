@@ -46,7 +46,7 @@ export const CsrdTaxonomyView: React.FC<CsrdTaxonomyViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-teal-400 mb-1 flex items-center gap-1.5">
             <Leaf className="w-4 h-4" />
-            Chantier 10 · Reporting CSRD & Taxonomie Verte Européenne (Règlement UE 2020/852)
+            Reporting CSRD & taxonomie verte européenne (règlement UE 2020/852)
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Déclaration de Durabilité & Consolidation des Achats Décarbonés
