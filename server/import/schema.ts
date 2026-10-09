@@ -14,7 +14,7 @@
  *    que leur absence empêche.
  */
 
-export type ImportFieldType = 'text' | 'number' | 'date' | 'boolean' | 'category' | 'integer' | 'percent';
+export type ImportFieldType = 'text' | 'number' | 'date' | 'boolean' | 'category' | 'integer' | 'positiveInteger' | 'percent';
 
 export interface ImportField {
   key: string;
@@ -24,6 +24,8 @@ export interface ImportField {
   required?: boolean;
   /** Explication affichée lorsque le champ obligatoire n'est pas mappé. */
   why: string;
+  /** Mapping à confirmer manuellement même si l'intitulé correspond à un synonyme. */
+  manualConfirmation?: string;
   /** Libellés d'en-tête reconnus sans ambiguïté (comparés en forme normalisée). */
   synonyms: string[];
 }
@@ -60,10 +62,10 @@ export const IMPORT_FIELDS: ImportField[] = [
   },
   {
     key: 'amount',
-    label: 'Montant (total du poste)',
+    label: 'Montant (par occurrence si fréquence mappée)',
     type: 'number',
     required: true,
-    why: 'Le montant est la donnée de base du calcul : sans lui, aucun TCO ne peut être établi.',
+    why: 'Le montant est celui d’une occurrence ; si une fréquence est mappée, il sera multiplié à chaque année d’occurrence.',
     synonyms: ['montant', 'amount', 'total', 'prix', 'cout', 'cost', 'valeur', 'montant ht', 'prix total'],
   },
   {
@@ -107,6 +109,25 @@ export const IMPORT_FIELDS: ImportField[] = [
     type: 'text',
     why: "Précise les années touchées par un poste (ex. 1,3,5) au lieu de supposer une périodicité régulière.",
     synonyms: ['annees', 'annee', 'occurrences', 'years', 'annees d occurrence', 'periodicite'],
+  },
+  {
+    key: 'occurrencesPerYear',
+    label: 'Occurrences par an (montant par occurrence)',
+    type: 'positiveInteger',
+    why: 'Le montant doit être celui d’une occurrence unique ; la fréquence est appliquée à chaque année d’occurrence.',
+    manualConfirmation:
+      'Confirmation humaine obligatoire : ce champ multiplie le montant saisi. Rattachez-le seulement si ce montant est bien celui d’une occurrence (et non un total annuel déjà agrégé) ; sinon marquez cette colonne « à ignorer ».',
+    synonyms: [
+      'occurrences',
+      'occurrences par an',
+      'nombre occurrences par an',
+      'nombre d occurrences par an',
+      'occurrences annuelles',
+      'frequence annuelle',
+      'annual occurrences',
+      'occurrences per year',
+      'frequency per year',
+    ],
   },
   {
     key: 'inflationType',
@@ -302,6 +323,20 @@ export function analyzeColumns(headers: string[], appliedMapping: Record<string,
     }
 
     const candidates = [...new Set(SYNONYMS.get(normalized) ?? [])];
+
+    const mandatoryReview =
+      candidates.length === 1 ? IMPORT_FIELDS.find((field) => field.key === candidates[0])?.manualConfirmation : undefined;
+    if (mandatoryReview) {
+      proposals.push({
+        header,
+        columnIndex,
+        field: null,
+        method: 'ambigu',
+        candidates,
+        note: mandatoryReview,
+      });
+      return;
+    }
 
     if (candidates.length === 1) {
       proposals.push({

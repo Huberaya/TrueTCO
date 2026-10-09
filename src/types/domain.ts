@@ -132,6 +132,9 @@ export interface AuditedValue<T = number> {
   notes?: string;
 }
 
+/** Limite métier explicite : au plus une occurrence par jour dans une année. */
+export const MAX_COST_OCCURRENCES_PER_YEAR = 366;
+
 export interface CostBreakdownItem {
   id: string;
   category:
@@ -152,6 +155,12 @@ export interface CostBreakdownItem {
   label: string;
   amount: AuditedValue<number>;
   isRecurringYearly: boolean;
+  /**
+   * Nombre d'événements identiques par année d'occurrence. `amount.value` est
+   * le montant d'UNE occurrence, pas un total annuel déjà agrégé. Absent vaut 1
+   * pour préserver la sémantique des postes historiques.
+   */
+  occurrencesPerYear?: number;
   yearlyInflationType?: 'general' | 'energy' | 'maintenance' | 'none';
   yearOccurrences?: number[]; // [1, 2, 3, 4, 5]
   /**
@@ -244,6 +253,8 @@ export interface CostLineTrace {
   amountNominal: number;
   amountDiscounted: number;
   occurrences: number[];
+  /** Nombre d'événements représentés à chacune des années d'occurrence. */
+  occurrencesPerYear?: number;
   indexation: string;
   sourceName: string;
   sourceType: DataSourceType | string;
@@ -293,6 +304,8 @@ export interface TCOCalculationResult {
   maintenanceRepairsTotal: number;
   replacementDefectsTotal: number;
   adminComplianceTotal: number;
+  /** Total nominal des taxes/fiscalités, exposé séparément de l'administration. */
+  taxesTotal: number;
   salvageValueTotal: number; // Positive credit / reduction of TCO
   endOfLifeRecyclingTotal: number;
   /** Montant des postes dont la catégorie n'a pas été reconnue (comptés prudemment) */

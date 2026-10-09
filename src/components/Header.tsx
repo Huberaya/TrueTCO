@@ -4,7 +4,7 @@ import { NeonUserRecord } from '../services/neonService';
 import {
   ShieldCheck,
   Plus,
-  CheckCircle2,
+  Activity,
   Database,
   LogIn,
   Check,
@@ -119,27 +119,27 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right Actions: Test runner, Neon status, Report, New Project, and Enterprise SSO User */}
+      {/* Actions de service, rapport, nouveau dossier et session */}
       <div className="flex items-center gap-3">
-        {/* Automated Tests trigger */}
+        {/* État du service API */}
         <button
           onClick={onOpenTestsModal}
           className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-colors"
-          title="Ouvrir le banc de tests automatisés (7 tests unitaires conformité ISO/WACC)"
+          title="Vérifier la disponibilité de l'API et de la base ; les tests s'exécutent dans Vitest/CI"
         >
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="hidden xl:inline">Tests TCO (7/7)</span>
+          <Activity className="w-3.5 h-3.5 text-sky-400" />
+          <span className="hidden xl:inline">État API</span>
         </button>
 
-        {/* Neon Database indicator & Backup Modal Trigger */}
+        {/* Sauvegarde locale du navigateur */}
         {onOpenBackupModal && (
           <button
             onClick={onOpenBackupModal}
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-colors"
-            title="Base PostgreSQL connectée. Cliquez pour ouvrir le gestionnaire de sauvegarde."
+            title="Ouvrir l'export ou la restauration du jeu de données local du navigateur."
           >
             <Database className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden lg:inline text-emerald-300 font-mono text-[11px]">Neon DB</span>
+            <span className="hidden lg:inline text-slate-300 font-mono text-[11px]">Sauvegarde locale</span>
           </button>
         )}
 

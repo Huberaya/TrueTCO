@@ -57,6 +57,8 @@ export interface CostItemInput {
   isRecurringYearly?: boolean;
   yearlyInflationType?: 'energy' | 'general' | 'none' | null;
   yearOccurrences?: number[] | null;
+  /** Amount is the value of one event; frequency scales it in each occurrence year. */
+  occurrencesPerYear?: number | null;
   calculationFormula?: string | null;
   explanationNotes?: string | null;
   isDemo?: boolean;
@@ -205,9 +207,9 @@ export async function createOffer(db: Db, ctx: AuthContext, input: OfferInput, m
         `INSERT INTO cost_items (
             organization_id, offer_id, category, label, amount, currency, unit, quantity, unit_price,
             quality_status, source_name, source_type, confidence_level, is_recurring_yearly,
-            yearly_inflation_type, year_occurrences, calculation_formula, explanation_notes, is_demo,
+            yearly_inflation_type, year_occurrences, occurrences_per_year, calculation_formula, explanation_notes, is_demo,
             declared_category
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
         [
           ctx.organization.id,
           offer.id,
@@ -226,6 +228,7 @@ export async function createOffer(db: Db, ctx: AuthContext, input: OfferInput, m
           item.isRecurringYearly ?? false,
           item.yearlyInflationType ?? null,
           item.yearOccurrences ?? null,
+          item.occurrencesPerYear ?? null,
           item.calculationFormula ?? null,
           item.explanationNotes ?? null,
           item.isDemo ?? false,
@@ -244,6 +247,12 @@ export async function createOffer(db: Db, ctx: AuthContext, input: OfferInput, m
         supplierName: input.supplierName,
         apparentTotal: input.apparentTotal,
         costItemCount: input.costItems.length,
+        costItemAmountBasis: 'per_occurrence',
+        costItemOccurrences: input.costItems.map((item) => ({
+          label: item.label,
+          yearOccurrences: item.yearOccurrences ?? null,
+          occurrencesPerYear: item.occurrencesPerYear ?? null,
+        })),
       }),
       ...meta,
     });

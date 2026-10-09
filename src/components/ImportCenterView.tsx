@@ -319,11 +319,11 @@ export const ImportCenterView: React.FC<ImportCenterViewProps> = ({
                 detail={`${preview.summary.offersCount} offre(s) identifiée(s)`}
               />
               <ScoreCard
-                label="Total des postes lisibles"
+                label="Somme des montants saisis"
                 value={new Intl.NumberFormat('fr-FR', { style: 'currency', currency: projectCurrency, maximumFractionDigits: 0 }).format(
                   preview.summary.totalAmount
                 )}
-                detail="Hors lignes en erreur ou sans montant : aucune valeur inventée"
+                detail="Somme brute des cellules mappées au montant, avant fréquence annuelle, horizon et actualisation TCO"
               />
               <ScoreCard
                 label="Lignes non sourcées"
@@ -408,6 +408,11 @@ export const ImportCenterView: React.FC<ImportCenterViewProps> = ({
                           </select>
                         </td>
                         <td className="py-1.5 text-slate-500">
+                          {current === 'occurrencesPerYear' && (
+                            <p className="mb-1 text-amber-300">
+                              Le montant est alors interprété par événement et multiplié par cette fréquence à chaque année d’occurrence. Si le montant est déjà un total annuel, choisissez « à ignorer ».
+                            </p>
+                          )}
                           {preview.ambiguousColumns.find((column) => column.header === header)?.note ??
                             preview.unknownColumns.find((column) => column.header === header)?.note ??
                             ''}

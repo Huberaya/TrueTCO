@@ -104,11 +104,103 @@ describe('Robustesse et cas limites', () => {
     expect(res.acquisitionTotal).toBe(10000);
   });
 
+  it('expose séparément les taxes déjà incluses dans le TCO économique', () => {
+    const offer: SupplierOffer = {
+      ...baseOffer,
+      costItems: [
+        {
+          id: 'tax-1',
+          category: 'fiscalite_taxes',
+          label: 'Taxe saisie',
+          amount: {
+            value: 1234,
+            unit: '€',
+            sourceType: 'utilisateur',
+            sourceName: 'Saisie du dossier',
+            confidenceLevel: 50,
+            lastUpdated: '2026-01-01',
+            updatedBy: 'Test',
+          },
+          isRecurringYearly: false,
+        },
+      ],
+    };
+    const result = TCOEngine.calculateOfferTCO(project, offer);
+    expect(result.taxesTotal).toBe(1234);
+    expect(result.adminComplianceTotal).toBe(0);
+    expect(result.economicTCONominal).toBe(11234);
+  });
+
   it("n'invente aucun résultat sans offre", () => {
     const res = TCOEngine.calculateOfferTCO(project, null);
     expect(res.totalComprehensiveTCO).toBe(0);
     expect(res.isComplete).toBe(false);
     expect(res.warnings?.[0].code).toBe('NO_OFFER');
+  });
+
+  it('applique une fréquence par année et actualise chaque flux de poste une seule fois', () => {
+    const scenarioProject: Project = {
+      ...project,
+      horizonYears: 3,
+      discountRate: 0.1,
+      inflationRate: 0,
+      energyInflationRate: 0,
+    } as Project;
+    const offer: SupplierOffer = {
+      ...baseOffer,
+      costItems: [
+        {
+          id: 'energy-2x',
+          category: 'energie_consommables',
+          label: 'Énergie deux fois par an',
+          amount: { value: 100, unit: '€/événement', sourceType: 'verifiee', sourceName: 'Contrat', confidenceLevel: 95, lastUpdated: '2026-01-01', updatedBy: 'Test' },
+          isRecurringYearly: false,
+          yearOccurrences: [1, 3],
+          occurrencesPerYear: 2,
+          yearlyInflationType: 'none',
+        },
+      ],
+    };
+
+    const result = TCOEngine.calculateOfferTCO(scenarioProject, offer);
+    const noExplicitFrequency: SupplierOffer = {
+      ...offer,
+      costItems: offer.costItems.map(({ occurrencesPerYear: _frequency, ...item }) => item),
+    };
+    const historicalResult = TCOEngine.calculateOfferTCO(scenarioProject, noExplicitFrequency);
+    const trace = result.costLineTrace?.find((line) => line.id === 'energy-2x');
+    const expectedDiscountedFromAnnualFlows = result.cashFlowsByYear
+      .filter((flow) => [1, 3].includes(flow.year))
+      .reduce((sum, flow) => sum + flow.nominalCost * flow.discountFactor, 0);
+
+    expect(result.energyConsumablesTotal).toBe(400);
+    // Sans champ de fréquence (historique ou fréquence explicitement ignorée),
+    // le moteur conserve exactement une occurrence par année listée.
+    expect(historicalResult.energyConsumablesTotal).toBe(200);
+    expect(trace?.occurrences).toEqual([1, 3]);
+    expect(trace?.occurrencesPerYear).toBe(2);
+    expect(trace?.amountNominal).toBe(400);
+    expect(trace?.amountDiscounted).toBe(Math.round(expectedDiscountedFromAnnualFlows));
+    expect(trace?.amountDiscounted).toBe(332);
+  });
+
+  it('refuse une fréquence décimale dans le moteur au lieu de l\'arrondir', () => {
+    const offer: SupplierOffer = {
+      ...baseOffer,
+      costItems: [
+        {
+          id: 'invalid-frequency',
+          category: 'energie_consommables',
+          label: 'Fréquence invalide',
+          amount: { value: 100, unit: '€/événement', sourceType: 'utilisateur', sourceName: 'Test', confidenceLevel: 0, lastUpdated: '2026-01-01', updatedBy: 'Test' },
+          isRecurringYearly: true,
+          occurrencesPerYear: 1.5,
+        },
+      ],
+    };
+    const result = TCOEngine.calculateOfferTCO(project, offer);
+    expect(result.energyConsumablesTotal).toBe(0);
+    expect(result.warnings?.some((warning) => warning.code === 'INVALID_OCCURRENCES_PER_YEAR')).toBe(true);
   });
 
   it('ignore les occurrences situées au-delà de l\'horizon mais le signale', () => {

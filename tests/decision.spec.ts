@@ -104,8 +104,8 @@ beforeAll(async () => {
     isProd: false,
     allowDemoAuth: false,
     allowedOrigins: [],
-    engineVersion: '2.0.0',
-    methodologyVersion: '2026.1',
+    engineVersion: '2.1.0',
+    methodologyVersion: '2026.2',
   });
 
   // Offre B : 350 000 € d'acquisition, 10 000 €/an d'exploitation.
@@ -173,9 +173,17 @@ describe('Décision — calcul réel par le serveur', () => {
     const response = await request(app).post(`/api/projects/${projectId}/decision-runs`).set(auth).expect(201);
     runId = response.body.runId;
 
-    expect(response.body.engineVersion).toBe('2.0.0');
+    expect(response.body.engineVersion).toBe('2.1.0');
     expect(response.body.inputVersion).toBe(1);
     expect(response.body.inputFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(Object.keys(response.body.calculationsByOfferId)).toHaveLength(2);
+    for (const calculation of Object.values(response.body.calculationsByOfferId) as Array<Record<string, unknown>>) {
+      expect(calculation).toHaveProperty('taxesTotal');
+      expect(typeof calculation.taxesTotal).toBe('number');
+    }
+    expect(response.body.scenarios).toHaveLength(3);
+    expect(response.body.scenarios[0].isRelativeToProjectBase).toBe(true);
+    expect(response.body.warnings.join(' ')).toMatch(/Convention métier non confirmée/);
 
     const byReference = Object.fromEntries(
       response.body.ranking.map((entry: any) => [entry.offerReference, entry])
@@ -193,6 +201,15 @@ describe('Décision — calcul réel par le serveur', () => {
     expect(Math.abs(byReference['OFF-B'].lifecycleCostLCC - (350_000 + 10_000 * annuity))).toBeLessThan(1);
     // Le TCO nominal, lui, ne dépend pas de l'actualisation : 425 000 € et 400 000 €.
     expect(byReference['OFF-A'].lifecycleCostLCC).toBeLessThan(byReference['OFF-A'].totalComprehensiveTCO);
+
+    // Les vues ne recalculent pas dans le navigateur : elles récupèrent ce run complet.
+    const latest = await request(app).get(`/api/projects/${projectId}/decision-runs/latest`).set(auth).expect(200);
+    expect(latest.body.runId).toBe(runId);
+    expect(latest.body.calculationsByOfferId).toEqual(response.body.calculationsByOfferId);
+    expect(latest.body.scenarios).toEqual(response.body.scenarios);
+    expect(latest.body.dataCompleteness).toEqual(response.body.dataCompleteness);
+    expect(latest.body.methodology.conventions.occurrences).toMatch(/validation métier en attente/);
+    expect(latest.body.freshness.dataChangedSinceRun).toBe(false);
   });
 
   it('T-DEC-02 : le classement se fait sur la VAN du coût complet, pas sur le prix affiché', async () => {
@@ -325,8 +342,8 @@ describe('Décision — calcul réel par le serveur', () => {
     expect(entry.entity_id).toBe(runId);
     expect(entry.actor_id).toBe(userA);
     const payload = JSON.parse(entry.new_value);
-    expect(payload.engineVersion).toBe('2.0.0');
-    expect(payload.methodologyVersion).toBe('2026.1');
+    expect(payload.engineVersion).toBe('2.1.0');
+    expect(payload.methodologyVersion).toBe('2026.2');
     expect(payload.offersCompared).toBe(2);
   });
 
@@ -381,6 +398,20 @@ describe('Décision — calcul réel par le serveur', () => {
     const afterRestore = await request(app).get(`/api/decision-runs/${runId}`).set(auth).expect(200);
     expect(afterRestore.body.freshness.dataChangedSinceRun).toBe(false);
     expect(afterRestore.body.freshness.explanation).toMatch(/identiques à celles de cette exécution/);
+
+    // La nouvelle fréquence est également une entrée financière de l'empreinte,
+    // même lorsque tous les autres champs restent identiques.
+    await db.asOrganization(ORG_A, (tx) =>
+      tx.query(`UPDATE cost_items SET occurrences_per_year = 2 WHERE offer_id = $1 AND category = 'energie_consommables'`, [offerId])
+    );
+    const frequencyChanged = await request(app).get(`/api/decision-runs/${runId}`).set(auth).expect(200);
+    expect(frequencyChanged.body.freshness.dataChangedSinceRun).toBe(true);
+    expect(frequencyChanged.body.freshness.currentFingerprint).not.toBe(frequencyChanged.body.freshness.storedFingerprint);
+    await db.asOrganization(ORG_A, (tx) =>
+      tx.query(`UPDATE cost_items SET occurrences_per_year = NULL WHERE offer_id = $1 AND category = 'energie_consommables'`, [offerId])
+    );
+    const finalFreshness = await request(app).get(`/api/decision-runs/${runId}`).set(auth).expect(200);
+    expect(finalFreshness.body.freshness.dataChangedSinceRun).toBe(false);
   });
 
   it('T-DEC-11 : les résultats consolidés sont écrits sur les offres (copie du calcul serveur)', async () => {
@@ -388,7 +419,7 @@ describe('Décision — calcul réel par le serveur', () => {
     const offerB = offers.body.items.find((o: any) => o.offer_reference === 'OFF-B');
     expect(offerB.computed_lcc).toBeTruthy();
     expect(Number(offerB.computed_lcc)).toBeCloseTo(350_000 + 10_000 * 4.3295, 0);
-    expect(offerB.engine_version).toBe('2.0.0');
+    expect(offerB.engine_version).toBe('2.1.0');
     expect(offerB.computed_at).not.toBeNull();
   });
 });

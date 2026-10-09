@@ -14,6 +14,7 @@
  */
 
 import { TCOEngine, RECOGNIZED_COST_CATEGORIES } from '../../src/engine/tcoEngine';
+import { MAX_COST_OCCURRENCES_PER_YEAR } from '../../src/types/domain';
 import { ImportFieldType } from './schema';
 
 export type ValueStatus = 'ok' | 'missing' | 'invalid' | 'ambiguous';
@@ -130,6 +131,40 @@ export function parseInteger(raw: unknown): ParsedValue<number> {
     };
   }
   return parsed;
+}
+
+/**
+ * Fréquence d'événements strictement entière : aucun arrondi ni interprétation
+ * d'un format ambigu. La borne haute est le nombre maximal de jours d'une année.
+ */
+export function parseOccurrencesPerYear(raw: unknown): ParsedValue<number> {
+  const parsed = parseNumber(raw);
+  if (parsed.value === null) return parsed;
+  if (parsed.status === 'ambiguous') {
+    return {
+      value: null,
+      status: 'invalid',
+      note: `Fréquence refusée : ${parsed.note ?? 'format numérique ambigu.'}`,
+      raw: String(raw),
+    };
+  }
+  if (!Number.isInteger(parsed.value)) {
+    return {
+      value: null,
+      status: 'invalid',
+      note: `« ${String(raw)} » n'est pas une fréquence entière. Aucune valeur n'a été arrondie.`,
+      raw: String(raw),
+    };
+  }
+  if (parsed.value < 1 || parsed.value > MAX_COST_OCCURRENCES_PER_YEAR) {
+    return {
+      value: null,
+      status: 'invalid',
+      note: `La fréquence doit être comprise entre 1 et ${MAX_COST_OCCURRENCES_PER_YEAR} occurrences par an.`,
+      raw: String(raw),
+    };
+  }
+  return { value: parsed.value, status: 'ok', raw: String(raw) };
 }
 
 export function parsePercent(raw: unknown): ParsedValue<number> {
@@ -299,6 +334,8 @@ export function parseByType(raw: unknown, type: ImportFieldType): ParsedValue<un
       return parseNumber(raw);
     case 'integer':
       return parseInteger(raw);
+    case 'positiveInteger':
+      return parseOccurrencesPerYear(raw);
     case 'percent':
       return parsePercent(raw);
     case 'boolean':

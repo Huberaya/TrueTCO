@@ -57,6 +57,7 @@ export interface CostItemRow {
   is_recurring_yearly: boolean;
   yearly_inflation_type: string | null;
   year_occurrences: number[] | null;
+  occurrences_per_year?: number | null;
   calculation_formula: string | null;
   explanation_notes: string | null;
   is_demo: boolean;
@@ -293,6 +294,7 @@ export function mapCostItems(
       isRecurringYearly: row.is_recurring_yearly,
       yearlyInflationType: (row.yearly_inflation_type as CostBreakdownItem['yearlyInflationType']) ?? undefined,
       yearOccurrences: row.year_occurrences ?? undefined,
+      occurrencesPerYear: row.occurrences_per_year ?? undefined,
     });
   }
 

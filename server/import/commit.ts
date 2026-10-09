@@ -228,9 +228,9 @@ export async function commitImport(
           `INSERT INTO cost_items (
               organization_id, offer_id, category, label, amount, currency, quantity, unit_price,
               quality_status, source_name, source_type, confidence_level, is_recurring_yearly,
-              yearly_inflation_type, year_occurrences, calculation_formula, explanation_notes, is_demo,
+              yearly_inflation_type, year_occurrences, occurrences_per_year, calculation_formula, explanation_notes, is_demo,
               declared_category, source_row_number, is_imported
-           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
           [
             ctx.organization.id,
             created.id,
@@ -247,6 +247,7 @@ export async function commitImport(
             row.values.recurring?.value === true,
             inflationTypeOf(row.values.inflationType?.value),
             parseYearOccurrences(row.values.yearOccurrences?.value),
+            numberOrNull(row.values.occurrencesPerYear?.value),
             textOrNull(row.values.notes?.value),
             `Importé du fichier « ${preview.source.fileName} », ligne ${row.rowNumber} (empreinte du fichier : ${preview.source.sha256.slice(0, 12)}…).`,
             row.status === 'DEMO',
@@ -312,6 +313,17 @@ export async function commitImport(
         createdCarbonItems,
         createdRiskItems,
         skippedRows,
+        costItemAmountBasis: 'per_occurrence',
+        occurrenceMapping: Object.entries(options.mapping)
+          .filter(([, field]) => field === 'occurrencesPerYear')
+          .map(([header]) => header),
+        costItemOccurrences: preview.rows
+          .filter((row) => !skippedRows.includes(row.rowNumber))
+          .map((row) => ({
+            rowNumber: row.rowNumber,
+            yearOccurrences: parseYearOccurrences(row.values.yearOccurrences?.value),
+            occurrencesPerYear: numberOrNull(row.values.occurrencesPerYear?.value),
+          })),
         dataQualityScore: preview.dataQuality.score,
         statusCounts: preview.summary.statusCounts,
       }),

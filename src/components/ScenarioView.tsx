@@ -1,156 +1,65 @@
 import React from 'react';
-import { Project, SupplierOffer } from '../types/domain';
-import { TCOEngine } from '../engine/tcoEngine';
-import { CheckCircle2, TrendingUp, AlertTriangle } from 'lucide-react';
+import { AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { DecisionRunResult } from '../services/serverData';
+import { ServerCalculationEmptyState } from './ServerCalculationEmptyState';
 
 interface ScenarioViewProps {
-  project: Project;
-  offers: SupplierOffer[];
+  decisionRun: DecisionRunResult | null;
+  currency: string;
 }
 
-export const ScenarioView: React.FC<ScenarioViewProps> = ({ project, offers }) => {
-  const scenarios = TCOEngine.calculateScenarios(project, offers);
+const percent = (value: number) => `${(value * 100).toLocaleString('fr-FR', { maximumFractionDigits: 2 })} %`;
+const money = (value: number, currency: string) => new Intl.NumberFormat('fr-FR', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value);
+
+/** Scénarios du moteur renvoyés dans l'exécution serveur persistée. */
+export const ScenarioView: React.FC<ScenarioViewProps> = ({ decisionRun, currency }) => {
+  if (!decisionRun) return <ServerCalculationEmptyState title="Aucun scénario calculé par le serveur" />;
+  if (!decisionRun.scenarios.length) return <div className="rounded-xl border border-slate-800 bg-slate-900 p-6 text-sm text-slate-300">Aucun résultat de scénario n'est présent dans cette exécution.</div>;
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-slate-800">
-        <div>
-          <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1">
-            Résilience Financière & Stress-Test
-          </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">
-            Simulateur de Scénarios Macro-Économiques
-          </h2>
-          <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Testez la robustesse de chaque décision face aux chocs d'inflation, flambée des cours de l'énergie, durcissement du prix carbone et défaillances techniques.
-          </p>
-        </div>
-      </div>
+      <header className="border-b border-slate-800 pb-4">
+        <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-emerald-400">Sorties de l'exécution {decisionRun.runId.slice(0, 8)}</div>
+        <h2 className="text-2xl font-bold tracking-tight text-white">Scénarios exploratoires</h2>
+        <p className="mt-1 max-w-3xl text-xs text-slate-400">Les valeurs ci-dessous sont recalculées côté serveur à partir des offres et des hypothèses enregistrées. Les multiplicateurs du moteur sont des hypothèses de stress internes, sans source externe : ce ne sont ni des prévisions macroéconomiques ni des scénarios officiels.</p>
+      </header>
 
-      {/* 3 Scenario Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {scenarios.map((sc) => {
-          const isPessimistic = sc.scenarioName === 'Pessimiste';
-          const isOptimistic = sc.scenarioName === 'Optimiste';
-
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+        {decisionRun.scenarios.map((scenario, index) => {
+          const entries = decisionRun.ranking.map((ranked) => ({
+            ranked,
+            scenarioResult: scenario.resultsByOfferId[ranked.offerId],
+          })).filter((entry) => entry.scenarioResult);
+          const best = entries.find((entry) => entry.scenarioResult.isBestChoiceByNpv) ?? entries.find((entry) => entry.scenarioResult.isBestChoice);
           return (
-            <div
-              key={sc.scenarioName}
-              className={`p-5 rounded-xl border flex flex-col justify-between ${
-                isPessimistic
-                  ? 'bg-slate-900/90 border-rose-900/50'
-                  : isOptimistic
-                  ? 'bg-slate-900/90 border-emerald-900/50'
-                  : 'bg-slate-900/90 border-slate-700/80'
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
-                    Scénario {sc.scenarioName}
-                  </span>
-                  {isPessimistic && (
-                    <span className="text-[10px] text-rose-400 bg-rose-950/60 border border-rose-800/60 px-2 py-0.5 rounded font-mono">
-                      Stress-Test Sévère
-                    </span>
-                  )}
-                  {isOptimistic && (
-                    <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-2 py-0.5 rounded font-mono">
-                      Conditions Favorables
-                    </span>
-                  )}
-                </div>
-
-                <h3 className="text-lg font-bold text-white mb-3">
-                  {isPessimistic
-                    ? 'Choc Énergétique & Quotas'
-                    : isOptimistic
-                    ? 'Désinflation & Tarifs Modérés'
-                    : 'Hypothèses de Consensus (Central)'}
-                </h3>
-
-                {/* Macro Parameters Table */}
-                <div className="p-3 bg-slate-950 border border-slate-800/80 rounded-lg space-y-1.5 text-xs font-mono text-slate-300 mb-4">
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Inflation générale :</span>
-                    <span className="text-white">{(sc.parameters.inflationRate * 100).toFixed(1)}% / an</span>
+            <article key={`${scenario.scenarioName}-${index}`} className="rounded-xl border border-slate-800 bg-slate-900 p-5">
+              <header className="mb-4 flex items-start justify-between gap-3">
+                <div><div className="text-xs font-semibold uppercase tracking-wider text-slate-400">Scénario {scenario.scenarioName}</div><h3 className="mt-1 text-lg font-bold text-white">Hypothèses de stress du moteur</h3></div>
+                {best && <span className="flex items-center gap-1 text-[10px] text-emerald-300"><CheckCircle2 className="h-3.5 w-3.5" /> Classement VAN #1</span>}
+              </header>
+              <dl className="mb-4 space-y-2 rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs">
+                <Metric label="Inflation générale" value={percent(scenario.parameters.inflationRate)} />
+                <Metric label="Inflation énergétique" value={percent(scenario.parameters.energyInflationRate)} />
+                <Metric label="Taux d'actualisation" value={percent(scenario.parameters.discountRate)} />
+                <Metric label="Prix carbone retenu — source à vérifier" value={`${scenario.parameters.carbonPricePerTonne.toLocaleString('fr-FR')} €/t`} />
+                <Metric label="Multiplicateur de risque de panne" value={`${scenario.parameters.failureRateMultiplier.toLocaleString('fr-FR')}×`} />
+              </dl>
+              <div className="space-y-2">
+                {entries.map(({ ranked, scenarioResult }) => (
+                  <div key={ranked.offerId} className={`flex items-center justify-between gap-3 rounded-lg border p-2.5 text-xs ${scenarioResult.isBestChoiceByNpv ? 'border-emerald-700/60 bg-emerald-950/30' : 'border-slate-800 bg-slate-950/60'}`}>
+                    <div><div className="font-semibold text-white">{ranked.supplierName}</div><div className="text-[10px] text-slate-400">{scenarioResult.deltaVsCheapestNpv === 0 ? 'VAN la plus faible dans ce scénario' : `Écart VAN : ${money(scenarioResult.deltaVsCheapestNpv ?? 0, currency)}`}</div></div>
+                    <div className="text-right font-mono"><div className="font-bold text-white">{money(scenarioResult.nominalTCO, currency)}</div><div className="text-[10px] text-slate-400">VAN {money(scenarioResult.discountedLCC, currency)}</div></div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Inflation énergie :</span>
-                    <span className="text-white">{(sc.parameters.energyInflationRate * 100).toFixed(1)}% / an</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Prix Carbone :</span>
-                    <span className="text-sky-400">{sc.parameters.carbonPricePerTonne} €/t</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">Multiplicateur pannes :</span>
-                    <span className="text-amber-400">{sc.parameters.failureRateMultiplier}x</span>
-                  </div>
-                </div>
-
-                {/* Results for Each Offer */}
-                <div className="space-y-2">
-                  <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                    TCO Global Calculé :
-                  </div>
-                  {offers.map((offer) => {
-                    const res = sc.resultsByOfferId[offer.id];
-                    if (!res) return null;
-
-                    return (
-                      <div
-                        key={offer.id}
-                        className={`p-2.5 rounded-lg border text-xs flex items-center justify-between transition-colors ${
-                          res.isBestChoice
-                            ? 'bg-emerald-950/40 border-emerald-700/60 text-emerald-300'
-                            : 'bg-slate-950/60 border-slate-800/60 text-slate-300'
-                        }`}
-                      >
-                        <div>
-                          <div className="font-semibold text-white flex items-center gap-1.5">
-                            <span>{offer.supplierName}</span>
-                            {res.isBestChoice && (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                            )}
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            {res.deltaVsCheapestNominal === 0
-                              ? '🏆 Choix le plus économique'
-                              : `+${res.deltaVsCheapestNominal.toLocaleString('fr-FR')} € d'écart`}
-                          </div>
-                        </div>
-
-                        <div className="text-right font-mono tabular-nums">
-                          <div className="font-bold text-white">
-                            {res.nominalTCO.toLocaleString('fr-FR')} €
-                          </div>
-                          <div className="text-[10px] text-slate-400">
-                            LCC: {res.discountedLCC.toLocaleString('fr-FR')} €
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                ))}
               </div>
-
-              <div className="mt-4 pt-3 border-t border-slate-800 text-[11px] text-slate-400">
-                {isPessimistic && (
-                  <span>En période de crise énergétique, l'écart en faveur de l'alternative sobre s'accentue drastiquement.</span>
-                )}
-                {isOptimistic && (
-                  <span>Même avec une énergie bon marché, le gain TCO reste favorable grâce à la maintenance réduite.</span>
-                )}
-                {!isPessimistic && !isOptimistic && (
-                  <span>Scénario de référence retenu pour les validations budgétaires en Comité d'Investissement.</span>
-                )}
-              </div>
-            </div>
+              {best && <div className="mt-4 border-t border-slate-800 pt-3 text-[11px] text-slate-300">Classement VAN de ce scénario : <strong className="text-white">{best.ranked.supplierName}</strong>. Ce classement n'est pas une approbation de décision.</div>}
+            </article>
           );
         })}
       </div>
+      <div className="flex items-start gap-2 rounded-lg border border-amber-800/50 bg-amber-950/20 p-3 text-[11px] text-amber-100/80"><AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" /><span>Les amplitudes ne sont pas sourcées et ne représentent pas une distribution probabiliste. Pour une analyse Monte-Carlo, consultez la simulation de risque séparée (quantiles de simulation, pas intervalle de confiance).</span></div>
     </div>
   );
 };
+
+const Metric: React.FC<{label: string; value: string}> = ({ label, value }) => <div className="flex justify-between gap-3"><dt className="text-slate-400">{label}</dt><dd className="text-right font-mono text-white">{value}</dd></div>;

@@ -4,9 +4,9 @@ import {
   SupplierOffer,
   Supplier,
   AuditLogEntry,
-  ExternalityReferenceBenchmark,
 } from '../types/domain';
-import { TCOEngine } from '../engine/tcoEngine';
+import { DecisionRunResult } from '../services/serverData';
+import { ServerCalculationEmptyState } from './ServerCalculationEmptyState';
 import { ExcelExportService } from '../services/excelExportService';
 import {
   ApiError,
@@ -62,9 +62,9 @@ import {
 interface ExecutiveReportViewProps {
   project: Project;
   offers: SupplierOffer[];
+  decisionRun: DecisionRunResult | null;
   suppliers?: Supplier[];
   auditLogs?: AuditLogEntry[];
-  benchmarks?: ExternalityReferenceBenchmark[];
   onBack: () => void;
   onUpdateProject?: (updated: Project) => void;
 }
@@ -72,84 +72,40 @@ interface ExecutiveReportViewProps {
 export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
   project,
   offers,
+  decisionRun,
   suppliers = [],
   auditLogs = [],
-  benchmarks = [],
   onBack,
   onUpdateProject,
 }) => {
-  // Calculate detailed TCO for all offers
+  // Détail par offre renvoyé dans l'exécution serveur persistée.
   const results = useMemo(() => {
-    return offers.map((offer) => ({
-      offer,
-      calc: TCOEngine.calculateOfferTCO(project, offer),
-      supplier: suppliers.find((s) => s.id === offer.supplierId),
-    }));
-  }, [project, offers, suppliers]);
+    if (!decisionRun) return [];
+    return decisionRun.ranking.flatMap(({ offerId }) => {
+      const offer = offers.find((candidate) => candidate.id === offerId);
+      const calc = decisionRun.calculationsByOfferId[offerId];
+      return offer && calc ? [{ offer, calc, supplier: suppliers.find((s) => s.id === offer.supplierId) }] : [];
+    });
+  }, [decisionRun, offers, suppliers]);
 
-  // Identify baseline (conventional) and winning/responsible candidate
-  const conv = useMemo(() => {
-    return results.find((r) => !r.offer.isResponsibleCandidate) || results[0];
-  }, [results]);
+  // Le rapport reprend exclusivement le classement et la recommandation du serveur.
+  // Un rang 1 n'est pas transformé en recommandation lorsque le statut est indéterminé.
+  const rankedLeader = useMemo(() => {
+    const offerId = decisionRun?.ranking[0]?.offerId;
+    return results.find((entry) => entry.offer.id === offerId) ?? null;
+  }, [decisionRun, results]);
+  const recommendedCandidate = useMemo(() => {
+    if (!decisionRun || decisionRun.recommendation.status === 'indetermine') return null;
+    return results.find((entry) => entry.offer.id === decisionRun.recommendation.offerId) ?? null;
+  }, [decisionRun, results]);
 
-  const resp = useMemo(() => {
-    return results.find((r) => r.offer.isResponsibleCandidate) || results[1] || results[0];
-  }, [results]);
-
-  // Best TCO candidate overall
-  const bestTCO = useMemo(() => {
-    if (results.length === 0) return null;
-    return [...results].sort(
-      (a, b) => a.calc.totalComprehensiveTCO - b.calc.totalComprehensiveTCO
-    )[0];
-  }, [results]);
-
-  const winningCandidate = bestTCO || resp;
-
-  // Break-even and sensitivity analysis
-  const breakEven = useMemo(() => {
-    if (!conv || !resp) return null;
-    return TCOEngine.calculateBreakEven(conv.calc, resp.calc, project.horizonYears);
-  }, [conv, resp, project.horizonYears]);
-
-  const drivers = useMemo(() => {
-    if (!conv || !resp) return [];
-    return TCOEngine.calculateSensitivity(project, conv.offer, resp.offer);
-  }, [conv, resp, project]);
-
-  // Net lifecycle savings
-  const netSavings = useMemo(() => {
-    if (!conv || !winningCandidate) return 0;
-    return Math.max(0, conv.calc.totalComprehensiveTCO - winningCandidate.calc.totalComprehensiveTCO);
-  }, [conv, winningCandidate]);
-
-  // Net CO2 avoided
-  const avoidedCO2Tonnes = useMemo(() => {
-    if (!conv || !winningCandidate) return 0;
-    return Math.max(
-      0,
-      conv.calc.totalLifecycleCO2eTonnes - winningCandidate.calc.totalLifecycleCO2eTonnes
-    );
-  }, [conv, winningCandidate]);
-
-  /**
-   * Identifiant INTERNE de lecture du rapport : un FNV-1a, volontairement présenté
-   * pour ce qu'il est. Ce n'est ni un sceau, ni une signature, ni une empreinte
-   * cryptographique : il ne prouve rien et ne doit pas être invoqué comme preuve.
-   * L'intégrité opposable vient du journal d'audit chaîné du serveur (SHA-256).
-   */
-  const reportInternalId = useMemo(() => {
-    const raw = `${project.id}:${project.reference}:${winningCandidate?.offer.id}`;
-    let hash = 0x811c9dc5;
-    for (let i = 0; i < raw.length; i++) {
-      hash ^= raw.charCodeAt(i);
-      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-    return `RPT-${(hash >>> 0).toString(16).toUpperCase()}`;
-  }, [project.id, project.reference, winningCandidate?.offer.id]);
+  // Point mort et sensibilité : sorties calculées et persistées par le serveur.
+  const breakEven = decisionRun?.breakEven ?? null;
+  const drivers = decisionRun?.sensitivity ?? [];
 
   /** Message du serveur après une transition de cycle de vie réellement appliquée. */
   const [workflowNotice, setWorkflowNotice] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
   /** Motif exigé par le serveur (10 caractères minimum) pour toute décision. */
   const [decisionJustification, setDecisionJustification] = useState('');
   const [workflowError, setWorkflowError] = useState<string | null>(null);
@@ -199,7 +155,16 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
 
   // Handle Excel download
   const handleExportExcel = () => {
-    ExcelExportService.exportFinancialWorkbook(project, offers, suppliers, auditLogs, benchmarks);
+    if (!decisionRun) {
+      setExportError('Export bloqué : aucun résultat serveur n’est fourni.');
+      return;
+    }
+    try {
+      ExcelExportService.exportFinancialWorkbook(project, offers, decisionRun, auditLogs);
+      setExportError(null);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Le classeur n’a pas pu être exporté.');
+    }
   };
 
   /**
@@ -238,6 +203,16 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
       setWorkflowBusy(false);
     }
   };
+
+  if (!decisionRun || results.length === 0) {
+    return <ServerCalculationEmptyState title="Le rapport attend un résultat serveur à jour" />;
+  }
+  if (!rankedLeader) {
+    return <ServerCalculationEmptyState title="Le rang 1 et les résultats détaillés ne correspondent pas dans cette exécution" />;
+  }
+  if (decisionRun.recommendation.status !== 'indetermine' && !recommendedCandidate) {
+    return <ServerCalculationEmptyState title="L'option proposée par le moteur est absente des résultats détaillés" />;
+  }
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-20">
@@ -326,6 +301,8 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
           </div>
         </div>
 
+        {exportError && <div className="rounded-lg border border-rose-700 bg-rose-950/40 p-3 text-xs text-rose-200" role="alert">{exportError}</div>}
+
         {/* Compte rendu de la transition réellement enregistrée par le serveur */}
         {workflowNotice && (
           <div className="p-4 bg-emerald-950/70 border border-emerald-600/80 rounded-xl text-xs text-emerald-200 flex items-start gap-2.5 animate-fade-in shadow-xl">
@@ -358,14 +335,14 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs uppercase tracking-widest font-mono text-emerald-400 print:text-emerald-700 font-bold">
-                  TrueTCO · Dossier d'Arbitrage Financier & RSE
+                  TrueTCO · Résultats de décision serveur
                 </span>
                 <span className="text-[10px] px-2 py-0.5 bg-slate-800 print:bg-slate-200 text-slate-300 print:text-slate-800 rounded font-mono">
-                  CONFIDENTIEL COMEX
+                  EXTRAIT D'EXÉCUTION
                 </span>
               </div>
               <h2 className="text-2xl sm:text-3xl font-extrabold text-white print:text-slate-950 mt-1.5 tracking-tight">
-                Dossier Décisionnel d'Adjudication (TCO / LCC)
+                Rapport des résultats TCO / LCC
               </h2>
               <div className="text-sm text-slate-400 print:text-slate-600 mt-1 font-medium">
                 {project.name} · Réf. Consultation : <span className="font-mono text-slate-300 print:text-slate-800">{project.reference}</span>
@@ -373,92 +350,84 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
             </div>
 
             <div className="text-left sm:text-right text-xs font-mono text-slate-400 print:text-slate-600 space-y-0.5">
-              <div>Édité le : {new Date().toLocaleDateString('fr-FR')}</div>
+              <div>Généré (heure locale du navigateur) : {new Date().toLocaleString('fr-FR')}</div>
               <div>Porteur du dossier : {project.ownerName || 'non renseigné'}</div>
-              <div className="select-all">
-                Identifiant technique (non cryptographique) : {reportInternalId}
-              </div>
+              <div className="select-all">Identifiant d'exécution serveur : {decisionRun.runId}</div>
+              <div>Calcul serveur : {new Date(decisionRun.createdAt).toLocaleString('fr-FR')} · révision v{decisionRun.inputVersion}</div>
+              <div>Moteur {decisionRun.engineVersion} · méthode {decisionRun.methodologyVersion}</div>
+              <div className="break-all text-[10px]">Empreinte des entrées : {decisionRun.inputFingerprint}</div>
+              <div>Fraîcheur : {decisionRun.freshness?.explanation ?? 'non fournie par cette exécution'}</div>
             </div>
           </div>
         </div>
 
         {/* ========================================================= */}
-        {/* 1. RÉSUMÉ EXÉCUTIF & AVIS MOTIVÉ D'ADJUDICATION */}
+        {/* 1. RÉSULTAT SERVEUR & STATUT DE RECOMMANDATION */}
         {/* ========================================================= */}
         <section className="space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 print:border-slate-300 pb-2">
-            <h3 className="text-base font-bold text-white print:text-slate-900 flex items-center gap-2">
-              <span className="text-emerald-400 print:text-emerald-700 font-mono">01.</span>
-              Avis Motivé du Comité de Sélection & Recommandation
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2 print:border-slate-300">
+            <h3 className="flex items-center gap-2 text-base font-bold text-white print:text-slate-900">
+              <span className="font-mono text-emerald-400 print:text-emerald-700">01.</span>
+              Résultat de l'exécution serveur
             </h3>
-            <span className="text-xs px-2.5 py-0.5 bg-emerald-950/70 border border-emerald-800 text-emerald-400 print:bg-emerald-100 print:text-emerald-800 rounded-full font-semibold">
-              Recommandation proposée — non approuvée
+            <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-0.5 text-xs font-semibold text-slate-200">
+              {decisionRun.recommendation.status === 'indetermine'
+                ? 'Aucune recommandation ferme'
+                : decisionRun.recommendation.status === 'conditionnel'
+                  ? 'Proposition conditionnelle — validation requise'
+                  : 'Proposition du moteur — approbation requise'}
             </span>
           </div>
 
-          <div className="p-5 bg-slate-950/80 print:bg-slate-100 rounded-xl border border-slate-800 print:border-slate-300 text-xs leading-relaxed space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800/80 print:border-slate-300">
-              <div className="flex items-center gap-2">
-                <Award className="w-5 h-5 text-amber-400" />
-                <span className="text-sm font-bold text-white print:text-slate-950">
-                  Candidat Lauréat Proposé : {winningCandidate?.offer.supplierName}
-                </span>
-                <span className="text-[11px] font-mono text-slate-400 print:text-slate-600">
-                  (Réf. {winningCandidate?.offer.offerReference})
-                </span>
+          <div className="space-y-4 rounded-xl border border-slate-800 bg-slate-950/80 p-5 text-xs leading-relaxed print:bg-slate-100 print:text-slate-900">
+            <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-800/80 pb-3 print:border-slate-300">
+              <div>
+                <div className="text-[11px] uppercase tracking-wider text-slate-400">Classement communiqué par l'API</div>
+                <div className="mt-1 text-sm font-bold text-white print:text-slate-950">
+                  {recommendedCandidate
+                    ? `Option proposée : ${recommendedCandidate.offer.supplierName} (${recommendedCandidate.offer.offerReference})`
+                    : rankedLeader
+                      ? `Rang 1 : ${rankedLeader.offer.supplierName} (${rankedLeader.offer.offerReference}) — aucune recommandation ferme`
+                      : 'Aucune offre classée'}
+                </div>
               </div>
-              <span className="text-[11px] px-2 py-0.5 bg-emerald-900/40 text-emerald-300 print:bg-emerald-200 print:text-emerald-900 rounded font-semibold font-mono">
-                Statut :{' '}
-                {serverStatus === 'locked'
-                  ? 'Dossier verrouillé'
-                  : serverStatus === 'decision'
-                    ? 'Décision actée'
-                    : 'En attente d’approbation'}
-              </span>
-            </div>
-
-            <p>
-              La consultation portant sur l’acquisition et l’exploitation de{' '}
-              <strong>{project.plannedVolume} {project.unitName}</strong> sur un horizon ferme de{' '}
-              <strong>{project.horizonYears} ans</strong> met en évidence un arbitrage fondamental entre le coût
-              facial d'acquisition immédiat et le coût global de possession (TCO / LCC actualisé au WACC de {(project.discountRate * 100).toFixed(1)}%).
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
-              <div className="p-3 bg-slate-900 print:bg-white border border-slate-800 print:border-slate-300 rounded-lg">
-                <div className="text-[11px] text-slate-400 print:text-slate-600">Différentiel Facial Direct</div>
-                <div className="text-base font-bold font-mono text-rose-400 print:text-rose-700 mt-0.5">
-                  +{conv && winningCandidate ? (winningCandidate.calc.apparentDirectCost - conv.calc.apparentDirectCost).toLocaleString('fr-FR') : 0} €
-                </div>
-                <div className="text-[10px] text-slate-500">Surcoût CAPEX initial (+{breakEven?.initialPriceDeltaPercent || 0}%)</div>
-              </div>
-
-              <div className="p-3 bg-slate-900 print:bg-white border border-slate-800 print:border-slate-300 rounded-lg">
-                <div className="text-[11px] text-slate-400 print:text-slate-600">Économie Nette TCO Complet</div>
-                <div className="text-base font-bold font-mono text-emerald-400 print:text-emerald-700 mt-0.5">
-                  -{netSavings.toLocaleString('fr-FR')} €
-                </div>
-                <div className="text-[10px] text-slate-500">Sur l'horizon de {project.horizonYears} ans</div>
-              </div>
-
-              <div className="p-3 bg-slate-900 print:bg-white border border-slate-800 print:border-slate-300 rounded-lg">
-                <div className="text-[11px] text-slate-400 print:text-slate-600">Point Mort Économique</div>
-                <div className="text-base font-bold font-mono text-sky-400 print:text-sky-700 mt-0.5">
-                  {breakEven?.breakEvenMonth ? `${breakEven.breakEvenMonth} mois` : 'Immédiat'}
-                </div>
-                <div className="text-[10px] text-slate-500">
-                  {breakEven?.crossoverYear ? `Bascule à ${breakEven.crossoverYear} ans` : 'Gain dès la mise en service'}
-                </div>
+              <div className="text-[11px] text-slate-400">
+                Workflow serveur : <span className="font-mono text-slate-200">{serverStatus}</span>
               </div>
             </div>
 
-            <p className="pt-2 text-slate-300 print:text-slate-800 font-medium">
-              <strong>Motif d’arbitrage :</strong> Bien que plus cher à l'achat direct, l'offre de{' '}
-              <strong>{winningCandidate?.offer.supplierName}</strong> génère une économie d'exploitation majeure grâce à une
-              consommation énergétique optimisée, des coûts d'entretien réduits de moitié et une valeur résiduelle de revente supérieure.
-              Elle permet en outre d'éviter{' '}
-              <strong>{avoidedCO2Tonnes.toLocaleString('fr-FR')} tonnes de CO2e</strong>, alignant l'entreprise avec ses objectifs CSRD et évitant la fiscalité carbone projetée.
+            <p className="text-slate-300 print:text-slate-800">
+              {decisionRun.recommendation.reason}
             </p>
+            <p className="text-slate-400 print:text-slate-700">
+              Dossier : {project.plannedVolume.toLocaleString('fr-FR')} {project.unitName} · horizon {project.horizonYears} ans · taux d'actualisation saisi {((project.discountRate ?? 0) * 100).toLocaleString('fr-FR')} %. Les montants sont ceux de l'exécution persistée ; ce rapport ne vaut ni approbation, ni conseil juridique ou obligation réglementaire.
+            </p>
+
+            <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-3">
+              <ReportMetricCard
+                label="Écart initial (sortie serveur)"
+                value={breakEven?.initialOutlayDelta === undefined ? 'Non disponible' : `${breakEven.initialOutlayDelta.toLocaleString('fr-FR')} €`}
+                hint={breakEven?.method ? `Méthode : ${breakEven.method}` : 'Le serveur n’a pas fourni ce détail.'}
+              />
+              <ReportMetricCard
+                label="Écart de VAN face au rang 2"
+                value={decisionRun.recommendation.economicAdvantage
+                  ? `${decisionRun.recommendation.economicAdvantage.vsSecondBestNpv.toLocaleString('fr-FR')} €`
+                  : 'Non disponible'}
+                hint="Valeur issue du résultat de décision serveur ; ce n'est pas une économie comptable réalisée."
+              />
+              <ReportMetricCard
+                label="Point de bascule"
+                value={breakEven
+                  ? breakEven.hasBreakEven && breakEven.breakEvenMonth !== null
+                    ? `${breakEven.breakEvenMonth} mois`
+                    : 'Aucun croisement fourni'
+                  : 'Non calculé'}
+                hint={breakEven?.crossoverYear === null || breakEven?.crossoverYear === undefined
+                  ? 'Aucun croisement annuel n’est renseigné.'
+                  : `Année de croisement : ${breakEven.crossoverYear}.`}
+              />
+            </div>
           </div>
         </section>
 
@@ -468,7 +437,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
         <section className="space-y-4">
           <h3 className="text-base font-bold text-white print:text-slate-900 border-b border-slate-800 print:border-slate-300 pb-2 flex items-center gap-2">
             <span className="text-emerald-400 print:text-emerald-700 font-mono">02.</span>
-            Cadrage de la Consultation & Hypothèses Validées
+            Hypothèses enregistrées dans le dossier
           </h3>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -493,7 +462,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               <div className="font-bold text-white print:text-slate-900 font-mono text-sm mt-0.5">
                 {(project.energyInflationRate * 100).toFixed(2)}% / an
               </div>
-              <div className="text-[10px] text-slate-500">Indexation annuelle des tarifs</div>
+              <div className="text-[10px] text-slate-500">Hypothèse d'inflation énergétique saisie au dossier</div>
             </div>
 
             <div className="p-3 bg-slate-950/70 print:bg-slate-100 rounded-xl border border-slate-800 print:border-slate-300">
@@ -509,189 +478,56 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
         </section>
 
         {/* ========================================================= */}
-        {/* 3. TABLEAU CBS : DÉCOMPOSITION DU COÛT TOTAL DU CYCLE DE VIE */}
+        {/* 3. AGRÉGATS FINANCIERS DIRECTEMENT EXPOSÉS PAR L'API */}
         {/* ========================================================= */}
         <section className="space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 print:border-slate-300 pb-2">
-            <h3 className="text-base font-bold text-white print:text-slate-900 flex items-center gap-2">
-              <span className="text-emerald-400 print:text-emerald-700 font-mono">03.</span>
-              Décomposition Analytique du Coût Complet (Tableau CBS)
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-2 print:border-slate-300">
+            <h3 className="flex items-center gap-2 text-base font-bold text-white print:text-slate-900">
+              <span className="font-mono text-emerald-400 print:text-emerald-700">03.</span>
+              Agrégats financiers de l'exécution serveur
             </h3>
-            <span className="text-[11px] font-mono text-slate-400 print:text-slate-600">
-              Démarche LCC — inspirée d’ISO 15686-5, sans certification
-            </span>
+            <span className="text-[11px] font-mono text-slate-400 print:text-slate-600">Moteur {decisionRun.engineVersion} · méthode {decisionRun.methodologyVersion}</span>
           </div>
 
-          <div className="border border-slate-800 print:border-slate-300 rounded-xl overflow-hidden bg-slate-950/60 print:bg-white">
+          <p className="text-[11px] text-slate-400 print:text-slate-600">
+            Les montants ci-dessous sont repris des champs de résultat enregistrés, sans recomposition locale. Cette ventilation n'est pas exhaustive : certains postes restent agrégés dans les totaux ou ne sont pas encore exposés séparément par le contrat API. Le prix facial est un indicateur de référence et ne doit pas être ajouté au TCO sans vérifier le poste d'acquisition.
+          </p>
+
+          <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-950/60 print:border-slate-300 print:bg-white">
             <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left border-collapse">
+              <table className="w-full border-collapse text-left text-xs">
                 <thead>
-                  <tr className="bg-slate-950 print:bg-slate-200 text-slate-400 print:text-slate-700 border-b border-slate-800 print:border-slate-300 font-semibold">
-                    <th className="py-2.5 px-3 border-r border-slate-800 print:border-slate-300 min-w-[200px]">
-                      Poste de Coût Réel (CBS)
-                    </th>
-                    {results.map(({ offer }) => (
-                      <th
-                        key={offer.id}
-                        className={`py-2.5 px-3 text-right ${
-                          offer.id === winningCandidate?.offer.id
-                            ? 'bg-emerald-950/40 text-emerald-300 print:bg-emerald-100 print:text-emerald-900 font-bold'
-                            : ''
-                        }`}
-                      >
-                        {offer.supplierName}
-                        {offer.id === winningCandidate?.offer.id && ' ★'}
+                  <tr className="border-b border-slate-800 bg-slate-950 font-semibold text-slate-400 print:border-slate-300 print:bg-slate-200 print:text-slate-700">
+                    <th className="min-w-[240px] border-r border-slate-800 px-3 py-2.5 print:border-slate-300">Indicateur / poste exposé</th>
+                    {results.map(({ offer }, index) => (
+                      <th key={offer.id} className={`px-3 py-2.5 text-right ${offer.id === recommendedCandidate?.offer.id ? 'bg-emerald-950/40 font-bold text-emerald-300 print:bg-emerald-100 print:text-emerald-900' : ''}`}>
+                        <span className="block">Rang {index + 1} · {offer.supplierName}</span>
+                        <span className="font-mono text-[10px] font-normal text-slate-500">{offer.offerReference}</span>
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/80 print:divide-slate-300">
-                  {/* CAPEX Initial */}
-                  <tr className="hover:bg-slate-900/30">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium">
-                      1. Acquisition directe (Prix facial facture)
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono">
-                        {calc.apparentDirectCost.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Logistique & Douanes */}
-                  <tr className="hover:bg-slate-900/30">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium text-slate-400">
-                      2. Transport, Douanes & Logistique (Incoterm)
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono text-slate-400">
-                        {calc.logisticsTotal.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Mise en service */}
-                  <tr className="hover:bg-slate-900/30">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium text-slate-400">
-                      3. Installation & Qualification technique
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono text-slate-400">
-                        {calc.installationTotal.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Énergie & Consommables */}
-                  <tr className="hover:bg-slate-900/30">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium text-amber-300 print:text-amber-800">
-                      4. Énergie & Consommables ({project.horizonYears} ans indexés)
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono font-medium">
-                        {calc.energyConsumablesTotal.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Maintenance & Réparations */}
-                  <tr className="hover:bg-slate-900/30">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium">
-                      5. Maintenance préventive & curative
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono">
-                        {(calc.maintenanceRepairsTotal + calc.replacementDefectsTotal).toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Fiscalité & Conformité */}
-                  <tr className="hover:bg-slate-900/30">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium text-slate-400">
-                      6. Fiscalité, Taxes & Conformité légale
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono text-slate-400">
-                        {calc.adminComplianceTotal.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Exposition Risques & Indisponibilité */}
-                  <tr className="hover:bg-slate-900/30">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium text-slate-400">
-                      7. Risques d'indisponibilité & pannes
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono text-slate-400">
-                        {calc.riskExpositionTotal.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Valeur Résiduelle de Revente (-) */}
-                  <tr className="hover:bg-slate-900/30">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium text-emerald-400 print:text-emerald-700">
-                      8. Moins-value : Revente / Cession d'actif (-)
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono text-emerald-400 print:text-emerald-700">
-                        - {calc.salvageValueTotal.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* TCO Économique Nominal */}
-                  <tr className="bg-slate-900/80 print:bg-slate-100 font-semibold">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 text-white print:text-slate-900">
-                      = TCO ÉCONOMIQUE NOMINAL (Flux bruts)
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono font-bold">
-                        {calc.economicTCONominal.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Actualisation WACC (LCC) */}
-                  <tr className="hover:bg-slate-900/30 text-[11px] text-slate-400">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300">
-                      + Effet d'actualisation financière WACC ({project.discountRate * 100}%)
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono">
-                        {(calc.lifecycleCostLCC - calc.economicTCONominal).toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* Externalité Carbone Quinet */}
-                  <tr className="hover:bg-slate-900/30 text-[11px] text-slate-400">
-                    <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 text-sky-400 print:text-sky-700">
-                      + Monétisation de l'externalité carbone ({project.carbonPricePerTonne} €/t)
-                    </td>
-                    {results.map(({ calc }) => (
-                      <td key={calc.offerId} className="py-2 px-3 text-right font-mono text-sky-400 print:text-sky-700">
-                        {calc.monetizedCarbonTotal.toLocaleString('fr-FR')} €
-                      </td>
-                    ))}
-                  </tr>
-
-                  {/* TCO COMPLET TOTAL */}
-                  <tr className="bg-slate-950 font-bold text-sm border-t-2 border-slate-700 print:bg-slate-200">
-                    <td className="py-3 px-3 border-r border-slate-800 print:border-slate-300 text-emerald-400 print:text-emerald-800">
-                      TCO GLOBAL COMPLET SUR {project.horizonYears} ANS
-                    </td>
+                  <ResultRow label="Prix facial de l'offre (indicateur, non additionné ici)" values={results.map(({ calc }) => calc.apparentDirectCost)} />
+                  <ResultRow label="Acquisition intégrée au TCO (sortie moteur)" values={results.map(({ calc }) => calc.acquisitionTotal)} />
+                  <ResultRow label="Logistique" values={results.map(({ calc }) => calc.logisticsTotal)} />
+                  <ResultRow label="Installation" values={results.map(({ calc }) => calc.installationTotal)} />
+                  <ResultRow label="Énergie / consommables" values={results.map(({ calc }) => calc.energyConsumablesTotal)} />
+                  <ResultRow label="Maintenance" values={results.map(({ calc }) => calc.maintenanceRepairsTotal)} />
+                  <ResultRow label="Remplacement / pannes" values={results.map(({ calc }) => calc.replacementDefectsTotal)} />
+                  <ResultRow label="Frais administratifs / conformité" values={results.map(({ calc }) => calc.adminComplianceTotal)} />
+                  <ResultRow label="Fiscalité / taxes" values={results.map(({ calc }) => typeof calc.taxesTotal === 'number' && Number.isFinite(calc.taxesTotal) ? calc.taxesTotal : null)} />
+                  <ResultRow label="Exposition financière aux risques (sortie moteur)" values={results.map(({ calc }) => calc.riskExpositionTotal)} />
+                  <ResultRow label="Coût carbone monétisé (prix saisi dans le dossier)" values={results.map(({ calc }) => calc.monetizedCarbonTotal)} />
+                  <ResultRow label="Valeur résiduelle (crédit, valeur positive exposée)" values={results.map(({ calc }) => calc.salvageValueTotal)} />
+                  <ResultRow label="Fin de vie / recyclage" values={results.map(({ calc }) => calc.endOfLifeRecyclingTotal)} />
+                  <ResultRow label="Postes non alloués (si exposés)" values={results.map(({ calc }) => typeof calc.unallocatedCostTotal === 'number' ? calc.unallocatedCostTotal : null)} />
+                  <ResultRow label="TCO économique nominal — résultat serveur" values={results.map(({ calc }) => calc.economicTCONominal)} emphasized />
+                  <ResultRow label="LCC actualisé complet — résultat serveur" values={results.map(({ calc }) => calc.lifecycleCostLCC)} emphasized />
+                  <tr className="border-t-2 border-emerald-700/60 bg-slate-950 font-bold print:bg-slate-200">
+                    <td className="border-r border-slate-800 px-3 py-3 text-emerald-300 print:border-slate-300 print:text-emerald-900">TCO complet nominal — résultat serveur</td>
                     {results.map(({ calc, offer }) => (
-                      <td
-                        key={calc.offerId}
-                        className={`py-3 px-3 text-right font-mono ${
-                          offer.id === winningCandidate?.offer.id
-                            ? 'text-emerald-400 print:text-emerald-800 text-base font-extrabold'
-                            : 'text-white print:text-slate-900'
-                        }`}
-                      >
+                      <td key={calc.offerId} className={`px-3 py-3 text-right font-mono ${offer.id === recommendedCandidate?.offer.id ? 'text-emerald-300 print:text-emerald-900' : 'text-white print:text-slate-900'}`}>
                         {calc.totalComprehensiveTCO.toLocaleString('fr-FR')} €
                       </td>
                     ))}
@@ -703,147 +539,93 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
         </section>
 
         {/* ========================================================= */}
-        {/* 4. PERFORMANCE MULTICRITÈRE 360° */}
+        {/* 4. INDICATEURS DÉCLARÉS — SANS SCORE SYNTHÉTIQUE */}
         {/* ========================================================= */}
         <section className="space-y-4">
-          <h3 className="text-base font-bold text-white print:text-slate-900 border-b border-slate-800 print:border-slate-300 pb-2 flex items-center gap-2">
-            <span className="text-emerald-400 print:text-emerald-700 font-mono">04.</span>
-            Évaluation Multicritère Pondérée 360°
-          </h3>
+          <div className="border-b border-slate-800 pb-2 print:border-slate-300">
+            <h3 className="flex items-center gap-2 text-base font-bold text-white print:text-slate-900">
+              <span className="font-mono text-emerald-400 print:text-emerald-700">04.</span>
+              Indicateurs déclarés par offre — non pondérés
+            </h3>
+            <p className="mt-1 text-[11px] text-slate-400 print:text-slate-600">Ces champs ne constituent pas un score multicritère et ne sont pas combinés en une recommandation RSE/technique.</p>
+          </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-1 gap-3 text-xs sm:grid-cols-2 lg:grid-cols-3">
             {results.map(({ offer, calc, supplier }) => (
-              <div
-                key={offer.id}
-                className={`p-4 rounded-xl border ${
-                  offer.id === winningCandidate?.offer.id
-                    ? 'bg-emerald-950/30 border-emerald-600/80 print:bg-emerald-50 print:border-emerald-300'
-                    : 'bg-slate-950/70 border-slate-800 print:bg-slate-100 print:border-slate-300'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
+              <article key={offer.id} className={`rounded-xl border p-4 ${offer.id === recommendedCandidate?.offer.id ? 'border-emerald-600/80 bg-emerald-950/30 print:border-emerald-300 print:bg-emerald-50' : 'border-slate-800 bg-slate-950/70 print:border-slate-300 print:bg-slate-100'}`}>
+                <div className="mb-2 flex items-center justify-between gap-2">
                   <div className="font-bold text-white print:text-slate-950">{offer.supplierName}</div>
-                  {offer.id === winningCandidate?.offer.id && (
-                    <span className="text-[10px] px-2 py-0.5 bg-emerald-500 text-slate-950 font-bold rounded-full">
-                      1er Choix
-                    </span>
-                  )}
+                  {offer.id === recommendedCandidate?.offer.id && <span className="rounded-full bg-emerald-500 px-2 py-0.5 text-[10px] font-bold text-slate-950">Proposition serveur</span>}
                 </div>
-
-                <div className="space-y-1.5 font-mono text-[11px] text-slate-300 print:text-slate-700">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Score Technique :</span>
-                    <span>{offer.technicalSuitabilityScore} / 100</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Score RSE / Carbone :</span>
-                    <span>{supplier?.esgScore || (offer.isResponsibleCandidate ? 92 : 65)} / 100</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Fiabilité Documentaire :</span>
-                    <span>{calc.dataQualityScore}%</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-500">Impact Carbone Cycle :</span>
-                    <span>{calc.totalLifecycleCO2eTonnes.toLocaleString('fr-FR')} tCO2e</span>
-                  </div>
-                  <div className="flex justify-between pt-1 border-t border-slate-800/80 font-bold">
-                    <span className="text-white print:text-slate-950">Garantie Contractuelle :</span>
-                    <span>{offer.warrantyMonths} mois</span>
-                  </div>
-                </div>
-              </div>
+                <dl className="space-y-1.5 font-mono text-[11px] text-slate-300 print:text-slate-700">
+                  <div className="flex justify-between gap-3"><dt className="text-slate-500">Score technique enregistré (source non exposée)</dt><dd>{typeof offer.technicalSuitabilityScore === 'number' ? `${offer.technicalSuitabilityScore} / 100` : 'Non renseigné'}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-slate-500">Score ESG fournisseur (source non exposée)</dt><dd>{typeof supplier?.esgScore === 'number' ? `${supplier.esgScore} / 100` : 'Non renseigné'}</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-slate-500">Qualité des données (calcul serveur)</dt><dd>{calc.dataQualityScore} / 100</dd></div>
+                  <div className="flex justify-between gap-3"><dt className="text-slate-500">Émissions quantifiées par le moteur</dt><dd>{calc.totalLifecycleCO2eTonnes.toLocaleString('fr-FR')} tCO2e</dd></div>
+                  <div className="flex justify-between gap-3 border-t border-slate-800 pt-1"><dt className="text-slate-500">Garantie déclarée dans l'offre</dt><dd>{typeof offer.warrantyMonths === 'number' ? `${offer.warrantyMonths} mois` : 'Non renseignée'}</dd></div>
+                </dl>
+              </article>
             ))}
           </div>
         </section>
 
         {/* ========================================================= */}
-        {/* 5. SENSIBILITÉ RÉELLEMENT CALCULÉE PAR LE MOTEUR */}
+        {/* 5. SENSIBILITÉ RENVOYÉE PAR LE SERVEUR */}
         {/* ========================================================= */}
-        {/*
-          Cette section affichait trois affirmations écrites en dur : un gain
-          « accéléré de 4,2 mois », un gain cumulé multiplié par 1,15 sans aucun
-          calcul, et un scénario carbone attribué au « rapport France Stratégie ».
-          Aucun de ces chiffres ne venait du moteur. Elle affiche désormais les
-          facteurs de sensibilité RÉELLEMENT recalculés (recalcul complet des deux
-          offres à chaque borne) : chaque ligne est reproductible.
-        */}
         <section className="space-y-4">
-          <h3 className="text-base font-bold text-white print:text-slate-900 border-b border-slate-800 print:border-slate-300 pb-2 flex items-center gap-2">
-            <span className="text-emerald-400 print:text-emerald-700 font-mono">05.</span>
-            Sensibilité de la décision aux hypothèses
+          <h3 className="flex items-center gap-2 border-b border-slate-800 pb-2 text-base font-bold text-white print:border-slate-300 print:text-slate-900">
+            <span className="font-mono text-emerald-400 print:text-emerald-700">05.</span>
+            Sensibilité renvoyée par l'API
           </h3>
 
           <p className="text-[11px] text-slate-400 print:text-slate-600">
-            Impact sur l’écart de coût actualisé entre les deux offres comparées (offre de référence retenue − offre
-            conventionnelle), recalculé par le moteur à chaque borne. Un écart positif signifie que l’offre de référence
-            devient relativement moins avantageuse.
+            Paire issue du classement serveur : {decisionRun.ranking[0]?.supplierName ?? 'rang 1 non fourni'} (rang 1) et {decisionRun.ranking[1]?.supplierName ?? 'rang 2 non fourni'} (rang 2). Le moteur exprime les impacts sur le différentiel de VAN rang 1 moins rang 2, par rapport aux hypothèses de base. Les bornes sont des perturbations internes au moteur, non des prévisions.
           </p>
 
           {drivers.length === 0 ? (
-            <p className="text-xs text-slate-400">
-              Aucun facteur de sensibilité n’a pu être calculé : il faut au moins deux offres comparables.
-            </p>
+            <p className="text-xs text-slate-400">Aucun facteur de sensibilité n'est présent dans cette exécution.</p>
           ) : (
-            <div className="overflow-x-auto border border-slate-800 print:border-slate-300 rounded-xl">
+            <div className="overflow-x-auto rounded-xl border border-slate-800 print:border-slate-300">
               <table className="w-full text-xs">
-                <thead className="bg-slate-950/60 print:bg-slate-100 text-slate-400 print:text-slate-600">
+                <thead className="bg-slate-950/60 text-slate-400 print:bg-slate-100 print:text-slate-600">
                   <tr>
-                    <th className="text-left py-2 px-3 font-semibold">Hypothèse</th>
-                    <th className="text-left py-2 px-3 font-semibold">Valeur retenue</th>
-                    <th className="text-left py-2 px-3 font-semibold">Borne basse → écart</th>
-                    <th className="text-left py-2 px-3 font-semibold">Borne haute → écart</th>
-                    <th className="text-left py-2 px-3 font-semibold">Amplitude</th>
-                    <th className="text-left py-2 px-3 font-semibold">Classe</th>
+                    <th className="px-3 py-2 text-left font-semibold">Hypothèse</th>
+                    <th className="px-3 py-2 text-left font-semibold">Valeur dossier</th>
+                    <th className="px-3 py-2 text-left font-semibold">Borne basse · impact ΔVAN</th>
+                    <th className="px-3 py-2 text-left font-semibold">Borne haute · impact ΔVAN</th>
+                    <th className="px-3 py-2 text-left font-semibold">Amplitude renvoyée</th>
+                    <th className="px-3 py-2 text-left font-semibold">Classe moteur</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/60 print:divide-slate-300">
                   {drivers.map((driver) => (
                     <tr key={driver.category}>
-                      <td className="py-2 px-3 text-slate-200 print:text-slate-900">{driver.parameterName}</td>
-                      <td className="py-2 px-3 text-slate-300 print:text-slate-800 font-mono">
-                        {driver.baseValue.toLocaleString('fr-FR')} {driver.unit}
-                      </td>
-                      <td className="py-2 px-3 font-mono text-slate-300 print:text-slate-800">
-                        {driver.lowValue !== undefined ? `${driver.lowValue.toLocaleString('fr-FR')} → ` : ''}
-                        {driver.lowValueImpactOnDeltaTCO.toLocaleString('fr-FR')} €
-                      </td>
-                      <td className="py-2 px-3 font-mono text-slate-300 print:text-slate-800">
-                        {driver.highValue !== undefined ? `${driver.highValue.toLocaleString('fr-FR')} → ` : ''}
-                        {driver.highValueImpactOnDeltaTCO.toLocaleString('fr-FR')} €
-                      </td>
-                      <td className="py-2 px-3 font-mono text-slate-200 print:text-slate-900">
-                        {(driver.spreadOnDeltaTCO ?? 0).toLocaleString('fr-FR')} €
-                      </td>
-                      <td className="py-2 px-3 text-slate-400 print:text-slate-600">{driver.sensitivityRank}</td>
+                      <td className="px-3 py-2 text-slate-200 print:text-slate-900">{driver.parameterName}</td>
+                      <td className="px-3 py-2 font-mono text-slate-300 print:text-slate-800">{driver.baseValue.toLocaleString('fr-FR')} {driver.unit}</td>
+                      <td className="px-3 py-2 font-mono text-slate-300 print:text-slate-800">{driver.lowValue !== undefined ? `${driver.lowValue.toLocaleString('fr-FR')} → ` : ''}{driver.lowValueImpactOnDeltaTCO.toLocaleString('fr-FR')} €</td>
+                      <td className="px-3 py-2 font-mono text-slate-300 print:text-slate-800">{driver.highValue !== undefined ? `${driver.highValue.toLocaleString('fr-FR')} → ` : ''}{driver.highValueImpactOnDeltaTCO.toLocaleString('fr-FR')} €</td>
+                      <td className="px-3 py-2 font-mono text-slate-200 print:text-slate-900">{typeof driver.spreadOnDeltaTCO === 'number' ? `${driver.spreadOnDeltaTCO.toLocaleString('fr-FR')} €` : 'Non disponible'}</td>
+                      <td className="px-3 py-2 text-slate-400 print:text-slate-600">{driver.sensitivityRank}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-              <div className="px-3 py-2 text-[11px] text-slate-400 print:text-slate-600 border-t border-slate-800 print:border-slate-300 space-y-0.5">
-                {drivers.map((driver) => (
-                  <div key={`${driver.category}-expl`}>
-                    — {driver.parameterName} : {driver.explanation}
-                  </div>
-                ))}
+              <div className="space-y-0.5 border-t border-slate-800 px-3 py-2 text-[11px] text-slate-400 print:border-slate-300 print:text-slate-600">
+                {drivers.map((driver) => <div key={`${driver.category}-expl`}>— Commentaire moteur non sourcé pour « {driver.parameterName} » : {driver.explanation}</div>)}
               </div>
             </div>
           )}
 
-          <div className="p-4 bg-slate-950/70 print:bg-slate-100 rounded-xl border border-slate-800 print:border-slate-300 text-xs space-y-2">
+          <div className="space-y-2 rounded-xl border border-slate-800 bg-slate-950/70 p-4 text-xs print:border-slate-300 print:bg-slate-100">
             <div className="flex items-start gap-2">
-              <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
-              <div className="space-y-1">
+              <Info className="mt-0.5 h-4 w-4 shrink-0 text-sky-400" />
+              <div className="space-y-1 text-slate-300 print:text-slate-800">
                 <div>
-                  <strong>Garantie contractuelle de l’offre retenue :</strong>{' '}
-                  <strong>{winningCandidate?.offer.warrantyMonths ?? 0} mois</strong>. Elle couvre la période déclarée au
-                  contrat ; elle ne dit rien de la sinistralité réelle, qui se suit en exploitation.
+                  {recommendedCandidate
+                    ? <><strong>Garantie déclarée dans l'offre proposée :</strong> {recommendedCandidate.offer.warrantyMonths} mois. La pièce contractuelle et la provenance de cette valeur ne sont pas présentées ici.</>
+                    : 'Aucune garantie n’est attribuée à une offre retenue : le moteur n’a pas émis de recommandation ferme.'}
                 </div>
-                <div>
-                  Aucune inversion de décision n’est affirmée ici qui ne soit recalculable : les lignes ci-dessus sont
-                  recalculées par le moteur, et l’étude d’inversion complète (seuils, zones où la décision change) se
-                  trouve dans l’écran de décision du dossier.
-                </div>
+                <div>Pour l'analyse des seuils d'inversion, consulter la sortie « Quand la décision change-t-elle ? » de l'écran Décision ; ce rapport n'en reconstruit pas les valeurs.</div>
               </div>
             </div>
           </div>
@@ -856,7 +638,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
           <div className="flex items-center justify-between border-b border-slate-800 print:border-slate-300 pb-2">
             <h3 className="text-base font-bold text-white print:text-slate-900 flex items-center gap-2">
               <span className="text-emerald-400 print:text-emerald-700 font-mono">06.</span>
-              Approbations enregistrées du dossier
+              Transitions de workflow journalisées
             </h3>
             <span className="text-[11px] font-mono text-slate-400 print:text-slate-600 flex items-center gap-1">
               <Lock className="w-3.5 h-3.5" />
@@ -865,9 +647,9 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
           </div>
 
           <p className="text-[11px] text-slate-400 print:text-slate-600">
-            Chaque ligne ci-dessous est une transition de statut réellement enregistrée par le serveur, avec l’identité
-            de la session qui l’a demandée, son rôle, l’horodatage et le motif écrit. Aucune de ces lignes n’est saisie
-            depuis cet écran. Une approbation manquante apparaît comme manquante.
+            Chaque ligne ci-dessous est une transition de statut lue dans le journal du serveur, avec l’identité de session,
+            le rôle, l’horodatage et le motif tels qu’ils sont renvoyés. Une transition de workflow ne constitue pas à elle
+            seule une preuve d’approbation formelle ; ce rapport ne crée ni ne complète cette preuve.
           </p>
 
           {approvalsLoading ? (
@@ -880,8 +662,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
             </p>
           ) : approvals.length === 0 ? (
             <p className="text-xs text-amber-200 bg-amber-950/40 border border-amber-800/60 rounded-lg px-3 py-2">
-              Aucune approbation n’est enregistrée pour ce dossier à ce jour. Le dossier n’est donc pas approuvé : ce
-              rapport présente une recommandation technique, pas une décision validée.
+              Aucune transition de statut n'est renvoyée par le journal pour ce dossier. Ce rapport ne permet donc pas d'établir qu'une approbation formelle a été enregistrée.
             </p>
           ) : (
             <div className="overflow-x-auto border border-slate-800 print:border-slate-300 rounded-xl">
@@ -921,14 +702,14 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 font-bold text-white print:text-slate-900">
               <ShieldCheck className="w-4 h-4 text-emerald-400 print:text-emerald-700" />
-              Document produit par le moteur de calcul TrueTCO
+              Rapport généré à partir des résultats du moteur TrueTCO
             </div>
             <div>
               Cadre méthodologique : démarche de coût du cycle de vie inspirée d’ISO 15686-5 et comptabilité carbone de
               type GHG Protocol (scopes 1 à 3). Aucune certification de conformité à ces référentiels n’est délivrée.
             </div>
             <div className="font-mono text-[10px] select-all">
-              Identifiant technique du rapport : {reportInternalId} — FNV-1a, sans valeur probante
+              Identifiant d'exécution serveur : {decisionRun.runId}
             </div>
           </div>
 
@@ -937,13 +718,13 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               Instance actuelle : {serverStatus === 'locked' ? 'dossier verrouillé' : 'dossier non verrouillé'}
             </div>
             <div>
-              Approbations : {approvalsLoading
+              Transitions journalisées : {approvalsLoading
                 ? 'en cours de lecture depuis le journal du serveur…'
                 : approvalsError
                   ? 'indisponibles (échec de lecture du journal)'
                   : approvals.length > 0
                     ? `${approvals.length} transition(s) de statut enregistrée(s) côté serveur.`
-                    : 'aucune approbation enregistrée à ce jour.'}
+                    : 'aucune transition de statut renvoyée par le journal.'}
             </div>
             <div>
               Ce rapport n’est ni signé électroniquement, ni horodaté par un prestataire de confiance : il doit l’être
@@ -956,3 +737,22 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
     </div>
   );
 };
+
+const ResultRow: React.FC<{ label: string; values: Array<number | null>; emphasized?: boolean }> = ({ label, values, emphasized = false }) => (
+  <tr className={emphasized ? 'bg-slate-900/80 font-semibold' : 'hover:bg-slate-900/30'}>
+    <td className={`border-r border-slate-800 px-3 py-2 print:border-slate-300 ${emphasized ? 'text-white print:text-slate-900' : 'text-slate-400 print:text-slate-700'}`}>{label}</td>
+    {values.map((value, index) => (
+      <td key={`${label}-${index}`} className={`px-3 py-2 text-right font-mono ${emphasized ? 'font-bold text-white print:text-slate-900' : 'text-slate-300 print:text-slate-700'}`}>
+        {value === null || !Number.isFinite(value) ? 'Non disponible dans cette exécution' : `${value.toLocaleString('fr-FR')} €`}
+      </td>
+    ))}
+  </tr>
+);
+
+const ReportMetricCard: React.FC<{ label: string; value: string; hint: string }> = ({ label, value, hint }) => (
+  <div className="rounded-lg border border-slate-800 bg-slate-900 p-3 print:border-slate-300 print:bg-white">
+    <div className="text-[11px] text-slate-400 print:text-slate-600">{label}</div>
+    <div className="mt-1 break-words font-mono text-base font-bold text-white print:text-slate-950">{value}</div>
+    <div className="mt-1 text-[10px] text-slate-500 print:text-slate-600">{hint}</div>
+  </div>
+);

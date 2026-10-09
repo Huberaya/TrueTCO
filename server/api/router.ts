@@ -16,6 +16,7 @@
 import express, { NextFunction, Request, Response, Router } from 'express';
 import multer from 'multer';
 import { Db } from '../db/types';
+import { MAX_COST_OCCURRENCES_PER_YEAR } from '../../src/types/domain';
 import { AuthContext, ROLE_PERMISSIONS, USER_ROLES, UserRole, canManageTeam } from '../auth/types';
 import {
   ctxOf,
@@ -56,7 +57,7 @@ import { COST_CATEGORIES, createOffer, deleteOffer, getOffer, listOffers, normal
 import { listAuditLogs } from '../repositories/auditLogs';
 import { verifyAuditChain } from '../audit';
 import { metricsSnapshot } from '../observability';
-import { checkRunFreshness, listDecisionRuns, replayDecisionRun, runDecision } from '../services/decision';
+import { checkRunFreshness, getLatestDecisionRun, listDecisionRuns, replayDecisionRun, runDecision } from '../services/decision';
 import {
   getRiskSimulation,
   listRiskSimulations,
@@ -604,6 +605,20 @@ export function createApiRouter(deps: ApiDependencies): Router {
               'Les libellés usuels sont acceptés ; toute autre valeur doit être rapprochée explicitement.'
           );
         }
+        const occurrencesPerYear = item.occurrencesPerYear;
+        if (
+          occurrencesPerYear !== undefined &&
+          occurrencesPerYear !== null &&
+          (typeof occurrencesPerYear !== 'number' ||
+            !Number.isInteger(occurrencesPerYear) ||
+            occurrencesPerYear < 1 ||
+            occurrencesPerYear > MAX_COST_OCCURRENCES_PER_YEAR)
+        ) {
+          throw badRequest(
+            'INVALID_OCCURRENCES_PER_YEAR',
+            `Le champ « costItems[${index}].occurrencesPerYear » doit être un entier strict compris entre 1 et ${MAX_COST_OCCURRENCES_PER_YEAR}. Aucune décimale n'est arrondie.`
+          );
+        }
         return {
           category: normalized.category,
           label,
@@ -619,6 +634,7 @@ export function createApiRouter(deps: ApiDependencies): Router {
           isRecurringYearly: Boolean(item.isRecurringYearly),
           yearlyInflationType: item.yearlyInflationType ?? null,
           yearOccurrences: Array.isArray(item.yearOccurrences) ? item.yearOccurrences : null,
+          occurrencesPerYear: occurrencesPerYear ?? null,
           declaredCategory: declared,
           calculationFormula: optionalString(item.calculationFormula, `costItems[${index}].calculationFormula`, 1000),
           explanationNotes: optionalString(item.explanationNotes, `costItems[${index}].explanationNotes`, 2000),
@@ -681,6 +697,20 @@ export function createApiRouter(deps: ApiDependencies): Router {
         trigger: 'manuel',
       });
       res.status(201).json(result);
+    })
+  );
+
+  router.get(
+    '/projects/:projectId/decision-runs/latest',
+    requireSession({ db }),
+    requirePermission('decision:read'),
+    asyncHandler(async (req, res) => {
+      const latest = await getLatestDecisionRun(
+        db,
+        ctxOf(req),
+        requireUuid(req.params.projectId, 'projectId')
+      );
+      res.json(latest);
     })
   );
 

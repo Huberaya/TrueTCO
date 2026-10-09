@@ -7,6 +7,11 @@ coverage/
 .env*
 !.env.example
 
+# Rapports Playwright générés par les E2E
+playwright-report/
+test-results/
+playwright/.cache/
+
 # Environnement local de recette (contient des identifiants locaux)
 .env.local
 .env

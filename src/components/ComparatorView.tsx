@@ -3,12 +3,10 @@ import {
   Project,
   SupplierOffer,
   TCOCalculationResult,
-  CostBreakdownItem,
-  Supplier,
   AuditLogEntry,
-  ExternalityReferenceBenchmark,
 } from '../types/domain';
-import { TCOEngine } from '../engine/tcoEngine';
+import { DecisionRunResult } from '../services/serverData';
+import { ServerCalculationEmptyState } from './ServerCalculationEmptyState';
 import {
   HelpCircle,
   TrendingDown,
@@ -23,84 +21,126 @@ import {
   Network,
   Sparkles,
 } from 'lucide-react';
-import { WhyThisAmountModal } from './WhyThisAmountModal';
+import { CalculationTraceRow, WhyThisAmountModal } from './WhyThisAmountModal';
 import { NavView } from './Sidebar';
 import { ExcelExportService } from '../services/excelExportService';
 
 interface ComparatorViewProps {
   project: Project;
   offers: SupplierOffer[];
-  suppliers?: Supplier[];
+  decisionRun: DecisionRunResult | null;
   auditLogs?: AuditLogEntry[];
-  benchmarks?: ExternalityReferenceBenchmark[];
   onOpenImportModal: () => void;
-  onUpdateProject: (updated: Project) => void;
   onNavigate?: (view: NavView) => void;
 }
 
 export const ComparatorView: React.FC<ComparatorViewProps> = ({
   project,
   offers,
-  suppliers = [],
+  decisionRun,
   auditLogs = [],
-  benchmarks = [],
   onOpenImportModal,
-  onUpdateProject,
   onNavigate,
 }) => {
-  // Modal state for explainability
+  const [exportError, setExportError] = useState<string | null>(null);
   const [modalData, setModalData] = useState<{
     isOpen: boolean;
     title: string;
     categoryLabel: string;
-    auditedValue?: any;
-    calculatedFormula?: string;
-    calculationExplanation?: string;
-    relatedAssumptions?: { label: string; value: string }[];
+    rows: CalculationTraceRow[];
+    methodology: Record<string, string>;
   }>({
     isOpen: false,
     title: '',
     categoryLabel: '',
+    rows: [],
+    methodology: {},
   });
 
-  // Calculate results for all offers
-  const results: (TCOCalculationResult & { offer: SupplierOffer })[] = offers.map((offer) => {
-    const res = TCOEngine.calculateOfferTCO(project, offer);
-    return { ...res, offer };
-  });
+  // Les résultats sont ordonnés par le classement déjà produit par l'API ;
+  // cette page ne recalcule ni ne retrie les offres.
+  const results: (TCOCalculationResult & { offer: SupplierOffer })[] = decisionRun
+    ? decisionRun.ranking.flatMap(({ offerId }) => {
+        const offer = offers.find((item) => item.id === offerId);
+        const calculation = decisionRun.calculationsByOfferId[offerId];
+        return offer && calculation ? [{ ...calculation, offer }] : [];
+      })
+    : [];
+  const rankedLeader = decisionRun?.ranking[0]
+    ? results.find((result) => result.offerId === decisionRun.ranking[0].offerId)
+    : undefined;
+  const recommendation = decisionRun?.recommendation;
 
-  // Sort by comprehensive TCO ascending
-  const sortedByTCO = [...results].sort(
-    (a, b) => a.totalComprehensiveTCO - b.totalComprehensiveTCO
-  );
-  const cheapestTCO = sortedByTCO[0];
-
-  // Also find cheapest initial acquisition
-  const sortedByInitial = [...results].sort(
-    (a, b) => a.apparentDirectCost - b.apparentDirectCost
-  );
-  const cheapestInitial = sortedByInitial[0];
+  type NumericResultField =
+    | 'apparentDirectCost'
+    | 'installationTotal'
+    | 'energyConsumablesTotal'
+    | 'maintenanceRepairsTotal'
+    | 'replacementDefectsTotal'
+    | 'adminComplianceTotal'
+    | 'taxesTotal'
+    | 'salvageValueTotal'
+    | 'economicTCONominal'
+    | 'riskExpositionTotal'
+    | 'monetizedCarbonTotal'
+    | 'lifecycleCostLCC';
 
   const handleExplain = (
     title: string,
     categoryLabel: string,
-    auditedValue?: any,
-    formula?: string,
-    explanation?: string,
-    assumptions?: { label: string; value: string }[]
+    resultField: NumericResultField,
+    traceCategories?: string[],
+    useApparentPriceSource = false
   ) => {
+    const rows = results.map((result) => ({
+      supplierName: result.supplierName,
+      offerReference: result.offer.offerReference,
+      amount: typeof result[resultField] === 'number' && Number.isFinite(result[resultField])
+        ? result[resultField]
+        : null,
+      source:
+        useApparentPriceSource && result.offer.apparentUnitPrice
+          ? {
+              value: result.offer.apparentUnitPrice.value,
+              unit: result.offer.apparentUnitPrice.unit,
+              sourceType: result.offer.apparentUnitPrice.sourceType,
+              sourceName: result.offer.apparentUnitPrice.sourceName,
+              sourceUrl: result.offer.apparentUnitPrice.sourceUrl,
+              confidenceLevel: result.offer.apparentUnitPrice.confidenceLevel,
+              lastUpdated: result.offer.apparentUnitPrice.lastUpdated,
+            }
+          : undefined,
+      lines: (result.costLineTrace ?? []).filter(
+        (line) => !traceCategories || traceCategories.includes(line.category)
+      ),
+    }));
     setModalData({
       isOpen: true,
       title,
       categoryLabel,
-      auditedValue,
-      calculatedFormula: formula,
-      calculationExplanation: explanation,
-      relatedAssumptions: assumptions,
+      rows,
+      methodology: results[0]?.methodology ?? {},
     });
   };
 
-  if (offers.length === 0 || !cheapestTCO || !cheapestInitial) {
+  const handleExportExcel = () => {
+    if (!decisionRun) {
+      setExportError('Export bloqué : aucun résultat serveur n’est fourni.');
+      return;
+    }
+    try {
+      ExcelExportService.exportFinancialWorkbook(project, offers, decisionRun, auditLogs);
+      setExportError(null);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Le classeur n’a pas pu être exporté.');
+    }
+  };
+
+  if (offers.length > 0 && !decisionRun) {
+    return <ServerCalculationEmptyState title="Aucun comparatif calculé côté serveur" />;
+  }
+
+  if (offers.length === 0) {
     return (
       <div className="p-12 bg-slate-900 border border-slate-800 rounded-2xl text-center space-y-4">
         <div className="w-12 h-12 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 mx-auto">
@@ -122,6 +162,10 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
       </div>
     );
   }
+  if (!decisionRun) return <ServerCalculationEmptyState title="Aucun comparatif calculé côté serveur" />;
+  if (!rankedLeader) {
+    return <ServerCalculationEmptyState title="Le dernier calcul ne contient pas les offres affichées" />;
+  }
 
   return (
     <div className="space-y-6">
@@ -141,7 +185,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => ExcelExportService.exportFinancialWorkbook(project, offers, suppliers, auditLogs, benchmarks)}
+            onClick={handleExportExcel}
             className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
             title="Exporter le modèle financier complet en classeur Excel multi-onglets (.xlsx)"
           >
@@ -188,43 +232,32 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
         </div>
       </div>
 
-      {/* Strategic Takeaway Banner */}
-      {cheapestInitial && cheapestTCO && (
-        <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-4">
+      {exportError && <div className="rounded-lg border border-rose-700 bg-rose-950/40 p-3 text-xs text-rose-200" role="alert">{exportError}</div>}
+
+      {/* Synthèse fidèle au classement et au statut renvoyés par l'API */}
+      {recommendation && (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-slate-800 bg-slate-900 p-4">
           <div className="space-y-1">
-            <div className="text-xs font-semibold text-slate-400 flex items-center gap-2">
-              <span>Constat Financier Clé</span>
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-400">
+              <span>Résultat de l'exécution serveur</span>
               <span className="text-slate-600">·</span>
-              <span className="text-slate-300">Périmètre : {project.plannedVolume} {project.unitName} sur {project.horizonYears} ans</span>
+              <span className="text-slate-300">{project.plannedVolume} {project.unitName} · {project.horizonYears} ans</span>
             </div>
             <div className="text-sm text-slate-200">
-              L'offre faciale la moins chère est{' '}
-              <strong className="text-white">{cheapestInitial.supplierName}</strong> ({cheapestInitial.apparentDirectCost.toLocaleString('fr-FR')} €).{' '}
-              {cheapestInitial.offerId !== cheapestTCO.offerId ? (
-                <>
-                  Cependant, sur l'horizon de {project.horizonYears} ans,{' '}
-                  <strong className="text-emerald-400">{cheapestTCO.supplierName}</strong> présente le coût total réel le plus avantageux ({cheapestTCO.totalComprehensiveTCO.toLocaleString('fr-FR')} €), soit{' '}
-                  <span className="text-emerald-400 font-semibold font-mono">
-                    {(cheapestInitial.totalComprehensiveTCO - cheapestTCO.totalComprehensiveTCO).toLocaleString('fr-FR')} € d'économies nettes
-                  </span>.
-                </>
+              {recommendation.status === 'indetermine' ? (
+                <>Rang 1 du classement VAN : <strong className="text-white">{rankedLeader.supplierName}</strong>. Aucune recommandation ferme n'est émise.</>
               ) : (
-                <>
-                  Elle s'avère également la plus avantageuse sur le coût global TCO ({cheapestTCO.totalComprehensiveTCO.toLocaleString('fr-FR')} €).
-                </>
+                <>Proposition du moteur ({recommendation.status === 'conditionnel' ? 'conditionnelle' : 'à approuver'}) : <strong className="text-white">{recommendation.supplierName ?? rankedLeader.supplierName}</strong>.</>
               )}
             </div>
+            <p className="max-w-3xl text-xs text-slate-400">{recommendation.reason}</p>
+            {recommendation.economicAdvantage && (
+              <p className="text-xs text-slate-300">Écart de VAN face à la deuxième offre, tel que renvoyé par le serveur : <span className="font-mono">{recommendation.economicAdvantage.vsSecondBestNpv.toLocaleString('fr-FR')} €</span>.</p>
+            )}
           </div>
-
           <div className="flex items-center gap-3">
-            <div className="text-right">
-              <div className="text-[11px] text-slate-400">Taux d'actualisation WACC</div>
-              <div className="font-mono text-xs font-semibold text-white">{(project.discountRate * 100).toFixed(1)}%</div>
-            </div>
-            <div className="text-right pl-3 border-l border-slate-800">
-              <div className="text-[11px] text-slate-400">Prix Carbone Tutélaire</div>
-              <div className="font-mono text-xs font-semibold text-white">{project.carbonPricePerTonne} €/t</div>
-            </div>
+            <div className="text-right"><div className="text-[11px] text-slate-400">Taux d'actualisation du dossier</div><div className="font-mono text-xs font-semibold text-white">{(project.discountRate * 100).toFixed(1)}%</div></div>
+            <div className="border-l border-slate-800 pl-3 text-right"><div className="text-[11px] text-slate-400">Prix carbone saisi</div><div className="font-mono text-xs font-semibold text-white">{project.carbonPricePerTonne} €/t</div></div>
           </div>
         </div>
       )}
@@ -264,21 +297,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     <span>1. Prix Facial Devis (Acquisition CAPEX)</span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Prix facial du devis',
-                          'Acquisition directe',
-                          {
-                            value: 'Prix unitaire × Volume prévu',
-                            unit: '',
-                            sourceType: 'verifiee',
-                            sourceName: 'Devis négocié du fournisseur',
-                            confidenceLevel: 98,
-                            lastUpdated: '2026-03-10',
-                            updatedBy: 'Acheteur Lead',
-                          },
-                          'Prix_Facial = Prix_Unitaire_Devis × Quantité',
-                          'Montant brut figurant sur le devis standard avant intégration des coûts d\'exploitation, de maintenance et d\'externalités.'
-                        )
+                        handleExplain('Prix facial du devis', 'Acquisition directe', 'apparentDirectCost', undefined, true)
                       }
                       className="text-slate-500 hover:text-slate-300 ml-2"
                       title="Pourquoi ce montant ?"
@@ -287,24 +306,16 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     </button>
                   </div>
                 </td>
-                {results.map((res) => {
-                  const isLowest = res.apparentDirectCost === cheapestInitial.apparentDirectCost;
-                  return (
-                    <td key={res.offerId} className="py-2.5 px-4 border-l border-slate-800/80 font-mono tabular-nums">
-                      <div className="font-semibold text-white">
-                        {res.apparentDirectCost.toLocaleString('fr-FR')} €
-                      </div>
-                      <div className="text-[11px] text-slate-400">
-                        {(res.offer?.apparentUnitPrice?.value ?? (res.offer?.apparentTotal ? res.offer.apparentTotal / (res.offer.quantity || 1) : 0)).toLocaleString('fr-FR')} € / unité
-                        {isLowest && (
-                          <span className="text-emerald-400 ml-1.5 font-sans font-medium text-[10px]">
-                            (Moins cher facial)
-                          </span>
-                        )}
-                      </div>
-                    </td>
-                  );
-                })}
+                {results.map((res) => (
+                  <td key={res.offerId} className="py-2.5 px-4 border-l border-slate-800/80 font-mono tabular-nums">
+                    <div className="font-semibold text-white">{res.apparentDirectCost.toLocaleString('fr-FR')} €</div>
+                    <div className="text-[11px] text-slate-400">
+                      {typeof res.offer.apparentUnitPrice?.value === 'number'
+                        ? `${res.offer.apparentUnitPrice.value.toLocaleString('fr-FR')} € / unité`
+                        : 'Prix unitaire non renseigné'}
+                    </div>
+                  </td>
+                ))}
               </tr>
 
               {/* Row 2: Installation and Commissioning */}
@@ -314,21 +325,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     <span className="pl-3 border-l-2 border-slate-700">Installation & Mise en service</span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Installation, raccordement & mise en service',
-                          'CAPEX Complémentaire',
-                          {
-                            value: 'Bornes IRVE / Raccordement réseau / Masterisation',
-                            unit: '',
-                            sourceType: 'verifiee',
-                            sourceName: 'Devis installateur qualifié',
-                            confidenceLevel: 95,
-                            lastUpdated: '2026-03-10',
-                            updatedBy: 'Acheteur Lead',
-                          },
-                          'Coût_Installation = Matériel_Infrastructure + Raccordement - Aides_Subventions',
-                          'Prestations indispensables pour rendre le matériel opérationnel sur site.'
-                        )
+                        handleExplain('Installation, raccordement & mise en service', 'CAPEX Complémentaire', 'installationTotal', ['installation_mise_en_service'])
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -352,25 +349,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     </span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Consommation énergétique cumulée',
-                          'OPEX Énergie',
-                          {
-                            value: 'Flux actualisé avec inflation annuelle',
-                            unit: '€',
-                            sourceType: 'estimee',
-                            sourceName: 'Consommation télémétrique & contrat d\'énergie',
-                            confidenceLevel: 88,
-                            lastUpdated: '2026-03-12',
-                            updatedBy: 'Contrôleur DAF',
-                          },
-                          'Total_Énergie = Σ(t=1..H) [ Conso_Annuelle × (1 + Inflation_Énergie)^(t-1) ]',
-                          `Prend en compte ${project.energyInflationRate * 100}% d'inflation annuelle prévisionnelle sur les tarifs énergétiques.`,
-                          [
-                            { label: 'Inflation énergie retenue', value: `${project.energyInflationRate * 100}% / an` },
-                            { label: 'Horizon temporel', value: `${project.horizonYears} ans` },
-                          ]
-                        )
+                        handleExplain('Consommation énergétique cumulée', 'OPEX Énergie', 'energyConsumablesTotal', ['energie_consommables'])
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -394,21 +373,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     </span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Entretien préventif et pièces d\'usure',
-                          'OPEX Maintenance',
-                          {
-                            value: 'Forfait contractuel pièces & main d\'œuvre',
-                            unit: '€',
-                            sourceType: 'utilisateur',
-                            sourceName: 'Barème constructeur saisi — référence non fournie',
-                            confidenceLevel: 60,
-                            lastUpdated: '2026-03-10',
-                            updatedBy: 'Acheteur Lead',
-                          },
-                          'Maint_Total = Σ(t=1..H) [ Forfait_Annuel × (1 + Inflation)^(t-1) × Facteur_Usure(t) ]',
-                          'Intègre les révisions obligatoires, consommables d\'usure et coefficient de vieillissement matériel.'
-                        )
+                        handleExplain('Entretien préventif et pièces d\'usure', 'OPEX Maintenance', 'maintenanceRepairsTotal', ['maintenance_reparations'])
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -432,21 +397,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     </span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Pannes curatives et défaillances hors garantie',
-                          'Risque Opérationnel Pièces',
-                          {
-                            value: 'Historique de pannes × coût moyen incident',
-                            unit: '€',
-                            sourceType: 'estimee',
-                            sourceName: 'Historique flotte interne & retours constructeur',
-                            confidenceLevel: 80,
-                            lastUpdated: '2026-03-12',
-                            updatedBy: 'Contrôleur DAF',
-                          },
-                          'Curatif = Σ [ Taux_Panne_Historique × Coût_Moyen_Intervention ]',
-                          'Prend en compte la durée de la garantie contractuelle (2 ans vs 5 ans).'
-                        )
+                        handleExplain('Pannes curatives et défaillances hors garantie', 'Risque Opérationnel Pièces', 'replacementDefectsTotal', ['remplacement_pannes'])
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -469,25 +420,11 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                 <td className="py-2.5 px-4 text-slate-300">
                   <div className="flex items-center justify-between">
                     <span className="pl-3 border-l-2 border-rose-500">
-                      Taxes sur émissions & conformité réglementaire
+                      Administration & conformité
                     </span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Fiscalité écologique & Malus annuel',
-                          'Conformité Fiscale',
-                          {
-                            value: 'Barème officiel Loi de Finances',
-                            unit: '€',
-                            sourceType: 'source_externe',
-                            sourceName: 'Code Général des Impôts 2026',
-                            confidenceLevel: 98,
-                            lastUpdated: '2026-03-01',
-                            updatedBy: 'Contrôleur DAF',
-                          },
-                          'Fiscalité = Taxe_Annuelle_CO2 + Malus_Masse',
-                          'Exonération totale pour les véhicules 100% électriques.'
-                        )
+                        handleExplain('Coûts administratifs et conformité', 'Administration', 'adminComplianceTotal', ['couts_administratifs_conformite'])
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -502,6 +439,29 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                 ))}
               </tr>
 
+              {/* Taxes sont exposées séparément par le résultat serveur. */}
+              <tr className="hover:bg-slate-900/40 transition-colors">
+                <td className="py-2.5 px-4 text-slate-300">
+                  <div className="flex items-center justify-between">
+                    <span className="pl-3 border-l-2 border-rose-500">Fiscalité & taxes</span>
+                    <button
+                      onClick={() => handleExplain('Taxes et fiscalité', 'Poste fiscal du résultat serveur', 'taxesTotal', ['fiscalite_taxes'])}
+                      className="text-slate-500 hover:text-slate-300"
+                      title="Détail des taxes exposées dans le résultat serveur"
+                    >
+                      <HelpCircle className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </td>
+                {results.map((res) => (
+                  <td key={res.offerId} className="border-l border-slate-800/80 px-4 py-2.5 font-mono tabular-nums text-slate-200">
+                    {typeof res.taxesTotal === 'number' && Number.isFinite(res.taxesTotal)
+                      ? `${res.taxesTotal.toLocaleString('fr-FR')} €`
+                      : 'Non exposé par cette exécution'}
+                  </td>
+                ))}
+              </tr>
+
               {/* Row 7: Salvage Value (Credit) */}
               <tr className="hover:bg-slate-900/40 transition-colors">
                 <td className="py-2.5 px-4 text-slate-300">
@@ -511,21 +471,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     </span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Valeur résiduelle nette de cession',
-                          'Actif de Récupération',
-                          {
-                            value: 'Estimation côte marché secondaire ou engagement rachat',
-                            unit: '€',
-                            sourceType: 'estimee',
-                            sourceName: 'Observatoire du Véhicule Professionnel & constructeur',
-                            confidenceLevel: 80,
-                            lastUpdated: '2026-03-15',
-                            updatedBy: 'Contrôleur DAF',
-                          },
-                          'TCO_Économique = Coûts_Bruts - Valeur_Résiduelle_Cession',
-                          'La valeur résiduelle vient réduire le coût global de l\'investissement en fin d\'horizon.'
-                        )
+                        handleExplain('Valeur résiduelle nette de cession', 'Actif de Récupération', 'salvageValueTotal', ['valeur_residuelle'])
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -547,21 +493,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     <span>Sous-total TCO Économique Standard</span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'TCO Économique Nominal (hors risques & carbone)',
-                          'Moteur TCO Modulaire',
-                          {
-                            value: 'Somme arithmétique des flux CAPEX et OPEX',
-                            unit: '€',
-                            sourceType: 'estimation',
-                            sourceName: 'Résultat du moteur TrueTCO (calcul reproductible, non certifié)',
-                            confidenceLevel: 85,
-                            lastUpdated: '2026-03-20',
-                            updatedBy: 'Moteur TCO',
-                          },
-                          'TCO_eco = Acquisition + Logistique + Installation + Énergie + Maintenance + Pannes + Taxes + Fin_de_vie - Valeur_résiduelle',
-                          'Coût total économique conventionnel avant monétisation des externalités et risques de non-conformité.'
-                        )
+                        handleExplain('TCO Économique Nominal (hors risques & carbone)', 'Moteur TCO Modulaire', 'economicTCONominal')
                       }
                       className="text-slate-400 hover:text-white"
                     >
@@ -585,21 +517,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     </span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Exposition aux risques de non-conformité',
-                          'Gestion des Risques B2B',
-                          {
-                            value: 'Probabilité × Impact financier moyen',
-                            unit: '€',
-                            sourceType: 'estimee',
-                            sourceName: 'Matrice des risques juridiques et opérationnels',
-                            confidenceLevel: 80,
-                            lastUpdated: '2026-03-05',
-                            updatedBy: 'Contrôleur DAF',
-                          },
-                          'Exposition_Financière = Σ [ Probabilité_i × Impact_Financier_i ]',
-                          'Valorise l\'exposition financière aux restrictions de circulation ZFE, pénalités de retard ou risques batterie.'
-                        )
+                        handleExplain('Exposition aux risques de non-conformité', 'Gestion des Risques B2B', 'riskExpositionTotal', [])
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -623,21 +541,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     </span>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Externalité carbone monétisée',
-                          'Comptabilité Extra-Financière',
-                          {
-                            value: `${project.carbonPricePerTonne} € par tonne CO2e`,
-                            unit: '€/tCO2e',
-                            sourceType: 'source_externe',
-                            sourceName: 'Valeur tutélaire Quinet & ADEME Base Carbone',
-                            confidenceLevel: 95,
-                            lastUpdated: '2026-01-10',
-                            updatedBy: 'Resp. RSE',
-                          },
-                          'Coût_Carbone = Émissions_Totales_(tCO2e) × Prix_Tutélaire_(€/t)',
-                          `Monétise le coût social et réglementaire du carbone selon la trajectoire Quinet (${project.carbonPricePerTonne} €/t).`
-                        )
+                        handleExplain('Externalité carbone monétisée', 'Comptabilité Extra-Financière', 'monetizedCarbonTotal', [])
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -668,7 +572,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                   </div>
                 </td>
                 {results.map((res) => {
-                  const isLowestTCO = res.offerId === cheapestTCO.offerId;
+                  const isLowestTCO = res.offerId === rankedLeader.offerId;
                   return (
                     <td
                       key={res.offerId}
@@ -685,7 +589,11 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                       {isLowestTCO && (
                         <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-400 bg-emerald-950/80 border border-emerald-700/60 px-2 py-0.5 rounded">
                           <CheckCircle className="w-3 h-3" />
-                          Recommandation Économique
+                          {recommendation?.status === 'indetermine'
+                            ? 'Rang 1 VAN — sans recommandation ferme'
+                            : recommendation?.status === 'conditionnel'
+                              ? 'Rang 1 VAN — résultat conditionnel'
+                              : 'Rang 1 VAN — proposition à approuver'}
                         </div>
                       )}
                     </td>
@@ -705,21 +613,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     </div>
                     <button
                       onClick={() =>
-                        handleExplain(
-                          'Lifecycle Costing (LCC) Actualisé',
-                          'Actualisation Financière WACC',
-                          {
-                            value: `WACC = ${(project.discountRate * 100).toFixed(1)}%`,
-                            unit: '%',
-                            sourceType: 'utilisateur',
-                            sourceName: 'Taux d’actualisation du dossier, saisi par la direction financière',
-                            confidenceLevel: 70,
-                            lastUpdated: '2026-02-01',
-                            updatedBy: 'Contrôleur DAF',
-                          },
-                          'LCC = CAPEX_0 + Σ(t=1..H) [ CashFlow_t / (1 + r)^t ]',
-                          'Calcule la valeur actuelle nette de l\'ensemble des sorties de fonds réelles au fil des années.'
-                        )
+                        handleExplain('Lifecycle Costing (LCC) Actualisé', 'Actualisation Financière WACC', 'lifecycleCostLCC')
                       }
                       className="text-slate-500 hover:text-slate-300"
                     >
@@ -773,17 +667,22 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
       {/* Visual Composition Stacked Bars */}
       <div className="p-5 bg-slate-900 border border-slate-800 rounded-xl space-y-4">
         <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-          Décomposition Graphique du TCO Réel
+          Ventilation graphique de composantes du TCO calculé
         </h3>
+        <p className="text-[11px] text-slate-500">Parts rapportées au TCO nominal serveur ; ces segments ne sont pas exhaustifs. Une ligne fiscale absente d'une ancienne exécution reste affichée comme indisponible dans le tableau.</p>
         <div className="space-y-3">
           {results.map((res) => {
             const total = res.totalComprehensiveTCO;
-            const acqPct = (res.apparentDirectCost / total) * 100;
-            const nrjPct = (res.energyConsumablesTotal / total) * 100;
-            const maintPct = ((res.maintenanceRepairsTotal + res.replacementDefectsTotal) / total) * 100;
-            const taxPct = (res.adminComplianceTotal / total) * 100;
-            const carbPct = (res.monetizedCarbonTotal / total) * 100;
-            const riskPct = (res.riskExpositionTotal / total) * 100;
+            const share = (value: number) => total > 0 ? Math.max(0, (value / total) * 100) : 0;
+            const acqPct = share(res.apparentDirectCost);
+            const nrjPct = share(res.energyConsumablesTotal);
+            const maintPct = share(res.maintenanceRepairsTotal + res.replacementDefectsTotal);
+            const adminPct = share(res.adminComplianceTotal);
+            const taxPct = typeof res.taxesTotal === 'number' && Number.isFinite(res.taxesTotal)
+              ? share(res.taxesTotal)
+              : null;
+            const carbPct = share(res.monetizedCarbonTotal);
+            const riskPct = share(res.riskExpositionTotal);
 
             return (
               <div key={res.offerId} className="space-y-1">
@@ -810,10 +709,17 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                     title={`Maintenance: ${(res.maintenanceRepairsTotal + res.replacementDefectsTotal).toLocaleString()} € (${maintPct.toFixed(1)}%)`}
                   />
                   <div
-                    style={{ width: `${taxPct}%` }}
+                    style={{ width: `${adminPct}%` }}
                     className="bg-rose-500 hover:opacity-90 transition-opacity"
-                    title={`Taxes: ${res.adminComplianceTotal.toLocaleString()} € (${taxPct.toFixed(1)}%)`}
+                    title={`Administration : ${res.adminComplianceTotal.toLocaleString()} € (${adminPct.toFixed(1)}%)`}
                   />
+                  {taxPct !== null && (
+                    <div
+                      style={{ width: `${taxPct}%` }}
+                      className="bg-orange-500 hover:opacity-90 transition-opacity"
+                      title={`Fiscalité : ${res.taxesTotal.toLocaleString()} € (${taxPct.toFixed(1)}%)`}
+                    />
+                  )}
                   <div
                     style={{ width: `${riskPct}%` }}
                     className="bg-amber-500 hover:opacity-90 transition-opacity"
@@ -842,7 +748,10 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
             <span className="w-2.5 h-2.5 rounded-sm bg-indigo-500" /> Maintenance & Pièces
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm bg-rose-500" /> Taxes & Réglementation
+            <span className="w-2.5 h-2.5 rounded-sm bg-rose-500" /> Administration
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm bg-orange-500" /> Fiscalité
           </span>
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm bg-amber-500" /> Risques Opérationnels
@@ -859,10 +768,11 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
         onClose={() => setModalData((prev) => ({ ...prev, isOpen: false }))}
         title={modalData.title}
         categoryLabel={modalData.categoryLabel}
-        auditedValue={modalData.auditedValue}
-        calculatedFormula={modalData.calculatedFormula}
-        calculationExplanation={modalData.calculationExplanation}
-        relatedAssumptions={modalData.relatedAssumptions}
+        runId={decisionRun.runId}
+        engineVersion={decisionRun.engineVersion}
+        methodologyVersion={decisionRun.methodologyVersion}
+        rows={modalData.rows}
+        methodology={modalData.methodology}
       />
     </div>
   );

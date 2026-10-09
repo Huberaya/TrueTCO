@@ -103,8 +103,8 @@ beforeAll(async () => {
     isProd: false,
     allowDemoAuth: false,
     allowedOrigins: ['http://localhost:5173'],
-    engineVersion: '2.0.0',
-    methodologyVersion: '2026.1',
+    engineVersion: '2.1.0',
+    methodologyVersion: '2026.2',
   });
 });
 
@@ -118,7 +118,7 @@ describe('API — santé et métadonnées', () => {
     expect(res.body.status).toBe('ok');
     expect(res.body.database.connected).toBe(true);
     expect(res.body.database.appRoleAssumed).toBe(true);
-    expect(res.body.versions.engine).toBe('2.0.0');
+    expect(res.body.versions.engine).toBe('2.1.0');
   });
 
   it('T-API-02 : une route inconnue sous /api renvoie un 404 JSON (jamais le HTML du front)', async () => {

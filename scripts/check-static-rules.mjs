@@ -21,6 +21,7 @@
  *   R7  évaluation dynamique (eval / new Function) → exécution de code arbitraire
  *   R8  dépendance du serveur envers les composants d'interface → couches inversées
  *   R9  certification ou conformité revendiquée dans l'interface → fausse preuve
+ *   R10 calcul du TCO/décision dans le navigateur → résultat non persisté/non rejouable
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -204,8 +205,28 @@ for (const file of allSource) {
   });
 }
 
+/** R10 — les composants/services frontend ne calculent pas le TCO ou les décisions. */
+const BROWSER_CALCULATION_PATTERNS = [
+  /from\s+['"][^'"]*\/engine\/tcoEngine['"]|require\(\s*['"][^'"]*\/engine\/tcoEngine['"]\s*\)/,
+  /\bTCOEngine\b/,
+  /\brunAllTCOEngineTests\b/,
+  /\bcalculateOfferTCO\b/,
+  /\bcalculateBreakEven\b/,
+  /\bcalculateSensitivity\b/,
+  /\bcalculateScenarios\b/,
+];
+for (const file of allSource) {
+  const relative = path.relative(ROOT, file).split(path.sep).join('/');
+  if (!(relative === 'src/App.tsx' || relative.startsWith('src/components/') || relative.startsWith('src/services/'))) continue;
+  const content = await fs.readFile(file, 'utf8');
+  content.split('\n').forEach((line, index) => {
+    if (BROWSER_CALCULATION_PATTERNS.some((pattern) => pattern.test(line))) {
+      report('R10', file, index + 1, 'Calcul moteur dans le frontend : afficher le résultat serveur persisté au lieu de recalculer localement.');
+    }
+  });
+}
 if (violations.length === 0) {
-  console.log(`Contrôles statiques (9 règles) : aucun écart sur ${allSource.length + testFiles.length} fichiers analysés.`);
+  console.log(`Contrôles statiques (10 règles) : aucun écart sur ${allSource.length + testFiles.length} fichiers analysés.`);
   process.exit(0);
 }
 

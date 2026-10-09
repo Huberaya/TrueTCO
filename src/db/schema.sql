@@ -1,7 +1,7 @@
 -- =============================================================================
 -- TRUETCO — SCHÉMA RELATIONNEL POSTGRESQL (DDL DE RÉFÉRENCE)
 -- =============================================================================
--- VERSION : 2.0.0
+-- VERSION : 2.1.0
 --
 -- IMPORTANT — Cette version corrige une divergences critique : le serveur
 -- interrogeait des tables et colonnes (user_sessions, organizations.slug,
@@ -271,6 +271,7 @@ CREATE TABLE IF NOT EXISTS cost_items (
     is_recurring_yearly BOOLEAN NOT NULL DEFAULT FALSE,
     yearly_inflation_type VARCHAR(20),
     year_occurrences INTEGER[],
+    occurrences_per_year INTEGER CHECK (occurrences_per_year IS NULL OR occurrences_per_year BETWEEN 1 AND 366),
     calculation_formula TEXT,
     explanation_notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP

@@ -26,10 +26,10 @@ import { actorFromContext, recordAudit } from '../audit';
 import { AuthContext } from '../auth/types';
 import { TCO_ENGINE_VERSION, TCO_METHODOLOGY, TCOEngine } from '../../src/engine/tcoEngine';
 import { analyseDecisionReversal, ReversalAnalysis } from '../../src/engine/decisionReversal';
-import { TCOCalculationResult, BreakEvenAnalysis, SensitivityDriver, SupplierOffer } from '../../src/types/domain';
+import { TCOCalculationResult, BreakEvenAnalysis, SensitivityDriver, SupplierOffer, ScenarioResult } from '../../src/types/domain';
 import { CarbonRow, CostItemRow, MappingContext, OfferRow, ProjectRowInput, RiskRow, mapOffer, mapProject } from '../../src/engine/mapping';
 
-export const METHODOLOGY_VERSION = process.env.TRUETCO_METHODOLOGY_VERSION ?? '2026.1';
+export const METHODOLOGY_VERSION = process.env.TRUETCO_METHODOLOGY_VERSION ?? '2026.2';
 
 export interface RequestMeta {
   ipAddress?: string | null;
@@ -84,6 +84,10 @@ export interface DecisionRunSummary {
   breakEven: BreakEvenAnalysis | null;
   sensitivity: SensitivityDriver[];
   decisionReversal: ReversalAnalysis | null;
+  /** Calculs complets par offre, produits exclusivement par le serveur. */
+  calculationsByOfferId: Record<string, TCOCalculationResult>;
+  /** Scénarios exploratoires calculés côté serveur (hypothèses du modèle, non prévisions). */
+  scenarios: ScenarioResult[];
   warnings: string[];
   blockingIssues: { offerId: string; offerReference: string; costItemId: string; label: string; reason: string }[];
   dataCompleteness: {
@@ -125,7 +129,7 @@ export async function loadProjectInputs(
     const costItems = await tx.query<CostItemRow>(
       `SELECT id, category, label, amount, currency, unit, quantity, unit_price, quality_status, source_name,
               source_type, confidence_level, is_recurring_yearly, yearly_inflation_type, year_occurrences,
-              calculation_formula, explanation_notes, is_demo
+              occurrences_per_year, calculation_formula, explanation_notes, is_demo
          FROM cost_items WHERE offer_id = $1 ORDER BY category, label`,
       [offer.id]
     );
@@ -180,6 +184,7 @@ export function fingerprintInputs(project: ProjectRowInput, offers: LoadedOffer[
         recurring: item.is_recurring_yearly,
         inflation: item.yearly_inflation_type,
         occurrences: item.year_occurrences,
+        occurrencesPerYear: item.occurrences_per_year,
       })),
       carbonItems: offer.carbonItems.map((item) => ({
         id: item.id,
@@ -302,8 +307,20 @@ export async function runDecision(
       }
       return acc;
     }, {});
+    const dataCompleteness = {
+      totalCostItems: mapped.reduce((sum, entry) => sum + entry.loaded.costItems.length, 0),
+      byQualityStatus: completenessCounts,
+      missingAmountTotal: mapped.reduce((sum, entry) => sum + entry.stats.missingAmount, 0),
+      unsourcedAmountTotal: mapped.reduce((sum, entry) => sum + entry.stats.unsourcedAmount, 0),
+      demoItemCount: mapped.reduce((sum, entry) => sum + entry.stats.demoCount, 0),
+    };
 
     const runWarnings: string[] = [];
+    if (mapped.some(({ offer }) => offer.costItems.length > 0)) {
+      runWarnings.push(
+        'Convention métier non confirmée : cette exécution applique l’hypothèse technique « montant par événement × occurrencesPerYear dans chaque année listée » ; si le champ est absent, le moteur utilise 1. Le classement est calculé selon cette hypothèse et ne valide pas la règle métier. Ne pas le présenter comme une conclusion définitive avant arbitrage humain.'
+      );
+    }
     if (completenessCounts.missing) {
       runWarnings.push(
         `${completenessCounts.missing} poste(s) de coût sont marqués « manquant » : ils sont EXCLUS du total. Le coût réel est donc supérieur à celui affiché.`
@@ -368,6 +385,16 @@ export async function runDecision(
           )
         : null;
 
+    // Les écrans de comparaison, rapport, point mort et scénarios consomment ces
+    // mêmes sorties persistées. Aucun composant du navigateur ne relance le moteur.
+    const calculationsByOfferId = Object.fromEntries(
+      results.map(({ offer, result }) => [offer.id, result])
+    ) as Record<string, TCOCalculationResult>;
+    const scenarios = TCOEngine.calculateScenarios(
+      project,
+      results.map(({ offer }) => offer)
+    );
+
     // Révision des données : compteur monotone par dossier (1re exécution = 1).
     const [revision] = await tx.query<{ next: string }>(
       `SELECT COALESCE(MAX(input_version), 0) + 1 AS next FROM decision_runs WHERE project_id = $1`,
@@ -412,13 +439,10 @@ export async function runDecision(
       breakEven,
       sensitivity,
       decisionReversal,
+      calculationsByOfferId,
+      scenarios,
       warnings: runWarnings,
-      completeness: {
-        byQualityStatus: completenessCounts,
-        missingAmountTotal: mapped.reduce((sum, entry) => sum + entry.stats.missingAmount, 0),
-        unsourcedAmountTotal: mapped.reduce((sum, entry) => sum + entry.stats.unsourcedAmount, 0),
-        demoItemCount: mapped.reduce((sum, entry) => sum + entry.stats.demoCount, 0),
-      },
+      dataCompleteness,
       methodology: TCO_METHODOLOGY,
       // Traçabilité par poste : « Pourquoi ce montant » au niveau du dossier.
       lineTraces: results.map(({ offer, result }) => ({
@@ -523,17 +547,52 @@ export async function runDecision(
       breakEven,
       sensitivity,
       decisionReversal,
+      calculationsByOfferId,
+      scenarios,
       warnings: runWarnings,
       blockingIssues: [],
-      dataCompleteness: {
-        totalCostItems: mapped.reduce((sum, entry) => sum + entry.loaded.costItems.length, 0),
-        byQualityStatus: completenessCounts,
-        missingAmountTotal: mapped.reduce((sum, entry) => sum + entry.stats.missingAmount, 0),
-        unsourcedAmountTotal: mapped.reduce((sum, entry) => sum + entry.stats.unsourcedAmount, 0),
-        demoItemCount: mapped.reduce((sum, entry) => sum + entry.stats.demoCount, 0),
-      },
+      dataCompleteness,
     };
   });
+}
+
+/** Dernière exécution persistée, enrichie d'un contrôle de fraîcheur. */
+export async function getLatestDecisionRun(db: Db, ctx: AuthContext, projectId: string) {
+  const rows = await db.asOrganization(ctx.organization.id, (tx) =>
+    tx.query<{
+      id: string;
+      project_id: string;
+      engine_version: string;
+      methodology_version: string;
+      input_version: number;
+      input_fingerprint: string;
+      results: Record<string, unknown> | null;
+      created_at: string;
+    }>(
+      `SELECT id, project_id, engine_version, methodology_version, input_version,
+              input_fingerprint, results, created_at
+         FROM decision_runs
+        WHERE project_id = $1
+        ORDER BY input_version DESC, created_at DESC
+        LIMIT 1`,
+      [projectId]
+    )
+  );
+  const row = rows[0];
+  if (!row) return null;
+
+  const freshness = await checkRunFreshness(db, ctx, row.id);
+  return {
+    ...(row.results ?? {}),
+    runId: row.id,
+    projectId: row.project_id,
+    engineVersion: row.engine_version,
+    methodologyVersion: row.methodology_version,
+    inputVersion: Number(row.input_version),
+    inputFingerprint: row.input_fingerprint,
+    createdAt: row.created_at,
+    freshness,
+  };
 }
 
 /** Liste des exécutions d'un dossier (sans le détail, pour l'historique). */

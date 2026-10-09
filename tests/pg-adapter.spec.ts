@@ -181,6 +181,15 @@ describe('PgDb (pilote de production)', () => {
     expect(error!.message).not.toMatch(/pg_catalog|information_schema/);
     // La cause technique reste disponible pour l'exploitant, jamais pour le client.
     expect((error as any).technical).toMatch(/colonne_inexistante/);
+
+    const missingTableError = await pgDb!
+      .asOrganization(ORG_A, (tx) => tx.query('SELECT * FROM table_absente_test'))
+      .then(() => null)
+      .catch((err) => err as Error & { code?: string });
+    expect(missingTableError).not.toBeNull();
+    expect((missingTableError as any).code).toBe('DB_SCHEMA');
+    expect(missingTableError!.message).toMatch(/migration/i);
+    expect(missingTableError!.message).not.toMatch(/table_absente_test/);
   });
 
   it('T-PG-05 : le hachage du journal d’audit produit le même résultat quel que soit le pilote', async () => {

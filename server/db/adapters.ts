@@ -134,7 +134,6 @@ export function translateError(err: unknown): Error {
     case '23514': // check_violation
       return new DataError(e.message ?? 'Valeur refusée par une contrainte de validation.', 'INVALID_INPUT');
     case '42703': // undefined_column
-    case '42P01': // undefined_table
     case '42883': // undefined_function
     case '42601': // syntax_error
     case '42804': // datatype_mismatch
@@ -170,7 +169,7 @@ export function translateError(err: unknown): Error {
     case '42P01': // undefined_table
       return new DataError(
         'Schéma incomplet : la migration n’a pas été appliquée sur cette base.',
-        'DB_ERROR',
+        'DB_SCHEMA',
         { hint: 'Exécuter « npm run db:migrate ».' }
       );
     default:

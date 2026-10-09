@@ -3,7 +3,7 @@
  * Application SaaS B2B d'Aide à la Décision Achats
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useState, useEffect } from 'react';
 import {
   SEED_PROJECTS,
   SEED_OFFERS,
@@ -13,21 +13,7 @@ import {
 } from './data/seedData';
 import { Project, SupplierOffer, Supplier, ExternalityReferenceBenchmark, AuditLogEntry, UserRole } from './types/domain';
 import { Header } from './components/Header';
-import { Sidebar, NavView } from './components/Sidebar';
-import { DashboardView } from './components/DashboardView';
-import { DecisionView } from './components/DecisionView';
-import { ImportCenterView } from './components/ImportCenterView';
-import { Chantier1View } from './components/Chantier1View';
-import { ComparatorView } from './components/ComparatorView';
-import { MulticriteriaView } from './components/MulticriteriaView';
-import { BreakEvenView } from './components/BreakEvenView';
-import { ScenarioView } from './components/ScenarioView';
-import { SensitivityView } from './components/SensitivityView';
-import { ProjectsView } from './components/ProjectsView';
-import { SuppliersView } from './components/SuppliersView';
-import { ExternalitiesAdminView } from './components/ExternalitiesAdminView';
-import { AuditLogView } from './components/AuditLogView';
-import { ExecutiveReportView } from './components/ExecutiveReportView';
+import { Sidebar, type NavView } from './components/Sidebar';
 import { NewProjectModal } from './components/NewProjectModal';
 import { ImportOfferModal } from './components/ImportOfferModal';
 import { AutomatedTestsModal } from './components/AutomatedTestsModal';
@@ -36,6 +22,9 @@ import { OfflineIndicator } from './components/OfflineIndicator';
 import { StorageService, TrueTCOBackupPayload } from './services/storageService';
 import {
   ApiError,
+  DecisionRunResult,
+  fetchLatestDecisionRun,
+  runDecisionOnServer,
   createOfferOnServer,
   createProjectOnServer,
   createSupplierOnServer,
@@ -49,10 +38,28 @@ import { useAuth } from './context/AuthContext';
 import { useTenant } from './context/TenantContext';
 import { EnterpriseLoginModal } from './components/EnterpriseLoginModal';
 import { NewTenantModal } from './components/NewTenantModal';
-import { ErpConnectorsView } from './components/ErpConnectorsView';
-import { AiDocumentParserView } from './components/AiDocumentParserView';
-import { DigitalSignatureView } from './components/DigitalSignatureView';
-import { CsrdTaxonomyView } from './components/CsrdTaxonomyView';
+
+// Les écrans de navigation ne sont chargés qu'à leur première ouverture.
+// En particulier, les vues qui exportent un classeur n'embarquent pas le moteur
+// XLSX dans le paquet critique de démarrage.
+const DashboardView = lazy(() => import('./components/DashboardView').then((module) => ({ default: module.DashboardView })));
+const DecisionView = lazy(() => import('./components/DecisionView').then((module) => ({ default: module.DecisionView })));
+const ImportCenterView = lazy(() => import('./components/ImportCenterView').then((module) => ({ default: module.ImportCenterView })));
+const Chantier1View = lazy(() => import('./components/Chantier1View').then((module) => ({ default: module.Chantier1View })));
+const ComparatorView = lazy(() => import('./components/ComparatorView').then((module) => ({ default: module.ComparatorView })));
+const MulticriteriaView = lazy(() => import('./components/MulticriteriaView').then((module) => ({ default: module.MulticriteriaView })));
+const BreakEvenView = lazy(() => import('./components/BreakEvenView').then((module) => ({ default: module.BreakEvenView })));
+const ScenarioView = lazy(() => import('./components/ScenarioView').then((module) => ({ default: module.ScenarioView })));
+const SensitivityView = lazy(() => import('./components/SensitivityView').then((module) => ({ default: module.SensitivityView })));
+const ProjectsView = lazy(() => import('./components/ProjectsView').then((module) => ({ default: module.ProjectsView })));
+const SuppliersView = lazy(() => import('./components/SuppliersView').then((module) => ({ default: module.SuppliersView })));
+const ExternalitiesAdminView = lazy(() => import('./components/ExternalitiesAdminView').then((module) => ({ default: module.ExternalitiesAdminView })));
+const AuditLogView = lazy(() => import('./components/AuditLogView').then((module) => ({ default: module.AuditLogView })));
+const ExecutiveReportView = lazy(() => import('./components/ExecutiveReportView').then((module) => ({ default: module.ExecutiveReportView })));
+const ErpConnectorsView = lazy(() => import('./components/ErpConnectorsView').then((module) => ({ default: module.ErpConnectorsView })));
+const AiDocumentParserView = lazy(() => import('./components/AiDocumentParserView').then((module) => ({ default: module.AiDocumentParserView })));
+const DigitalSignatureView = lazy(() => import('./components/DigitalSignatureView').then((module) => ({ default: module.DigitalSignatureView })));
+const CsrdTaxonomyView = lazy(() => import('./components/CsrdTaxonomyView').then((module) => ({ default: module.CsrdTaxonomyView })));
 
 export default function App() {
   const { user, isLoginModalOpen, closeLoginModal, permissions, authWarning } = useAuth();
@@ -73,6 +80,11 @@ export default function App() {
    */
   const [dataSource, setDataSource] = useState<'serveur' | 'cache-local' | 'chargement'>('chargement');
   const [serverError, setServerError] = useState<string | null>(null);
+  const [latestDecisionRun, setLatestDecisionRun] = useState<DecisionRunResult | null>(null);
+  const [decisionLoading, setDecisionLoading] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [decisionRefreshKey, setDecisionRefreshKey] = useState(0);
+  const [decisionRunning, setDecisionRunning] = useState(false);
 
   // Le rôle affiché provient de la session serveur. Aucun sélecteur de rôle :
   // un changement de rôle doit être effectué par un administrateur, pas par
@@ -86,6 +98,36 @@ export default function App() {
    */
   const can = React.useCallback((permission: string) => permissions.includes(permission), [permissions]);
   const [currentView, setCurrentView] = useState<NavView>('dashboard');
+
+  // Toutes les vues décisionnelles lisent le dernier résultat persisté. Un run
+  // ancien reste visible dans l'historique, mais ne devient jamais un chiffre
+  // présenté comme courant si ses entrées ont changé.
+  useEffect(() => {
+    if (!user || dataSource !== 'serveur' || !currentProjectId || !permissions.includes('decision:read')) {
+      setLatestDecisionRun(null);
+      setDecisionError(null);
+      setDecisionLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setLatestDecisionRun(null);
+    setDecisionError(null);
+    setDecisionLoading(true);
+    void fetchLatestDecisionRun(currentProjectId)
+      .then((run) => {
+        if (!cancelled) setLatestDecisionRun(run);
+      })
+      .catch((caught) => {
+        if (cancelled) return;
+        setDecisionError(caught instanceof ApiError ? `${caught.message} (${caught.code})` : 'Le dernier calcul serveur est injoignable.');
+      })
+      .finally(() => {
+        if (!cancelled) setDecisionLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, dataSource, currentProjectId, permissions, decisionRefreshKey]);
 
   // Modals state
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -197,6 +239,39 @@ export default function App() {
       (currentProject.id === 'proj-vul-50' && o.projectId === 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11')
     );
   });
+  const decisionRunIsStale = Boolean(
+    latestDecisionRun?.freshness &&
+      (latestDecisionRun.freshness.dataChangedSinceRun || latestDecisionRun.freshness.engineChangedSinceRun)
+  );
+  const storedCompleteness = latestDecisionRun?.dataCompleteness;
+  const hasValidCompleteness = Boolean(
+    storedCompleteness &&
+      Number.isInteger(storedCompleteness.totalCostItems) &&
+      storedCompleteness.totalCostItems >= 0 &&
+      storedCompleteness.byQualityStatus &&
+      Object.values(storedCompleteness.byQualityStatus).every((count) => Number.isInteger(count) && count >= 0)
+  );
+  const hasServerCalculationPayload = Boolean(
+    latestDecisionRun?.calculationsByOfferId &&
+      Object.keys(latestDecisionRun.calculationsByOfferId).length > 0 &&
+      hasValidCompleteness
+  );
+  const decisionRunForViews =
+    latestDecisionRun && !decisionRunIsStale && hasServerCalculationPayload ? latestDecisionRun : null;
+
+  const runDecisionForCurrentProject = async () => {
+    if (!currentProjectId || !can('decision:run')) return;
+    setDecisionRunning(true);
+    setDecisionError(null);
+    try {
+      const run = await runDecisionOnServer(currentProjectId);
+      setLatestDecisionRun(run);
+    } catch (caught) {
+      setDecisionError(caught instanceof ApiError ? `${caught.message} (${caught.code})` : 'Le calcul serveur a échoué.');
+    } finally {
+      setDecisionRunning(false);
+    }
+  };
 
   // Handlers
   const handleSelectProject = (p: Project) => {
@@ -246,6 +321,7 @@ export default function App() {
       await createOfferOnServer(newOffer, currentProjectId);
       const refreshed = await fetchOffersFromServer(user.organizationId, user.id, user.fullName, currentProjectId);
       setOffers((prev) => [...prev.filter((offer) => offer.projectId !== currentProjectId), ...refreshed]);
+      setDecisionRefreshKey((key) => key + 1);
       setServerError(null);
     } catch (err) {
       const message = err instanceof ApiError ? `${err.message} (${err.code})` : 'Erreur inattendue du serveur.';
@@ -261,6 +337,7 @@ export default function App() {
     try {
       const saved = await updateProjectOnServer(updated);
       setProjects((prev) => prev.map((p) => (p.id === saved.id ? saved : p)));
+      setDecisionRefreshKey((key) => key + 1);
     } catch (err) {
       const message = err instanceof ApiError ? `${err.message} (${err.code})` : 'Erreur inattendue du serveur.';
       setServerError(message);
@@ -395,10 +472,43 @@ export default function App() {
               <strong>Avertissement du serveur sur cette session :</strong> {authWarning}
             </div>
           )}
+          {dataSource === 'serveur' && ['chantier1', 'dashboard', 'comparator', 'multicriteria', 'breakeven', 'scenarios', 'sensitivity', 'decision', 'report'].includes(currentView) && (
+            <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-xs ${decisionRunForViews ? 'border-emerald-700/50 bg-emerald-950/30 text-emerald-100' : 'border-amber-700/50 bg-amber-950/30 text-amber-100'}`} role="status">
+              <div className="min-w-0 flex-1">
+                {decisionLoading ? (
+                  <span>Chargement du dernier calcul enregistré par le serveur…</span>
+                ) : decisionError ? (
+                  <span>{decisionError}</span>
+                ) : decisionRunForViews ? (
+                  <span>Résultats du serveur · moteur {decisionRunForViews.engineVersion} · méthodologie {decisionRunForViews.methodologyVersion} · révision {decisionRunForViews.inputVersion} · {new Date(decisionRunForViews.createdAt).toLocaleString('fr-FR')}</span>
+                ) : decisionRunIsStale ? (
+                  <span>Le dernier calcul enregistré ne correspond plus aux données actuelles ou à la version du moteur. Ses montants sont masqués jusqu'à un nouveau calcul.{latestDecisionRun?.freshness?.explanation ? ` ${latestDecisionRun.freshness.explanation}` : ''}</span>
+                ) : latestDecisionRun && !hasServerCalculationPayload ? (
+                  <span>Un ancien calcul est enregistré, mais il ne contient pas les sorties détaillées requises par ces écrans : relancez-le.</span>
+                ) : !can('decision:read') ? (
+                  <span>Votre session ne possède pas la permission de lecture des décisions serveur.</span>
+                ) : (
+                  <span>Aucun calcul serveur enregistré pour ce dossier. Aucun résultat ne sera calculé dans le navigateur.</span>
+                )}
+              </div>
+              {can('decision:run') && (
+                <button
+                  type="button"
+                  onClick={() => void runDecisionForCurrentProject()}
+                  disabled={decisionRunning || decisionLoading}
+                  className="rounded-lg border border-emerald-600 bg-emerald-700 px-3 py-1.5 font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {decisionRunning ? 'Calcul serveur en cours…' : decisionRunForViews || decisionRunIsStale ? 'Recalculer côté serveur' : 'Calculer côté serveur'}
+                </button>
+              )}
+            </div>
+          )}
+          <Suspense fallback={<div role="status" className="rounded-xl border border-slate-800 bg-slate-900 p-4 text-sm text-slate-400">Chargement de la vue…</div>}>
           {currentView === 'chantier1' && (
             <Chantier1View
               project={currentProject}
               offers={currentOffers}
+              decisionRun={decisionRunForViews}
             />
           )}
 
@@ -407,10 +517,9 @@ export default function App() {
               project={currentProject}
               projects={projects}
               offers={currentOffers}
-              activeRole={activeRole}
+              decisionRun={decisionRunForViews}
               onNavigate={setCurrentView}
               onSelectProject={handleSelectProject}
-              onUpdateProject={handleUpdateProject}
             />
           )}
 
@@ -418,43 +527,38 @@ export default function App() {
             <ComparatorView
               project={currentProject}
               offers={currentOffers}
-              suppliers={suppliers}
+              decisionRun={decisionRunForViews}
               auditLogs={auditLogs}
-              benchmarks={benchmarks}
               onOpenImportModal={() => setIsImportOfferOpen(true)}
-              onUpdateProject={handleUpdateProject}
               onNavigate={setCurrentView}
             />
           )}
 
           {currentView === 'multicriteria' && (
             <MulticriteriaView
-              project={currentProject}
-              offers={currentOffers}
-              suppliers={suppliers}
-              activeRole={activeRole}
-              onLogAudit={(log) => setAuditLogs((prev) => [log, ...prev])}
+              decisionRun={decisionRunForViews}
+              currency={currentProject?.currency ?? 'EUR'}
             />
           )}
 
           {currentView === 'breakeven' && (
             <BreakEvenView
-              project={currentProject}
-              offers={currentOffers}
+              currency={currentProject?.currency ?? 'EUR'}
+              decisionRun={decisionRunForViews}
             />
           )}
 
           {currentView === 'scenarios' && (
             <ScenarioView
-              project={currentProject}
-              offers={currentOffers}
+              decisionRun={decisionRunForViews}
+              currency={currentProject?.currency ?? 'EUR'}
             />
           )}
 
           {currentView === 'sensitivity' && (
             <SensitivityView
-              project={currentProject}
-              offers={currentOffers}
+              decisionRun={decisionRunForViews}
+              currency={currentProject?.currency ?? 'EUR'}
             />
           )}
 
@@ -476,7 +580,14 @@ export default function App() {
               projectId={currentProject?.id ?? null}
               projectName={currentProject?.name ?? 'aucun dossier sélectionné'}
               currency={currentProject?.currency ?? 'EUR'}
+              horizonYears={currentProject?.horizonYears ?? 5}
+              discountRate={currentProject?.discountRate ?? 0}
               canRunDecision={can('decision:run')}
+              initialRun={decisionRunForViews}
+              onRunCompleted={(run) => {
+                setLatestDecisionRun(run);
+                setDecisionError(null);
+              }}
             />
           )}
 
@@ -486,7 +597,10 @@ export default function App() {
               projectName={currentProject?.name ?? 'aucun dossier sélectionné'}
               projectCurrency={currentProject?.currency ?? 'EUR'}
               canImport={can('import:write')}
-              onImported={() => void loadFromServer()}
+              onImported={() => {
+                setDecisionRefreshKey((key) => key + 1);
+                void loadFromServer();
+              }}
             />
           )}
 
@@ -517,9 +631,9 @@ export default function App() {
             <ExecutiveReportView
               project={currentProject}
               offers={currentOffers}
+              decisionRun={decisionRunForViews}
               suppliers={suppliers}
               auditLogs={auditLogs}
-              benchmarks={benchmarks}
               onBack={() => setCurrentView('comparator')}
               onUpdateProject={handleUpdateProject}
             />
@@ -565,6 +679,7 @@ export default function App() {
               offers={offers}
             />
           )}
+          </Suspense>
         </main>
       </div>
 

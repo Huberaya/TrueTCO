@@ -11,7 +11,7 @@
  *   TRUETCO_AUTO_MIGRATE=true     applique les migrations au démarrage
  *   TRUETCO_ALLOW_DEMO_AUTH       sessions de recette (interdit en production)
  *   TRUETCO_ALLOWED_ORIGINS       origines autorisées (liste séparée par des virgules)
- *   TRUETCO_ENGINE_VERSION        version du moteur de calcul (lue dans le code)
+ *   TRUETCO_METHODOLOGY_VERSION   version des conventions de calcul (2026.2 par défaut)
  */
 
 import 'dotenv/config';
@@ -20,6 +20,7 @@ import { fileURLToPath } from 'url';
 import { createApp } from './server/app';
 import { createDbFromEnv } from './server/db/adapters';
 import { runMigrations } from './server/db/migrate';
+import { TCO_ENGINE_VERSION } from './src/engine/tcoEngine';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -75,8 +76,8 @@ async function main() {
     isProd,
     allowDemoAuth: !isProd && process.env.TRUETCO_ALLOW_DEMO_AUTH === 'true',
     allowedOrigins,
-    engineVersion: process.env.TRUETCO_ENGINE_VERSION ?? '2.0.0',
-    methodologyVersion: process.env.TRUETCO_METHODOLOGY_VERSION ?? '2026.1',
+    engineVersion: TCO_ENGINE_VERSION,
+    methodologyVersion: process.env.TRUETCO_METHODOLOGY_VERSION ?? '2026.2',
     staticDir: isProd ? path.join(__dirname, 'dist') : null,
   });
 

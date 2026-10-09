@@ -35,6 +35,18 @@ import { commitImport } from '../import/commit';
 
 const conflict = (code: string, message: string, details?: unknown) => new HttpError(409, code, message, details);
 
+/** Ajoute à l'aperçu les propositions de mapping réellement montrées à l'utilisateur. */
+function withMappingAnalysis(
+  preview: ImportPreview,
+  headers: string[],
+  mapping: Record<string, string>
+): ImportPreview {
+  const analysis = analyzeColumns(headers, mapping);
+  preview.ambiguousColumns = analysis.ambiguousColumns;
+  preview.unknownColumns = analysis.unknownColumns;
+  return preview;
+}
+
 /** Taille maximale acceptée pour un fichier d'import (10 Mo par défaut). */
 export function maxImportBytes(): number {
   const raw = Number(process.env.TRUETCO_IMPORT_MAX_BYTES ?? 10 * 1024 * 1024);
@@ -126,23 +138,27 @@ async function buildView(db: Db, ctx: AuthContext, batchId: string): Promise<Imp
     const mode = (batch.mode as ImportMode | null) ?? 'costs';
 
     const mapping = batch.column_mapping ?? {};
-    const preview = prepareImport(rawRows, {
-      mode,
-      fileName: batch.source_file_name ?? 'fichier importé',
-      mimeType: batch.format === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv',
-      sizeBytes: 0,
-      sha256: batch.source_sha256 ?? '',
-      format: batch.format,
-      sheetName: batch.source_sheet_name,
-      delimiter: batch.source_delimiter,
-      encoding: batch.source_encoding ?? 'utf-8',
-      encodingGuessed: false,
-      mapping,
-      excludedRows: batch.excluded_rows ?? [],
-      categoryOverrides: batch.category_overrides ?? {},
-      offerReferences: batch.offer_references ?? {},
-      defaultCurrency: project[0]?.currency ?? 'EUR',
-    });
+    const preview = withMappingAnalysis(
+      prepareImport(rawRows, {
+        mode,
+        fileName: batch.source_file_name ?? 'fichier importé',
+        mimeType: batch.format === 'xlsx' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv',
+        sizeBytes: 0,
+        sha256: batch.source_sha256 ?? '',
+        format: batch.format,
+        sheetName: batch.source_sheet_name,
+        delimiter: batch.source_delimiter,
+        encoding: batch.source_encoding ?? 'utf-8',
+        encodingGuessed: false,
+        mapping,
+        excludedRows: batch.excluded_rows ?? [],
+        categoryOverrides: batch.category_overrides ?? {},
+        offerReferences: batch.offer_references ?? {},
+        defaultCurrency: project[0]?.currency ?? 'EUR',
+      }),
+      rawRows[0] ?? [],
+      mapping
+    );
 
     const document = batch.document_id
       ? await tx.query<Record<string, unknown>>(
@@ -398,22 +414,26 @@ export async function uploadImport(
       );
     }
 
-    const preview = prepareImport(parsed.rows, {
-      mode: input.mode,
-      fileName: input.fileName,
-      mimeType: parsed.format === 'xlsx' ? 'xlsx' : 'text/csv',
-      sizeBytes: input.content.length,
-      sha256,
-      format: parsed.format,
-      sheetName: parsed.sheetName,
-      availableSheets: parsed.sheets ?? undefined,
-      delimiter: parsed.delimiter,
-      encoding: parsed.encoding,
-      encodingGuessed: parsed.encodingGuessed,
-      parseIssues: parsed.parseIssues,
-      mapping: analysis.suggestedMapping,
-      defaultCurrency,
-    });
+    const preview = withMappingAnalysis(
+      prepareImport(parsed.rows, {
+        mode: input.mode,
+        fileName: input.fileName,
+        mimeType: parsed.format === 'xlsx' ? 'xlsx' : 'text/csv',
+        sizeBytes: input.content.length,
+        sha256,
+        format: parsed.format,
+        sheetName: parsed.sheetName,
+        availableSheets: parsed.sheets ?? undefined,
+        delimiter: parsed.delimiter,
+        encoding: parsed.encoding,
+        encodingGuessed: parsed.encodingGuessed,
+        parseIssues: parsed.parseIssues,
+        mapping: analysis.suggestedMapping,
+        defaultCurrency,
+      }),
+      parsed.rows[0] ?? [],
+      analysis.suggestedMapping
+    );
 
     await persistAnalysis(tx, batch.id, analysis.suggestedMapping, preview, ctx.user.id);
 
@@ -653,23 +673,27 @@ export async function updateImportMapping(
 
     const mode = input.mode ?? (batch.mode as ImportMode | null) ?? 'costs';
     const project = await tx.query<{ currency: string }>(`SELECT currency FROM projects WHERE id = $1`, [batch.project_id]);
-    const preview = prepareImport(rows, {
-      mode,
-      fileName: batch.source_file_name ?? 'fichier importé',
-      mimeType: batch.format,
-      sizeBytes: 0,
-      sha256: batch.source_sha256 ?? '',
-      format: batch.format,
-      sheetName: batch.source_sheet_name,
-      delimiter: batch.source_delimiter,
-      encoding: batch.source_encoding ?? 'utf-8',
-      encodingGuessed: false,
-      mapping: cleanMapping,
-      excludedRows: input.excludedRows ?? batch.excluded_rows ?? [],
-      categoryOverrides: overrides,
-      offerReferences: input.offerReferences ?? batch.offer_references ?? {},
-      defaultCurrency: project[0]?.currency ?? 'EUR',
-    });
+    const preview = withMappingAnalysis(
+      prepareImport(rows, {
+        mode,
+        fileName: batch.source_file_name ?? 'fichier importé',
+        mimeType: batch.format,
+        sizeBytes: 0,
+        sha256: batch.source_sha256 ?? '',
+        format: batch.format,
+        sheetName: batch.source_sheet_name,
+        delimiter: batch.source_delimiter,
+        encoding: batch.source_encoding ?? 'utf-8',
+        encodingGuessed: false,
+        mapping: cleanMapping,
+        excludedRows: input.excludedRows ?? batch.excluded_rows ?? [],
+        categoryOverrides: overrides,
+        offerReferences: input.offerReferences ?? batch.offer_references ?? {},
+        defaultCurrency: project[0]?.currency ?? 'EUR',
+      }),
+      rows[0] ?? [],
+      cleanMapping
+    );
 
     await tx.query(
       `UPDATE import_batches

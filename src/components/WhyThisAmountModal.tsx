@@ -1,211 +1,136 @@
 import React from 'react';
-import { X, CheckCircle, AlertTriangle, User, Calendar, ExternalLink, ShieldCheck } from 'lucide-react';
-import { AuditedValue, DataSourceType } from '../types/domain';
+import { Calendar, ExternalLink, X } from 'lucide-react';
+import { CostLineTrace, DataSourceType } from '../types/domain';
+
+export interface CalculationTraceRow {
+  supplierName: string;
+  offerReference: string;
+  amount: number | null;
+  source?: {
+    value: number;
+    unit: string;
+    sourceType: DataSourceType | string;
+    sourceName: string;
+    sourceUrl?: string;
+    confidenceLevel: number;
+    lastUpdated?: string;
+  };
+  lines: CostLineTrace[];
+}
 
 interface WhyThisAmountModalProps {
   isOpen: boolean;
   onClose: () => void;
   title: string;
   categoryLabel: string;
-  auditedValue?: AuditedValue<number | string>;
-  calculatedFormula?: string;
-  calculationExplanation?: string;
-  relatedAssumptions?: { label: string; value: string }[];
+  runId: string;
+  engineVersion: string;
+  methodologyVersion: string;
+  rows: CalculationTraceRow[];
+  methodology?: Record<string, string>;
 }
 
+/**
+ * Présente le résultat persisté et ses métadonnées réelles. Aucune source,
+ * formule, date ou note de confiance n'est fabriquée par ce composant.
+ */
 export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
   isOpen,
   onClose,
   title,
   categoryLabel,
-  auditedValue,
-  calculatedFormula,
-  calculationExplanation,
-  relatedAssumptions,
+  runId,
+  engineVersion,
+  methodologyVersion,
+  rows,
+  methodology = {},
 }) => {
   if (!isOpen) return null;
 
-  const getSourceTypeBadge = (type?: DataSourceType) => {
-    switch (type) {
-      case 'verifiee':
-        return {
-          label: 'Donnée vérifiée contractuelle',
-          badgeClass: 'text-emerald-400 bg-emerald-950/50 border-emerald-800/60',
-          icon: <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />,
-        };
-      case 'source_externe':
-        return {
-          label: 'Référentiel externe certifié',
-          badgeClass: 'text-sky-400 bg-sky-950/50 border-sky-800/60',
-          icon: <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />,
-        };
-      case 'estimee':
-        return {
-          label: 'Donnée modélisée / estimée',
-          badgeClass: 'text-amber-400 bg-amber-950/50 border-amber-800/60',
-          icon: <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />,
-        };
-      case 'utilisateur':
-        return {
-          label: 'Hypothèse fournie par l\'acheteur',
-          badgeClass: 'text-indigo-400 bg-indigo-950/50 border-indigo-800/60',
-          icon: <User className="w-3.5 h-3.5 text-indigo-400" />,
-        };
-      default:
-        return {
-          label: 'Hypothèse standard par défaut',
-          badgeClass: 'text-slate-400 bg-slate-800 border-slate-700',
-          icon: <AlertTriangle className="w-3.5 h-3.5 text-slate-400" />,
-        };
-    }
-  };
-
-  const badgeInfo = getSourceTypeBadge(auditedValue?.sourceType);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-      <div className="relative w-full max-w-2xl bg-slate-900 border border-slate-800 rounded-xl shadow-2xl p-6 overflow-hidden">
-        {/* Header */}
-        <div className="flex items-start justify-between pb-4 border-b border-slate-800">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="why-amount-title">
+      <div className="relative max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
-            <div className="text-xs uppercase tracking-wider text-slate-400 font-semibold mb-1">
-              Audit & Explicabilité Financière · {categoryLabel}
-            </div>
-            <h3 className="text-xl font-bold text-white flex items-center gap-2">
-              <span>Pourquoi ce montant ?</span>
-            </h3>
-            <p className="text-sm text-slate-400 mt-0.5">{title}</p>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Détail du résultat serveur · {categoryLabel}</div>
+            <h3 id="why-amount-title" className="text-xl font-bold text-white">Pourquoi ce montant ?</h3>
+            <p className="mt-0.5 text-sm text-slate-400">{title}</p>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition-colors"
-          >
-            <X className="w-5 h-5" />
+          <button onClick={onClose} aria-label="Fermer" className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-white">
+            <X className="h-5 w-5" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="py-5 space-y-5 text-sm text-slate-300">
-          {/* Main Figure & Reliability Score */}
-          <div className="flex flex-wrap items-center justify-between gap-4 p-4 bg-slate-950 border border-slate-800/80 rounded-lg">
-            <div>
-              <div className="text-xs text-slate-400 mb-1">Valeur retenue dans le calcul</div>
-              <div className="text-2xl font-bold font-mono text-white tabular-nums">
-                {typeof auditedValue?.value === 'number'
-                  ? auditedValue.value.toLocaleString('fr-FR')
-                  : auditedValue?.value ?? 'Calcul dérivé'}
-                <span className="text-sm font-normal text-slate-400 ml-1.5">{auditedValue?.unit || '€'}</span>
-              </div>
-            </div>
+        <div className="space-y-5 py-5 text-sm text-slate-300">
+          <p className="rounded-lg border border-slate-800 bg-slate-950 p-3 text-xs text-slate-400">
+            Résultat issu de l’exécution persistée <span className="font-mono text-slate-300">{runId}</span> · moteur {engineVersion} · méthode {methodologyVersion}. Les noms de source et niveaux de confiance ci-dessous sont les valeurs déclarées dans les entrées ; leur présence ne constitue pas une vérification indépendante.
+          </p>
 
-            <div className="flex flex-col items-end">
-              <div className="text-xs text-slate-400 mb-1">Niveau de confiance des données</div>
-              <div className="flex items-center gap-2">
-                <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 rounded-full transition-all"
-                    style={{ width: `${auditedValue?.confidenceLevel ?? 85}%` }}
-                  />
+          <section className="space-y-3">
+            <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Montants par offre</h4>
+            {rows.map((row) => (
+              <article key={`${row.offerReference}-${row.supplierName}`} className="rounded-lg border border-slate-800 bg-slate-950/70 p-4">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
+                  <div>
+                    <div className="font-semibold text-white">{row.supplierName}</div>
+                    <div className="font-mono text-[11px] text-slate-500">{row.offerReference}</div>
+                  </div>
+                  <div className="font-mono text-lg font-bold tabular-nums text-white">{row.amount === null ? 'Non disponible dans cette exécution' : `${row.amount.toLocaleString('fr-FR')} €`}</div>
                 </div>
-                <span className="text-sm font-semibold font-mono text-emerald-400 tabular-nums">
-                  {auditedValue?.confidenceLevel ?? 85}%
-                </span>
-              </div>
-            </div>
-          </div>
 
-          {/* Source and Provenance */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Traçabilité & Source Primaire
-            </h4>
-            <div className="p-3.5 bg-slate-800/40 border border-slate-800 rounded-lg space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-slate-400 text-xs">Type de donnée :</span>
-                <span className={`inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded border font-medium ${badgeInfo.badgeClass}`}>
-                  {badgeInfo.icon}
-                  {badgeInfo.label}
-                </span>
-              </div>
+                {row.source && (
+                  <div className="mt-3 grid gap-1 border-t border-slate-800 pt-3 text-xs sm:grid-cols-2">
+                    <div><span className="text-slate-500">Source déclarée :</span> {row.source.sourceName || 'Non renseignée'}</div>
+                    <div><span className="text-slate-500">Type saisi :</span> {row.source.sourceType || 'Non renseigné'}</div>
+                    <div><span className="text-slate-500">Valeur source :</span> {row.source.value.toLocaleString('fr-FR')} {row.source.unit}</div>
+                    <div><span className="text-slate-500">Niveau déclaré :</span> {row.source.confidenceLevel}%</div>
+                    {row.source.lastUpdated && <div className="flex items-center gap-1 text-slate-500"><Calendar className="h-3 w-3" /> Date déclarée : {row.source.lastUpdated}</div>}
+                    {row.source.sourceUrl && <a href={row.source.sourceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sky-400 hover:underline">Source liée <ExternalLink className="h-3 w-3" /></a>}
+                  </div>
+                )}
 
-              <div className="flex items-start justify-between gap-4 pt-1">
-                <span className="text-slate-400 text-xs">Source documentaire :</span>
-                <span className="text-right text-xs font-medium text-slate-200">
-                  {auditedValue?.sourceName || 'Moteur de calcul TrueTCO — source non renseignée pour cette valeur'}
-                  {auditedValue?.sourceUrl && (
-                    <a
-                      href={auditedValue.sourceUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="ml-1.5 inline-flex items-center text-sky-400 hover:underline"
-                    >
-                      <ExternalLink className="w-3 h-3 ml-0.5" />
-                    </a>
-                  )}
-                </span>
-              </div>
+                {row.lines.length > 0 ? (
+                  <div className="mt-3 overflow-x-auto border-t border-slate-800 pt-3">
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">Traces de postes incluses dans cette sortie</div>
+                    <table className="w-full text-[11px]">
+                      <thead className="text-slate-500"><tr><th className="py-1 text-left">Poste / catégorie</th><th className="py-1 text-right">Nominal</th><th className="py-1 text-right">Actualisé</th><th className="py-1 text-left">Années / occurrences par an / indexation</th><th className="py-1 text-left">Source déclarée / niveau</th></tr></thead>
+                      <tbody className="divide-y divide-slate-800">
+                        {row.lines.map((line) => (
+                          <tr key={line.id}>
+                            <td className="py-1.5 pr-2 text-slate-200">{line.label}<span className="ml-1 text-slate-500">({line.category}){line.isCredit ? ' · crédit' : ''}</span></td>
+                            <td className="py-1.5 text-right font-mono text-slate-300">{line.amountNominal.toLocaleString('fr-FR')} €</td>
+                            <td className="py-1.5 text-right font-mono text-slate-300">{line.amountDiscounted.toLocaleString('fr-FR')} €</td>
+                            <td className="py-1.5 px-2 text-slate-400">{line.occurrences.map((year) => `A${year}`).join(', ') || 'Aucune'} · {line.occurrencesPerYear === undefined ? 'fréquence non présente dans la trace' : `${line.occurrencesPerYear} occurrence(s)/an`} · {line.indexation}</td>
+                            <td className="py-1.5 text-slate-400">{line.sourceName} · {line.sourceType} · {line.confidenceLevel}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="mt-3 border-t border-slate-800 pt-3 text-xs text-amber-200">Aucune trace détaillée de poste n’est exposée pour cette sortie dans le résultat enregistré ; aucun détail n’est reconstruit ici.</p>
+                )}
+              </article>
+            ))}
+          </section>
 
-              {auditedValue?.updatedBy && (
-                <div className="flex items-center justify-between pt-1 border-t border-slate-800/60 text-xs text-slate-400">
-                  <span className="flex items-center gap-1">
-                    <User className="w-3 h-3" /> Modifié par {auditedValue.updatedBy}
-                  </span>
-                  <span className="flex items-center gap-1 font-mono">
-                    <Calendar className="w-3 h-3" /> {auditedValue.lastUpdated}
-                  </span>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Formula & Calculation Logic */}
-          {(calculatedFormula || calculationExplanation) && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Formule Mathématique & Hypothèses
-              </h4>
-              <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-lg font-mono text-xs text-emerald-300 overflow-x-auto">
-                {calculatedFormula}
-              </div>
-              {calculationExplanation && (
-                <p className="text-xs text-slate-400 leading-relaxed pt-1">
-                  {calculationExplanation}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Related Assumptions */}
-          {relatedAssumptions && relatedAssumptions.length > 0 && (
-            <div className="space-y-2">
-              <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                Hypothèses de Calcul Liées
-              </h4>
-              <div className="grid grid-cols-2 gap-2">
-                {relatedAssumptions.map((assump, idx) => (
-                  <div key={idx} className="p-2.5 bg-slate-800/30 border border-slate-800 rounded text-xs">
-                    <div className="text-slate-400">{assump.label}</div>
-                    <div className="font-semibold text-slate-200 mt-0.5 font-mono tabular-nums">{assump.value}</div>
+          {Object.keys(methodology).length > 0 && (
+            <section className="space-y-2">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Conventions renvoyées avec le résultat</h4>
+              <dl className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/70 p-3 text-xs">
+                {Object.entries(methodology).map(([key, value]) => (
+                  <div key={key} className="grid gap-1 sm:grid-cols-[10rem_1fr]">
+                    <dt className="font-mono text-slate-500">{key}</dt>
+                    <dd className="text-slate-300">{value}</dd>
                   </div>
                 ))}
-              </div>
-            </div>
+              </dl>
+            </section>
           )}
-
-          {/* Internal Audit Defense Statement */}
-          <div className="p-3 bg-indigo-950/30 border border-indigo-900/40 rounded-lg text-xs text-indigo-300">
-            <strong>Garantie d'auditabilité :</strong> Ce poste a été normalisé et peut être présenté devant le Comité d'Investissement, la DAF ou le Commissaire aux Comptes sans zone d'ombre.
-          </div>
         </div>
 
-        {/* Footer */}
-        <div className="flex justify-end pt-3 border-t border-slate-800">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-xs font-medium text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors"
-          >
-            Fermer l'audit
-          </button>
+        <div className="flex justify-end border-t border-slate-800 pt-3">
+          <button onClick={onClose} className="rounded-lg bg-slate-800 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-slate-700">Fermer</button>
         </div>
       </div>
     </div>

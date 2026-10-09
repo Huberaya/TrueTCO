@@ -236,6 +236,7 @@ export const costItems = pgTable(
     isRecurringYearly: boolean('is_recurring_yearly').default(false).notNull(),
     yearlyInflationType: varchar('yearly_inflation_type', { length: 20 }),
     yearOccurrences: integer('year_occurrences').array(),
+    occurrencesPerYear: integer('occurrences_per_year'),
     calculationFormula: text('calculation_formula'),
     explanationNotes: text('explanation_notes'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

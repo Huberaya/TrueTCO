@@ -57,7 +57,7 @@ jobs:
 
       - name: Contrôles statiques ciblés
         # ESLint ne peut pas s'exécuter avec TypeScript 7 (typescript-eslint 8
-        # s'arrête au chargement). Ce script applique 8 règles vérifiables, dont
+        # s'arrête au chargement). Ce script applique 10 règles vérifiables, dont
         # l'interdiction de `xlsx` sur des fichiers d'utilisateurs. Voir TESTING.md.
         run: npm run check:static
 
@@ -104,18 +104,9 @@ jobs:
       - name: Installation du navigateur
         run: npx playwright install --with-deps chromium
 
-      - name: Serveur applicatif de test
-        run: npm run test:e2e:server &
-        env:
-          PORT: '3000'
-          TRUETCO_USE_PGLITE: 'true'
-          TRUETCO_AUTO_MIGRATE: 'true'
-          TRUETCO_ALLOW_DEMO_AUTH: 'true'
-
-      - name: Attente de disponibilité de l'API
-        run: npx wait-on http://127.0.0.1:3000/api/health --timeout 120000
-
       - name: Tests de bout en bout
+        # Playwright démarre et attend lui-même l'API PGlite et Vite via
+        # playwright.config.ts ; la baseURL pointe vers le serveur Vite réel.
         run: npm run test:e2e
 
       - name: Rapport Playwright

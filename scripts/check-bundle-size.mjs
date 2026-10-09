@@ -3,11 +3,11 @@
  * TrueTCO — Contrôle de la taille du paquet
  * ---------------------------------------------------------------------------
  * Le paquet initial pesait plus d'un mégaoctet en un seul fichier. Ce contrôle
- * échoue si le JavaScript livré au navigateur dépasse un plafond : la
- * performance est une exigence produit, pas une intention.
+ * rapporte le shell statique, alerte lorsque la somme JS/CSS livrée dépasse le
+ * seuil d'attention, et échoue au-delà du plafond total (chunks différés compris).
  *
- * Le seuil est volontairement visible et modifiable dans le dépôt : il doit être
- * abaissé avec le découpage du code, jamais relevé sans décision écrite.
+ * Les seuils sont visibles et modifiables dans le dépôt ; le plafond total ne
+ * doit pas être relevé pour masquer un découpage de code insuffisant.
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -49,15 +49,44 @@ for (const file of assets) {
 measured.sort((a, b) => b.kb - a.kb);
 
 const totalKb = measured.reduce((sum, entry) => sum + entry.kb, 0);
-console.log(`Fichiers livrés : ${measured.length}`);
+
+// Mesure distincte du shell statique JS/CSS référencé dans index.html.
+// Une vue React.lazy peut être demandée dès son montage ; ses chunks sont hors de
+// cette sous-mesure, mais restent dans le seuil d'attention et le plafond total.
+const html = await fs.readFile(path.join(distDir, 'index.html'), 'utf8');
+const initialReferences = new Set();
+for (const match of html.matchAll(/<(?:script|link)\b[^>]*>/gi)) {
+  const tag = match[0];
+  const isModuleScript = /<script\b/i.test(tag) && /type=["']module["']/i.test(tag);
+  const isInitialLink = /<link\b/i.test(tag) && /rel=["'](?:stylesheet|modulepreload)["']/i.test(tag);
+  if (!isModuleScript && !isInitialLink) continue;
+  const reference = tag.match(/(?:src|href)=["']([^"']+)["']/i)?.[1];
+  if (reference && !/^(?:https?:)?\/\//i.test(reference) && !reference.startsWith('data:')) {
+    initialReferences.add(path.normalize(reference.split('?')[0].replace(/^[/\\]+/, '')));
+  }
+}
+const initialAssets = measured.filter((entry) => initialReferences.has(path.normalize(entry.file)));
+const initialKb = initialAssets.reduce((sum, entry) => sum + entry.kb, 0);
+
+console.log(`Fichiers livrés (entrée + chunks différés) : ${measured.length}`);
 for (const entry of measured.slice(0, 6)) {
   console.log(`  ${entry.file.padEnd(48)} ${entry.kb.toFixed(1)} Ko`);
 }
-console.log(`Total : ${totalKb.toFixed(1)} Ko (plafond ${LIMIT_KB} Ko)`);
+console.log(`Shell statique (assets référencés par index.html) : ${initialKb.toFixed(1)} Ko (mesure informative)`);
+console.log(`Total livré, chunks différés compris : ${totalKb.toFixed(1)} Ko (alerte ${WARN_KB} Ko, plafond ${LIMIT_KB} Ko)`);
 
+if (initialReferences.size === 0) {
+  console.error('Aucun asset JS/CSS initial n’a été trouvé dans dist/index.html : mesure du chargement initial impossible.');
+  process.exit(1);
+}
+if (initialAssets.length !== initialReferences.size) {
+  const missing = [...initialReferences].filter((reference) => !measured.some((entry) => path.normalize(entry.file) === reference));
+  console.error(`Impossible de mesurer tous les assets initiaux : ${missing.join(', ')}`);
+  process.exit(1);
+}
 if (totalKb > WARN_KB && totalKb <= LIMIT_KB) {
   console.warn(
-    `ATTENTION : le total dépasse le seuil d'alerte de ${WARN_KB} Ko. Réduire par découpage du code (imports dynamiques) plutôt qu'en relevant le plafond.`
+    `ATTENTION : le total livré dépasse le seuil d'alerte de ${WARN_KB} Ko. Réduisez le paquet, sans relever le plafond.`
   );
 }
 

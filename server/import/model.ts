@@ -268,11 +268,14 @@ export function prepareImport(rawRows: string[][], options: PrepareOptions): Imp
 
       values[fieldKey] = parsed;
 
-      const requiredHere = requiredFieldsForMode(options.mode);
+      const requiredHere = new Set(requiredFieldsForMode(options.mode));
+      // Si l'utilisateur a choisi de mapper une fréquence, chaque ligne doit la
+      // fournir : une cellule vide ne peut pas retomber silencieusement sur 1.
+      if (mappedFields.has('occurrencesPerYear')) requiredHere.add('occurrencesPerYear');
       if (parsed.status === 'invalid') {
         bump('ERROR', `${field.label} : ${parsed.note ?? 'valeur invalide.'}`);
       } else if (parsed.status === 'missing') {
-        if (requiredHere.includes(fieldKey)) {
+        if (requiredHere.has(fieldKey)) {
           bump('MISSING', `${field.label} manquant : ${parsed.note ?? 'cellule vide.'} La ligne ne peut pas être importée en l’état.`);
         }
       } else if (parsed.status === 'ambiguous') {
@@ -473,9 +476,9 @@ export function prepareImport(rawRows: string[][], options: PrepareOptions): Imp
     blocking.push({
       code: 'MISSING_VALUES',
       message:
-        `${missingRows.length} ligne(s) sans valeur obligatoire (montant, émission ou impact selon le mode d'import). ` +
-        "Deux issues, aucune automatique : complétez la cellule dans le fichier d'origine et rechargé-le, ou écartez explicitement ces lignes — " +
-        "le produit ne remplit jamais une valeur manquante, et ne la compte jamais 0 €.",
+        `${missingRows.length} ligne(s) sans valeur obligatoire (montant, émission, impact ou fréquence explicitement mappée). ` +
+        "Deux issues, aucune automatique : complétez la cellule dans le fichier d'origine et rechargez-le, ou écartez explicitement ces lignes — " +
+        "le produit ne remplit jamais une valeur manquante, ne la compte jamais 0 € et ne suppose jamais une fréquence de 1 à la place d'une cellule vide.",
       rows: missingRows,
     });
   }

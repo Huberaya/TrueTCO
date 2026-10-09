@@ -77,8 +77,8 @@ beforeAll(async () => {
     isProd: false,
     allowDemoAuth: false,
     allowedOrigins: [],
-    engineVersion: '2.0.0',
-    methodologyVersion: '2026.1',
+    engineVersion: '2.1.0',
+    methodologyVersion: '2026.2',
   });
 
   await db.systemTx(async (tx) => {
@@ -236,6 +236,78 @@ describe('Import — lecture et mapping assisté', () => {
     // Interprétation retenue et affichée : 1234 (séparateur de milliers).
     expect(row.values.amount.value).toBe(1234);
     expect(row.values.confidence.value).toBe(85);
+  });
+
+  it('T-IMP-FREQ : distingue année et fréquence, exige un mapping humain et persiste la fréquence', async () => {
+    const rows = [
+      ['Fournisseur', 'Référence', 'Désignation', 'Catégorie', 'Montant', 'Occurrences par an', 'Années d’occurrence', 'Source'],
+      ['Mu', 'OFF-FREQ-1', 'Entretien', 'maintenance', 100, 3, '1,3', 'Contrat signé'],
+    ];
+    const uploaded = await uploadTo(projectA, authA)
+      .field('mode', 'costs')
+      .attach('file', await buildXlsx(rows), 'frequence.xlsx')
+      .expect(201);
+
+    expect(uploaded.body.mapping.applied['Années d’occurrence']).toBe('yearOccurrences');
+    expect(uploaded.body.mapping.applied['Occurrences par an']).toBeUndefined();
+    expect(uploaded.body.preview.unmappedColumns).toContain('Occurrences par an');
+    expect(uploaded.body.preview.ambiguousColumns.find((column: any) => column.header === 'Occurrences par an').note)
+      .toMatch(/Confirmation humaine obligatoire/);
+    expect(uploaded.body.preview.canCommit).toBe(false);
+
+    const mapping = { ...uploaded.body.mapping.applied, 'Occurrences par an': 'occurrencesPerYear' };
+    const patched = await request(app)
+      .patch(`/api/imports/${uploaded.body.batchId}`)
+      .set(authA)
+      .send({ mapping })
+      .expect(200);
+    expect(patched.body.preview.canCommit).toBe(true);
+    expect(patched.body.preview.rows[0].values.occurrencesPerYear.value).toBe(3);
+    expect(patched.body.preview.rows[0].values.yearOccurrences.value).toBe('1,3');
+    // L’aperçu montre la somme brute des cellules montant ; il ne la multiplie
+    // pas comme si elle représentait un coût annuel global.
+    expect(patched.body.preview.summary.totalAmount).toBe(100);
+
+    const committed = await request(app).post(`/api/imports/${uploaded.body.batchId}/commit`).set(authA).expect(201);
+    const offerId = committed.body.result.createdOffers[0].id;
+    const detail = await request(app).get(`/api/offers/${offerId}`).set(authA).expect(200);
+    expect(detail.body.costItems).toHaveLength(1);
+    expect(detail.body.costItems[0].year_occurrences).toEqual([1, 3]);
+    expect(detail.body.costItems[0].occurrences_per_year).toBe(3);
+    expect(Number(detail.body.costItems[0].amount)).toBe(100);
+
+    const audit = await request(app).get('/api/audit-logs?action=import.committed').set(authA).expect(200);
+    const auditEntry = audit.body.items.find((entry: any) => entry.entity_id === uploaded.body.batchId);
+    expect(auditEntry.new_value).toContain('"costItemAmountBasis":"per_occurrence"');
+    expect(auditEntry.new_value).toContain('"occurrencesPerYear":3');
+  });
+
+  it('T-IMP-FREQ-STRICT : une fréquence décimale est en erreur, jamais arrondie', async () => {
+    const rows = [
+      ['Fournisseur', 'Référence', 'Désignation', 'Catégorie', 'Montant', 'Occurrences par an'],
+      ['Nu', 'OFF-FREQ-2', 'Intervention décimale', 'maintenance', 100, 2.5],
+      ['Xi', 'OFF-FREQ-3', 'Intervention sans fréquence', 'maintenance', 100, null],
+    ];
+    const uploaded = await uploadTo(projectA, authA)
+      .field('mode', 'costs')
+      .attach('file', await buildXlsx(rows), 'frequence-decimale.xlsx')
+      .expect(201);
+    const mapping = { ...uploaded.body.mapping.applied, 'Occurrences par an': 'occurrencesPerYear' };
+    const patched = await request(app)
+      .patch(`/api/imports/${uploaded.body.batchId}`)
+      .set(authA)
+      .send({ mapping })
+      .expect(200);
+
+    expect(patched.body.preview.canCommit).toBe(false);
+    expect(patched.body.preview.rows[0].status).toBe('ERROR');
+    expect(patched.body.preview.rows[0].values.occurrencesPerYear.value).toBeNull();
+    expect(patched.body.preview.rows[0].reasons.join(' ')).toMatch(/aucune valeur n'a été arrondie/i);
+    expect(patched.body.preview.blocking.map((entry: any) => entry.code)).toContain('INVALID_ROWS');
+    expect(patched.body.preview.rows[1].status).toBe('MISSING');
+    expect(patched.body.preview.rows[1].values.occurrencesPerYear.value).toBeNull();
+    expect(patched.body.preview.blocking.map((entry: any) => entry.code)).toContain('MISSING_VALUES');
+    await request(app).post(`/api/imports/${uploaded.body.batchId}/commit`).set(authA).expect(409);
   });
 });
 

@@ -1,16 +1,16 @@
 /**
  * TrueTCO — Moteur de calcul TCO / LCC / Carbone / Risques
  * ---------------------------------------------------------------------------
- * VERSION 2.0.0 — Correctifs de fiabilité financière (voir METHODOLOGY pour le
- * détail des conventions retenues et des défauts corrigés en v1).
+ * VERSION 2.1.0 — Fréquence explicite par occurrence et traces actualisées
+ * correctement (voir METHODOLOGY pour les conventions retenues).
  *
  * Principes non négociables de cette version :
  *  1. AUCUN poste de coût déclaré n'est ignoré silencieusement. Tout poste dont
  *     la catégorie n'est pas reconnue est compté prudemment comme un coût et
  *     remonte dans `warnings[]` + `unallocatedCostTotal`.
- *  2. Les occurrences (`isRecurringYearly`, `yearOccurrences`,
- *     `annualOccurrenceYears`) sont honorées. Une ligne récurrente n'est jamais
- *     réduite à une seule année.
+ *  2. Les années d'occurrence (`yearOccurrences`, `annualOccurrenceYears`) et la
+ *     fréquence (`occurrencesPerYear`) sont distinctes et honorées. Une ligne
+ *     récurrente n'est jamais réduite à une seule année.
  *  3. Le LCC est la Valeur Actuelle Nette d'un périmètre STRICTEMENT identique
  *     au TCO global : économique + risque + carbone. Aucun agrégat hybride.
  *  4. Aucune statistique inventée : `uncertaintyRange` documente explicitement
@@ -33,11 +33,12 @@ import {
   CostLineTrace,
   CalculationWarning,
   DataConfidenceBreakdown,
+  MAX_COST_OCCURRENCES_PER_YEAR,
 } from '../types/domain';
 
 export type { CostLineTrace, CalculationWarning, DataConfidenceBreakdown };
 
-export const TCO_ENGINE_VERSION = '2.0.0';
+export const TCO_ENGINE_VERSION = '2.1.0';
 
 /** Marqueur utilisé par les tests pour garantir l'export de la méthodologie. */
 export const METHODOLOGY_EXPORT_MARKER = 'truetco-methodology';
@@ -51,6 +52,7 @@ export const TCO_METHODOLOGY = {
   conventions: {
     year0: 'Les postes d\'investissement (acquisition, logistique/douanes, installation, administration), le carbone de fabrication/transport et la valeur résiduelle sont positionnés en Année 0 lorsque non récurrents.',
     opex: 'Les postes d\'exploitation non récurrents sans occurrences explicites sont positionnés en Année 1.',
+    occurrences: `CONVENTION TECHNIQUE ACTUELLE — validation métier en attente : yearOccurrences/annualOccurrenceYears listent les années concernées ; occurrencesPerYear compte les événements dans chacune de ces années. Le moteur interprète le montant saisi comme celui d'un événement et le multiplie par une fréquence entière de 1 à ${MAX_COST_OCCURRENCES_PER_YEAR}. En l'absence du champ, il utilise actuellement une occurrence par année listée ; cette valeur par défaut n'est ni une donnée mesurée ni une validation de la convention métier. Ne pas qualifier cette règle de définitive avant confirmation.`,
     discounting:
       'Actualisation en fin de période : facteur_t = 1 / (1 + WACC)^t. Rien n\'est actualisé en Année 0.',
     indexation:
@@ -318,6 +320,7 @@ export class TCOEngine {
       maintenanceRepairsTotal: 0,
       replacementDefectsTotal: 0,
       adminComplianceTotal: 0,
+      taxesTotal: 0,
       salvageValueTotal: 0,
       endOfLifeRecyclingTotal: 0,
       unallocatedCostTotal: 0,
@@ -397,25 +400,32 @@ export class TCOEngine {
 
     const pushTrace = (
       item: CostBreakdownItem,
-      amountNominal: number,
+      yearlyAmounts: number[],
       occurrences: number[],
+      occurrencesPerYear: number,
       indexation: string,
       isCredit: boolean,
       category: CostCategory | 'NON_RECONNUE'
     ) => {
       // Les crédits (valeur résiduelle) sont tracés en valeur absolue et
-      // signalés par `isCredit` : le signe ne peut donc pas être interprété de
-      // travers dans un export ou une réconciliation comptable.
-      const signedAmount = isCredit ? Math.abs(amountNominal) : amountNominal;
-      const amountDiscounted = occurrences.reduce((acc, y) => acc + signedAmount * discount(y), 0);
+      // signalés par `isCredit`. Chaque montant annuel est actualisé UNE FOIS à
+      // l'année où il se produit ; on ne réactualise jamais le total nominal à
+      // chacune des dates (ce qui gonflerait les lignes multi-annuelles).
+      const signedYearlyAmounts = yearlyAmounts.map((amount) => (isCredit ? Math.abs(amount) : amount));
+      const amountNominal = signedYearlyAmounts.reduce((sum, amount) => sum + amount, 0);
+      const amountDiscounted = signedYearlyAmounts.reduce(
+        (sum, amount, index) => sum + amount * discount(occurrences[index]),
+        0
+      );
       costLineTrace.push({
         id: item.id,
         label: item.label,
         declaredCategory: String(item.category),
         category,
-        amountNominal: Math.round(signedAmount),
+        amountNominal: Math.round(amountNominal),
         amountDiscounted: Math.round(amountDiscounted),
         occurrences: [...occurrences],
+        occurrencesPerYear,
         indexation,
         sourceName: item.amount?.sourceName ?? 'Non renseigné',
         sourceType: item.amount?.sourceType ?? ('manquante' as DataSourceType),
@@ -440,6 +450,22 @@ export class TCOEngine {
       const category = this.normalizeCategory(item.category);
       const explicitOccurrences = this.occurrencesOf(item);
       const isRecurring = item.isRecurringYearly === true;
+      const rawOccurrencesPerYear = item.occurrencesPerYear;
+      const occurrencesPerYear = rawOccurrencesPerYear === null || rawOccurrencesPerYear === undefined ? 1 : rawOccurrencesPerYear;
+      if (
+        typeof occurrencesPerYear !== 'number' ||
+        !Number.isInteger(occurrencesPerYear) ||
+        occurrencesPerYear < 1 ||
+        occurrencesPerYear > MAX_COST_OCCURRENCES_PER_YEAR
+      ) {
+        warnings.push({
+          code: 'INVALID_OCCURRENCES_PER_YEAR',
+          severity: 'critique',
+          message: `Poste « ${item.label} » exclu du calcul : sa fréquence doit être un entier strict compris entre 1 et ${MAX_COST_OCCURRENCES_PER_YEAR}. Aucune valeur n'est arrondie ou remplacée.`,
+          itemId: item.id,
+        });
+        continue;
+      }
 
       // Détermination des années d'occurrence (règle explicite et documentée).
       let occurrences: number[];
@@ -486,7 +512,9 @@ export class TCOEngine {
           base *= failureMultiplier;
           if (y > 3) base *= 1 + (y - 3) * 0.08;
         }
-        return base;
+        // `rawAmount` est la valeur d'un événement ; la fréquence ne modifie
+        // ni la liste des années ni l'indexation, elle multiplie l'annuel brut.
+        return base * occurrencesPerYear;
       });
 
       const nominal = indexedAmounts.reduce((a, b) => a + b, 0);
@@ -506,7 +534,7 @@ export class TCOEngine {
           amount: Math.round(nominal),
           itemId: item.id,
         });
-        pushTrace(item, nominal, occurrences, indexationType, false, 'NON_RECONNUE');
+        pushTrace(item, indexedAmounts, occurrences, occurrencesPerYear, indexationType, false, 'NON_RECONNUE');
         continue;
       }
 
@@ -564,7 +592,7 @@ export class TCOEngine {
         }
       });
 
-      pushTrace(item, nominal, occurrences, indexationType, isCredit, category);
+      pushTrace(item, indexedAmounts, occurrences, occurrencesPerYear, indexationType, isCredit, category);
     }
 
     // Si aucun poste d'acquisition n'est ventilé, repli documenté sur le prix facial.
@@ -876,6 +904,7 @@ export class TCOEngine {
       maintenanceRepairsTotal: Math.round(maintenanceRepairsTotal),
       replacementDefectsTotal: Math.round(replacementDefectsTotal),
       adminComplianceTotal: Math.round(totalAdminCompliance),
+      taxesTotal: Math.round(taxesTotal),
       salvageValueTotal: Math.round(salvageValueTotal),
       endOfLifeRecyclingTotal: Math.round(endOfLifeRecyclingTotal),
       unallocatedCostTotal: Math.round(unallocatedCostTotal),

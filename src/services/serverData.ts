@@ -13,7 +13,8 @@
  *    couverte est signalée comme telle, elle n'est jamais devinée.
  */
 
-import { AuditLogEntry, HorizonYears, ProcurementCategory, Project, ProjectStatus, Supplier, SupplierOffer, UserRole } from '../types/domain';
+import { AuditLogEntry, BreakEvenAnalysis, HorizonYears, ProcurementCategory, Project, ProjectStatus, ScenarioResult, SensitivityDriver, Supplier, SupplierOffer, TCOCalculationResult, UserRole } from '../types/domain';
+import type { ReversalAnalysis } from '../engine/decisionReversal';
 import { CarbonRow, CostItemRow, OfferRow, RiskRow, mapOffer } from '../engine/mapping';
 
 export class ApiError extends Error {
@@ -339,20 +340,14 @@ export async function fetchVersions(): Promise<{ engineVersion: string; methodol
 // -----------------------------------------------------------------------------
 // Décision — calcul exécuté par le serveur (le navigateur ne calcule plus rien)
 // -----------------------------------------------------------------------------
-export interface DecisionParameterSweep {
-  parameter: string;
-  label: string;
-  unit: string;
-  range: { min: number; max: number; step: number };
-  currentValue: number;
-  direction: 'au_dessus' | 'en_dessous' | 'aucun' | 'non_monotone' | 'aucun_effet';
-  isReachable: boolean;
-  nearestThreshold: number | null;
-  intervals: { from: number; to: number }[];
-  marginToThreshold: number | null;
-  deltaAtBounds: { min: number; max: number };
-  statement: string;
-  dataChanged?: boolean;
+export interface DecisionRunFreshness {
+  dataChangedSinceRun: boolean;
+  engineChangedSinceRun: boolean;
+  engineVersionStored: string;
+  engineVersionCurrent: string;
+  currentFingerprint: string | null;
+  storedFingerprint: string;
+  explanation: string;
 }
 
 export interface DecisionRunResult {
@@ -361,67 +356,54 @@ export interface DecisionRunResult {
   engineVersion: string;
   methodologyVersion: string;
   inputVersion: number;
-  calculatedAt: string;
   inputFingerprint: string;
-  currency: string;
-  horizonYears: number;
-  discountRate: number;
-  completeness: {
-    totalCostItems: number;
-    validCostItems: number;
-    unsourcedCostItems: number;
-    estimatedCostItems: number;
-    missingCostItems: number;
-    erroredCostItems: number;
-    demoCostItems: number;
-    coveragePercent: number;
-    verdict: string;
-  };
+  createdAt: string;
+  createdBy: string;
   ranking: {
-    rank: number;
     offerId: string;
-    offerReference: string;
     supplierName: string;
-    apparentTotal: number;
+    offerReference: string;
+    isResponsibleCandidate: boolean;
     totalComprehensiveTCO: number;
     lifecycleCostLCC: number;
+    economicLCC: number | null;
+    unitTCO: number;
     carbonTonnes: number;
-    confidenceScore: number;
-    isApparentCheapest: boolean;
+    carbonCost: number;
+    riskExposure: number;
+    dataQualityScore: number;
+    costLineCount: number;
+    warnings: TCOCalculationResult['warnings'];
   }[];
-  recommendedOfferId: string | null;
   recommendation: {
-    status: 'ferme' | 'conditionnel' | 'indetermine';
     offerId: string | null;
+    supplierName: string | null;
+    status: 'ferme' | 'conditionnel' | 'indetermine';
     reason: string;
-    conditions: string[];
     economicAdvantage: {
-      vsSecondBestNpv: number | null;
-      vsWorstNpv: number | null;
-      vsCheapestApparentNpv: number | null;
+      vsSecondBestNpv: number;
+      vsWorstNpv: number;
+      vsCheapestApparentNpv: number;
       apparentCheapestOfferId: string | null;
-    };
+    } | null;
   };
-  breakEven: unknown;
-  sensitivity: unknown;
-  inversion: { parameters: DecisionParameterSweep[]; winner: string; challenger: string; note: string } | null;
+  breakEven: BreakEvenAnalysis | null;
+  sensitivity: SensitivityDriver[];
+  decisionReversal: ReversalAnalysis | null;
+  /** Valeurs calculées et enregistrées par le serveur, indexées par id d'offre. */
+  calculationsByOfferId: Record<string, TCOCalculationResult>;
+  /** Scénarios exploratoires du moteur ; ils ne sont pas des prévisions. */
+  scenarios: ScenarioResult[];
   warnings: string[];
-  results: {
-    perOffer: {
-      offerId: string;
-      offerReference: string;
-      supplierName: string;
-      totalComprehensiveTCO: number;
-      lifecycleCostLCC: number;
-      monthlyEquivalentCost: number;
-      costPerUnit: number;
-      carbonTonnes: number;
-      confidenceScore: number;
-      breakdown: { category: string; amount: number; share: number; quality: string }[];
-      warnings: { severity: string; message: string }[];
-    }[];
-    warnings: string[];
+  blockingIssues: { offerId: string; offerReference: string; costItemId: string; label: string; reason: string }[];
+  dataCompleteness: {
+    totalCostItems: number;
+    byQualityStatus: Record<string, number>;
+    missingAmountTotal: number;
+    unsourcedAmountTotal: number;
+    demoItemCount: number;
   };
+  freshness?: DecisionRunFreshness;
 }
 
 export interface DecisionRunSummary {
@@ -433,12 +415,16 @@ export interface DecisionRunSummary {
   input_fingerprint: string | null;
   recommended_offer_id: string | null;
   created_at: string;
-  results: DecisionRunResult | null;
 }
 
 /** Lance un calcul de décision côté serveur et renvoie le résultat persisté. */
 export async function runDecisionOnServer(projectId: string): Promise<DecisionRunResult> {
   return api<DecisionRunResult>(`/api/projects/${projectId}/decision-runs`, { method: 'POST' });
+}
+
+/** Dernière exécution enregistrée, avec contrôle des entrées encore à jour. */
+export async function fetchLatestDecisionRun(projectId: string): Promise<DecisionRunResult | null> {
+  return api<DecisionRunResult | null>(`/api/projects/${projectId}/decision-runs/latest`);
 }
 
 export async function fetchDecisionRuns(projectId: string): Promise<DecisionRunSummary[]> {
@@ -643,13 +629,14 @@ export const IMPORT_TARGET_FIELDS: { key: string; label: string }[] = [
   { key: 'supplierName', label: 'Fournisseur' },
   { key: 'label', label: 'Libellé du poste' },
   { key: 'category', label: 'Catégorie de coût' },
-  { key: 'amount', label: 'Montant (total du poste)' },
+  { key: 'amount', label: 'Montant (par occurrence si fréquence mappée)' },
   { key: 'unitPrice', label: 'Prix unitaire' },
   { key: 'quantity', label: 'Quantité' },
   { key: 'currency', label: 'Devise' },
   { key: 'sourceName', label: 'Source du montant' },
   { key: 'recurring', label: 'Coût récurrent annuel' },
   { key: 'yearOccurrences', label: 'Années d’occurrence' },
+  { key: 'occurrencesPerYear', label: 'Occurrences par an (montant par événement)' },
   { key: 'inflationType', label: 'Indexation' },
   { key: 'confidence', label: 'Confiance déclarée (%)' },
   { key: 'qualityStatus', label: 'Statut de qualité' },
@@ -807,8 +794,8 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, task: (item: 
  *  - la réponse est relue depuis le serveur, source de vérité, et non reconstruite
  *    à partir de ce qui a été envoyé.
  */
-export async function createOfferOnServer(offer: SupplierOffer, projectId: string): Promise<SupplierOffer> {
-  const created = await api<{ offer: OfferRow }>('/api/offers', {
+export async function createOfferOnServer(offer: SupplierOffer, projectId: string): Promise<void> {
+  await api<{ id: string; offerReference: string; costItemCount: number }>('/api/offers', {
     method: 'POST',
     body: JSON.stringify({
       projectId,
@@ -836,15 +823,14 @@ export async function createOfferOnServer(offer: SupplierOffer, projectId: strin
         confidenceLevel: Math.round(item.amount.confidenceLevel ?? 0),
         isRecurringYearly: Boolean(item.isRecurringYearly),
         yearOccurrences: item.yearOccurrences ?? item.annualOccurrenceYears ?? null,
+        occurrencesPerYear: item.occurrencesPerYear,
         yearlyInflationType: item.yearlyInflationType ?? null,
       })),
     }),
   });
-  const context = { organizationId: '', userId: '', userName: '', now: new Date().toISOString() };
-  // La réponse du serveur ne contient pas les postes : ils sont relus juste après
-  // par l'appelant (rechargement complet), ce qui évite toute reconstruction
-  // locale approximative.
-  return mapOffer({ offer: created.offer, costItems: [], carbonItems: [], riskItems: [] }, context).offer;
+  // L'API confirme la création par identifiant et nombre de postes, sans renvoyer
+  // l'objet complet. Le client ne reconstruit donc pas l'offre à partir du POST :
+  // l'appelant relit ensuite la liste et le détail depuis la source de vérité.
 }
 
 /** Un code devise ISO à trois lettres, seule forme acceptée par l'API. */

@@ -7,26 +7,71 @@ npm run typecheck     # TypeScript strict, zéro erreur exigée
 npm run test          # suite complète (Vitest)
 npm run test -- tests/isolation.spec.ts   # une suite ciblée
 npm run build         # build de production
-npm run verify        # typecheck + tests + build
+npm run bundle:check  # shell statique informatif + seuil d'alerte/plafond total
+npm run test:coverage # rapport de couverture Vitest
+npm run verify        # typecheck + tests + build + bundle:check
 ```
 
 ## Ce que couvre chaque suite
 
 | Fichier | Objet | Nombre |
 |---|---|---|
-| `src/engine/tcoEngine.spec.ts` | Non-régression du moteur : invariants (somme des flux nominaux = TCO, somme actualisée = LCC, pureté des entrées), baselines vérifiées | 27 |
+| `src/engine/tcoEngine.spec.ts` | Non-régression du moteur : invariants (somme des flux nominaux = TCO, somme actualisée = LCC, pureté des entrées), baselines vérifiées et occurrences annuelles | 30 |
 | `src/engine/decisionReversal.spec.ts` | Inversion de décision : seuils atteignables, vocabulaire des zones, déterminisme | 9 |
 | `src/engine/riskSimulation.spec.ts` | Simulation probabiliste : graine obligatoire, reproductibilité au bit près, quantiles (jamais « intervalle de confiance »), refus des lois mal paramétrées | 15 |
 | `tests/isolation.spec.ts` | Cloisonnement multi-tenant sur PostgreSQL réel (RLS) : IDOR, UPDATE/DELETE croisés, jointures, échec fermé, audit immuable, sessions | 15 |
 | `tests/api-security.spec.ts` | API complète : session, RBAC, transitions de statut, écriture transactionnelle, journal non forgeable, CSRF, parcours inscription/invitation | 37 |
 | `tests/pg-adapter.spec.ts` | **Pilote de production** (`pg`) sur le protocole réseau PostgreSQL, exposé par PGlite en socket | 6 |
-| `tests/import.spec.ts` | Import XLSX/CSV : détection, mapping, validation, refus d'inventer, traçabilité | 20 |
+| `tests/import.spec.ts` | Import XLSX/CSV : détection, mapping, validation stricte des fréquences, refus d'inventer, traçabilité | 22 |
 | `tests/decision.spec.ts` | Décision serveur : classement, seuil de fermeté, empreinte de fraîcheur, rejeu | 17 |
 | `tests/parcours-api.spec.ts` | Parcours PME complet par HTTP (tests de réalité A, C, D, F), simulation et rejeu, configuration d'authentification déclarée | 18 |
-| `tests/ui.spec.tsx` | Rendu des écrans (jsdom) : décision, import, journal, approbations, dossier décisionnel | 17 |
+| `tests/ui.spec.tsx` | Rendu des écrans (jsdom) : décision, import, journal, approbations, comparateur et dossier décisionnel | 19 |
+| `tests/excel-export.spec.ts` | Export du résultat serveur et de ses traces, dont les années, la fréquence et les qualifications | 6 |
+| `tests/server-data.spec.ts` | Refus d'afficher un résultat serveur absent ou non exploitable | 1 |
 
-Total : **181 tests**. Les contrôles de compilation (`tsc --noEmit`), statiques
-(`check:static`, 9 règles) et de taille de paquet (`bundle:check`) s'ajoutent à la suite.
+Dernière suite vérifiée : **195 tests passés** répartis dans 12 fichiers. `npm run test:coverage`
+exécute la même suite avec le fournisseur V8 et génère le rapport de couverture ;
+la dernière exécution a mesuré 49,47 % de lignes, 70,58 % de branches et 72,53 %
+de fonctions sur l'ensemble des fichiers inclus. Aucun seuil minimal n'est
+configuré ; ce pourcentage ne doit donc pas être lu comme un critère de succès. Les contrôles de compilation
+(`tsc --noEmit`), statiques (`check:static`, 10 règles) et de taille de paquet
+(`bundle:check`) s'ajoutent à la suite.
+
+`bundle:check` rapporte séparément le shell statique JS/CSS référencé par
+`dist/index.html` (mesure informative). L'alerte historique à 1 100 Ko et le
+plafond bloquant à 1 500 Ko s'appliquent tous deux à la somme de tous les JS/CSS
+livrés, chunks différés `React.lazy` compris. Le shell permet d'isoler l'effet sur
+l'entrée statique, sans masquer l'alerte du paquet complet. Le build actuel de la
+PWA précache 49 entrées (1 203,34 KiB) : le découpage réduit l'entrée JS et le
+travail au démarrage, mais ne réduit pas le volume total précaché hors ligne.
+
+## Fréquence d'occurrences annuelles et traçabilité financière
+
+Le champ `occurrencesPerYear` est distinct de `yearOccurrences` : le premier compte
+les événements identiques dans une année, le second liste les années où ils ont lieu.
+**Comportement actuellement implémenté (moteur 2.1.0), mais convention métier non
+confirmée par l'utilisateur et non à présenter comme définitive :** le montant
+stocké est interprété comme celui d'un événement ; la fréquence (entier strict de
+1 à 366) le multiplie dans chaque année d'occurrence. En l'absence du champ, le
+comportement de compatibilité actuel utilise une occurrence par année listée ; ce
+`1` est une valeur par défaut logicielle, pas une donnée mesurée ni une validation
+métier. Cette convention doit être confirmée avant d'être qualifiée de règle
+métier finale ou de fondement à une recommandation.
+
+Une colonne de fréquence dans un import exige une confirmation humaine ; une
+cellule vide ou décimale bloque la ligne, sans arrondi ni retour silencieux à 1.
+L'aperçu affiche la somme brute des montants du fichier, pas un total TCO recalculé.
+
+La migration `0006_cost_item_occurrences_per_year.sql` persiste cette valeur. Le
+mapping humain et la fréquence sont conservés dans la trace d'import et l'audit.
+Les nouveaux résultats de décision exposent explicitement l'avertissement de
+convention non confirmée et la méthodologie versionnée le répète ; cela qualifie
+l'hypothèse, sans en réécrire les calculs ni valider la règle métier.
+`src/engine/tcoEngine.spec.ts` vérifie la multiplication, le cas historique sans
+champ et l'actualisation par année réelle ; `tests/import.spec.ts` couvre mapping,
+validation stricte et relecture API ; `tests/parcours-api.spec.ts` couvre le POST,
+le GET et la conversion partagée. Le test d'export vérifie que la fréquence
+apparaît dans l'onglet de traces Excel.
 
 ## Moteur de test PostgreSQL
 
@@ -45,12 +90,17 @@ réellement `SET LOCAL ROLE`, `set_config`, le pool et la traduction d'erreurs.
    extensions disponibles, `pgcrypto`, paramètres `ssl`, latence, comportement
    du pool sous charge). À exécuter une fois par environnement :
    `DATABASE_URL=... npm run db:migrate && DATABASE_URL=... npm run test`.
-2. **Un test de navigateur** : les vues React ne sont pas encore couvertes par des
-   tests d'interface (Playwright non installé). Les parcours vérifiés sont ceux
-   de l'API.
+2. **Un navigateur réel** : `tests/ui.spec.tsx` vérifie des composants avec
+   jsdom, mais ne remplace pas Chromium. Deux parcours Playwright existent ; ils
+   n'ont pas été exécutés ici faute de binaire Chromium (voir la section
+   Playwright ci-dessous).
 3. **Un test de charge** : aucune mesure de performance n'a été produite à ce
    stade.
-4. **Les tests d'IA et d'import** : sans objet, ces fonctionnalités n'existent pas.
+4. **Les intégrations externes d'IA/ERP et les sources réelles** : les tests
+   unitaires/API ne valident pas un fournisseur externe, un compte réel ou un
+   environnement client. L'import XLSX/CSV, son mapping et ses validations sont
+   couverts par `tests/import.spec.ts`, mais cela ne certifie pas tous les
+   formats ni tous les fichiers rencontrés en production.
 
 ## Règle de vérité des tests
 
@@ -68,7 +118,7 @@ ESLint **ne peut pas être utilisé dans ce dépôt** : son moteur TypeScript
 (`typescript-eslint` 8.x, dernière version publiée) refuse TypeScript 7 et
 interrompt son chargement (`typescript-eslint does not support TS 7.0`). Plutôt
 que d'afficher une étape « lint » qui ne vérifierait rien, `scripts/check-static-rules.mjs`
-applique neuf règles vérifiables, chacune liée à un défaut réel :
+applique dix règles vérifiables, chacune liée à un défaut réel :
 
 | Règle | Ce qu'elle empêche |
 | --- | --- |
@@ -81,6 +131,7 @@ applique neuf règles vérifiables, chacune liée à un défaut réel :
 | R7 | Évaluation dynamique (`eval`, `new Function`) |
 | R8 | Dépendance du serveur envers les composants d'interface |
 | R9 | Revendication de certification ou de conformité dans l'interface (« ISO 27001 », « SOC 2 », « immuable », « certifié »…) sans preuve — négation reconnue, pour que « aucune certification n'est délivrée » reste possible |
+| R10 | Appel du moteur TCO/décision dans les composants, services ou l'application frontend : les vues consomment les sorties serveur persistées, sans fallback de calcul local |
 
 Chaque exception doit être inscrite dans le script **avec sa raison** : il n'existe
 pas de désactivation silencieuse.
@@ -97,30 +148,43 @@ pas de désactivation silencieuse.
 
 ## Tests navigateur (Playwright)
 
-`tests/e2e/` contient les parcours réels (PME, import, décision, reconnexion).
-**Ils n'ont pas pu être exécutés dans l'environnement de développement initial** :
-le téléchargement des navigateurs Playwright y est bloqué par le filtrage réseau
-(`cdn.playwright.dev` injoignable). Ils sont donc câblés dans la tâche `e2e` de
-l'intégration continue, où le téléchargement fonctionne, et exécutables sur toute
-machine disposant d'un navigateur :
+`tests/e2e/` contient deux parcours navigateur (PME, import, décision, reconnexion
+et refus d'une donnée manquante). Le job CI installe Chromium puis lance Playwright.
+La configuration `webServer` démarre et attend automatiquement l'API Express avec
+PGlite (port 3000) et le front Vite (port 5173) ; le navigateur appelle le front et
+Vite relaie les routes `/api` vers le serveur. Le test n'utilise donc pas le serveur
+statique de production : ce chemin est couvert séparément par le build, pas par
+l'E2E.
+
+Dans cet environnement, l'exécution navigateur reste **non vérifiée** : aucun
+navigateur n'était installé et le téléchargement depuis `cdn.playwright.dev` a
+échoué (`ECONNRESET`). `npm run test:e2e -- --list` valide le chargement de la
+configuration et le recensement des deux scénarios, mais pas leur exécution.
+Une tentative ciblée (`npm run test:e2e -- --grep T-E2E-01`) a atteint le lancement
+de Chromium puis échoué avant toute assertion, faute de l'exécutable
+`chrome-headless-shell` ; le parcours métier n'est donc pas validé ici. Sur une
+machine où Chromium est disponible :
 
 ```bash
-npm run test:e2e:server &      # API + PostgreSQL embarqué
 npx playwright install chromium
 npm run test:e2e
 ```
 
-Ce qui **remplace** ces tests dans l'environnement actuel : `tests/ui.spec.tsx`
-monte réellement les écrans dans un DOM (jsdom) et vérifie le rendu et les règles
-d'honnêteté de l'affichage (import bloqué, recommandation « aucune », intégrité du
-journal). Ce n'est pas équivalent à un navigateur complet — c'est dit ici.
+Par défaut, il n'est pas nécessaire de démarrer les serveurs à la main. Pour une
+stack déjà lancée ou externe, définir `TRUETCO_E2E_START_SERVERS=false` et fournir
+`TRUETCO_E2E_BASE_URL` (front) ainsi que `TRUETCO_E2E_API_URL` (API) selon le cas.
+
+`tests/ui.spec.tsx` monte aussi les écrans dans jsdom et vérifie le rendu ainsi que
+les règles d'honnêteté de l'affichage (import bloqué, recommandation « aucune »,
+qualification d'une convention non confirmée, intégrité du journal). Ces tests ne
+remplacent pas un navigateur complet.
 
 
 ---
 
 ## Parcours de bout en bout par HTTP (`tests/parcours-api.spec.ts`)
 
-Ces 14 tests pilotent **l'application réelle par HTTP** : même serveur Express, mêmes
+Ces 18 tests pilotent **l'application réelle par HTTP** : même serveur Express, mêmes
 routes, mêmes contrôles d'accès, même base PostgreSQL et **mêmes politiques RLS que la
 production**. Ils jouent le scénario complet d'une PME :
 
@@ -128,7 +192,7 @@ production**. Ils jouent le scénario complet d'une PME :
 | --- | --- |
 | A1–A3 | inscription d'un organisme, connexion (session par **cookie HttpOnly**, aucun jeton dans le corps de la réponse), refus sans session, création du dossier |
 | C | un fichier contenant un montant illisible (`dix-neuf mille`) est **refusé** ; la ligne fautive est désignée par son numéro ; une ligne sans montant est `MISSING` et **jamais** complétée par 0 € |
-| C2 | correction du fichier, colonne non modélisée (« occurrences par an ») laissée **à trancher**, catégories inconnues **listées** (formation, assurance, frais de raccordement) ; arbitrage humain enregistré ; exclusion explicite d'une ligne ; import |
+| C2 | correction du fichier ; « occurrences par an » reste non mappé automatiquement et exige un arbitrage humain explicite ; catégories inconnues **listées** (formation, assurance, frais de raccordement) ; mappings enregistrés ; exclusion explicite d'une ligne ; import |
 | D | provenance ligne à ligne : source du montant, numéro de ligne du fichier d'origine, marqueur d'import ; une valeur sans justificatif reste `unsourced` |
 | F | décision calculée par le serveur, classée sur la VAN du coût complet, avec versions (moteur, méthode), point mort, sensibilité, inversion de décision et montants non sourcés **affichés** |
 | F2 | rejeu de la décision depuis l'instantané : **résultat identique**, empreinte d'entrée SHA-256, information de fraîcheur |
@@ -213,8 +277,12 @@ sur ce que l'utilisateur VOIT et sur ce qui PART vers le serveur :
   est relu ; un refus du serveur est affiché tel quel ; un rôle sans `project:write` ne
   peut pas faire avancer le dossier ;
 - `T-UI-15` à `T-UI-17` côté dossier décisionnel : aucun signataire inventé ni badge
-  « signé », l'absence d'approbation est écrite noir sur blanc, les approbations
-  affichées sont celles du journal d'audit, et aucune transition ne part sans motif.
+  « signé », l'absence de transition renvoyée est écrite noir sur blanc, les transitions
+  affichées viennent du journal d'audit, et aucune transition ne part sans motif ;
+- `T-UI-18` empêche le rapport de transformer un rang 1 en gagnant lorsque la
+  recommandation serveur est indéterminée ;
+- `T-UI-19` vérifie que la modale du comparateur affiche les sources et métadonnées
+  déclarées par le run et ne fabrique ni provenance ni niveau de confiance.
 
 Ces tests ne remplacent pas un navigateur complet (voir la section Playwright
 ci-dessus) : ils couvrent le rendu, les appels émis et les règles d'honnêteté de

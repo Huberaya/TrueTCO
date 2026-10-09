@@ -21,8 +21,10 @@ import { ImportCenterView } from '../src/components/ImportCenterView';
 import { AuditLogView } from '../src/components/AuditLogView';
 import { DigitalSignatureView } from '../src/components/DigitalSignatureView';
 import { ExecutiveReportView } from '../src/components/ExecutiveReportView';
+import { ComparatorView } from '../src/components/ComparatorView';
 import { SEED_OFFERS, SEED_PROJECTS, SEED_SUPPLIERS } from '../src/data/seedData';
-import { IMPORT_TARGET_FIELDS } from '../src/services/serverData';
+import { DecisionRunResult, IMPORT_TARGET_FIELDS } from '../src/services/serverData';
+import { TCOEngine } from '../src/engine/tcoEngine';
 
 /**
  * Corps JSON d'une requête interceptée, ou `null` s'il ne s'agit pas de JSON.
@@ -84,6 +86,65 @@ const jsonResponse = (body: unknown, status = 200) =>
     })
   );
 
+/** Fixture de contrat serveur : le moteur n'est utilisé ici que pour préparer une réponse de test. */
+const serverRunFixture = (project: any, offers: any[]): DecisionRunResult => {
+  const calculationsByOfferId = Object.fromEntries(
+    offers.map((offer) => [offer.id, TCOEngine.calculateOfferTCO(project, offer)])
+  );
+  const ranking = offers
+    .map((offer) => ({ offer, calc: calculationsByOfferId[offer.id] }))
+    .sort((a, b) => a.calc.lifecycleCostLCC - b.calc.lifecycleCostLCC)
+    .map(({ offer, calc }) => ({
+      offerId: offer.id,
+      supplierName: offer.supplierName,
+      offerReference: offer.offerReference,
+      isResponsibleCandidate: offer.isResponsibleCandidate,
+      totalComprehensiveTCO: calc.totalComprehensiveTCO,
+      lifecycleCostLCC: calc.lifecycleCostLCC,
+      economicLCC: calc.economicLCC ?? null,
+      unitTCO: calc.unitTCO,
+      carbonTonnes: calc.totalLifecycleCO2eTonnes,
+      carbonCost: calc.monetizedCarbonTotal,
+      riskExposure: calc.riskExpositionTotal,
+      dataQualityScore: calc.dataQualityScore,
+      costLineCount: calc.costLineTrace?.length ?? 0,
+      warnings: calc.warnings ?? [],
+    }));
+  const best = ranking[0];
+  const second = ranking[1];
+  return {
+    runId: 'test-run-server',
+    projectId: project.id,
+    engineVersion: '2.1.0',
+    methodologyVersion: '2026.2',
+    inputVersion: 1,
+    inputFingerprint: 'a'.repeat(64),
+    createdAt: '2026-10-08T10:00:00.000Z',
+    createdBy: 'Utilisateur de test',
+    ranking,
+    recommendation: {
+      offerId: best?.offerId ?? null,
+      supplierName: best?.supplierName ?? null,
+      status: 'conditionnel',
+      reason: 'Fixture de test : classement calculé à partir des données fournies.',
+      economicAdvantage: second ? {
+        vsSecondBestNpv: second.lifecycleCostLCC - best.lifecycleCostLCC,
+        vsWorstNpv: ranking[ranking.length - 1].lifecycleCostLCC - best.lifecycleCostLCC,
+        vsCheapestApparentNpv: 0,
+        apparentCheapestOfferId: offers[0]?.id ?? null,
+      } : null,
+    },
+    breakEven: null,
+    sensitivity: [],
+    decisionReversal: null,
+    calculationsByOfferId,
+    scenarios: TCOEngine.calculateScenarios(project, offers),
+    warnings: [],
+    blockingIssues: [],
+    dataCompleteness: { totalCostItems: offers.reduce((sum, offer) => sum + offer.costItems.length, 0), byQualityStatus: { valid: 1 }, missingAmountTotal: 0, unsourcedAmountTotal: 0, demoItemCount: 0 },
+  };
+};
+
 beforeEach(() => {
   vi.restoreAllMocks();
 });
@@ -93,109 +154,57 @@ afterEach(() => {
 });
 
 describe('Écran Décision', () => {
-  const decisionPayload = {
+  const decisionPayload: DecisionRunResult = {
     runId: 'run-1',
     projectId: 'project-1',
-    engineVersion: '2.0.0',
-    methodologyVersion: '2026.1',
+    engineVersion: '2.1.0',
+    methodologyVersion: '2026.2',
     inputVersion: 1,
-    calculatedAt: '2026-10-08T10:00:00.000Z',
     inputFingerprint: 'a'.repeat(64),
-    currency: 'EUR',
-    horizonYears: 5,
-    discountRate: 0.05,
-    completeness: {
-      totalCostItems: 4,
-      validCostItems: 3,
-      unsourcedCostItems: 1,
-      estimatedCostItems: 0,
-      missingCostItems: 0,
-      erroredCostItems: 0,
-      demoCostItems: 0,
-      coveragePercent: 75,
-      verdict: 'Données partiellement sourcées.',
-    },
+    createdAt: '2026-10-08T10:00:00.000Z',
+    createdBy: 'Test DAF',
     ranking: [
       {
-        rank: 1,
-        offerId: 'offer-a',
-        offerReference: 'OFF-A',
-        supplierName: 'Fournisseur A',
-        apparentTotal: 200000,
-        totalComprehensiveTCO: 425000,
-        lifecycleCostLCC: 394827,
-        carbonTonnes: 12,
-        confidenceScore: 82,
-        isApparentCheapest: false,
+        offerId: 'offer-a', offerReference: 'OFF-A', supplierName: 'Fournisseur A', isResponsibleCandidate: false,
+        totalComprehensiveTCO: 425000, lifecycleCostLCC: 394827, economicLCC: 394000, unitTCO: 425000,
+        carbonTonnes: 12, carbonCost: 1200, riskExposure: 1000, dataQualityScore: 82, costLineCount: 2, warnings: [],
       },
       {
-        rank: 2,
-        offerId: 'offer-b',
-        offerReference: 'OFF-B',
-        supplierName: 'Fournisseur B',
-        apparentTotal: 350000,
-        totalComprehensiveTCO: 400000,
-        lifecycleCostLCC: 393295,
-        carbonTonnes: 8,
-        confidenceScore: 90,
-        isApparentCheapest: true,
+        offerId: 'offer-b', offerReference: 'OFF-B', supplierName: 'Fournisseur B', isResponsibleCandidate: true,
+        totalComprehensiveTCO: 400000, lifecycleCostLCC: 393295, economicLCC: 392500, unitTCO: 400000,
+        carbonTonnes: 8, carbonCost: 800, riskExposure: 500, dataQualityScore: 90, costLineCount: 2, warnings: [],
       },
     ],
-    recommendedOfferId: null,
     recommendation: {
-      status: 'indetermine',
-      offerId: null,
+      status: 'indetermine', offerId: 'offer-b', supplierName: 'Fournisseur B',
       reason: "L'écart de VAN entre les deux premières offres est de 0,39 %, sous le seuil de robustesse de 0,5 % : aucune recommandation ferme ne peut être formulée.",
-      conditions: ['Vérifier les hypothèses de durée de vie avant de trancher.'],
-      economicAdvantage: {
-        vsSecondBestNpv: 1531,
-        vsWorstNpv: 1531,
-        vsCheapestApparentNpv: 1531,
-        apparentCheapestOfferId: 'offer-b',
-      },
+      economicAdvantage: { vsSecondBestNpv: 1531, vsWorstNpv: 1531, vsCheapestApparentNpv: 1531, apparentCheapestOfferId: 'offer-a' },
     },
     breakEven: null,
-    sensitivity: null,
-    inversion: {
-      winner: 'OFF-A',
-      challenger: 'OFF-B',
-      note: 'Deltas calculés comme « challenger − gagnant ».',
-      parameters: [
-        {
-          parameter: 'wacc',
-          label: "Taux d'actualisation (WACC)",
-          unit: '%',
-          range: { min: 0, max: 30, step: 0.5 },
-          currentValue: 5,
-          direction: 'au_dessus',
-          isReachable: true,
-          nearestThreshold: 5.37,
-          intervals: [{ from: 5.37, to: 30 }],
-          marginToThreshold: -0.37,
-          deltaAtBounds: { min: -64755, max: 25000 },
-          statement: 'Au-delà de 5,37 %, la décision s’inverse.',
-        },
-      ],
+    sensitivity: [],
+    decisionReversal: {
+      winnerOfferId: 'offer-b', winnerSupplierName: 'Fournisseur B', challengerOfferId: 'offer-a', challengerSupplierName: 'Fournisseur A',
+      baseDelta: 1531, signConvention: 'Delta = VAN du challenger − VAN du vainqueur.', method: 'balayage puis dichotomie',
+      parameters: [{
+        parameter: 'taux_actualisation', label: "Taux d'actualisation (WACC)", unit: '%', currentValue: 0.05,
+        exploredRange: { min: 0, max: 0.3, step: 0.0025 }, isReachable: true, nearestThreshold: 0.0537,
+        intervals: [{ from: 0.0537, to: 0.3, threshold: 0.0537, direction: 'au_dessus', relativeDistance: 0.074, currentSide: 'favorable' }],
+        marginToThreshold: { absolute: 0.0037, relative: 0.074 },
+        statement: "Au-delà de 5,37 %, la décision s'inverse.",
+        deltaAtBounds: { min: 0, max: 25000, deltaAtMin: 0, deltaAtMax: 25000 },
+      }],
     },
-    warnings: ['Poste « Maintenance » sans source : conservé au calcul mais non vérifié.'],
-    results: {
-      perOffer: [
-        {
-          offerId: 'offer-a',
-          offerReference: 'OFF-A',
-          supplierName: 'Fournisseur A',
-          totalComprehensiveTCO: 425000,
-          lifecycleCostLCC: 394827,
-          monthlyEquivalentCost: 7083,
-          costPerUnit: 106250,
-          carbonTonnes: 12,
-          confidenceScore: 82,
-          breakdown: [{ category: 'acquisition', amount: 200000, share: 0.47, quality: 'sourcé (Devis signé)' }],
-          warnings: [{ severity: 'avertissement', message: 'Un poste est non sourcé.' }],
-        },
-      ],
-      warnings: [],
+    calculationsByOfferId: {
+      'offer-a': { offerId: 'offer-a', supplierName: 'Fournisseur A', apparentDirectCost: 200000 } as any,
+      'offer-b': { offerId: 'offer-b', supplierName: 'Fournisseur B', apparentDirectCost: 350000 } as any,
     },
+    scenarios: [],
+    warnings: [
+      'Poste « Maintenance » sans source : conservé au calcul mais non vérifié.',
+      'Convention métier non confirmée : le résultat repose sur une hypothèse de fréquence provisoire.',
+    ],
+    blockingIssues: [],
+    dataCompleteness: { totalCostItems: 4, byQualityStatus: { valid: 3, unsourced: 1 }, missingAmountTotal: 0, unsourcedAmountTotal: 0, demoItemCount: 0 },
   };
 
   it('T-UI-01 : une recommandation « aucune » n’affiche pas de gagnant, et la raison est visible', async () => {
@@ -208,7 +217,7 @@ describe('Écran Décision', () => {
       })
     );
 
-    render(<DecisionView projectId="project-1" projectName="Dossier test" currency="EUR" canRunDecision />);
+    render(<DecisionView projectId="project-1" projectName="Dossier test" currency="EUR" horizonYears={5} discountRate={0.05} canRunDecision />);
 
     // Rien n'est calculé tant que l'utilisateur ne l'a pas demandé : aucun montant
     // ne doit être affiché avant l'appel serveur.
@@ -218,11 +227,11 @@ describe('Écran Décision', () => {
 
     await waitFor(() => expect(screen.getAllByText(/Aucune recommandation/i).length).toBeGreaterThan(0));
     expect(screen.getByText(/sous le seuil de robustesse de 0,5 %/i)).toBeTruthy();
-    // Les deux offres sont classées, et l'option au prix affiché le plus bas est
-    // signalée comme telle — sans être présentée comme la meilleure.
+    expect(screen.getByText(/Convention métier non confirmée/i)).toBeTruthy();
+    // Les offres sont classées par le serveur ; aucun avantage de prix n'est inféré localement.
     expect(screen.getByText('OFF-A')).toBeTruthy();
     expect(screen.getByText('OFF-B')).toBeTruthy();
-    expect(screen.getAllByText(/prix affiché le plus bas/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/prix affiché le plus bas/i)).toBeNull();
     // Le tableau d'inversion affiche le seuil et son unité.
     expect(screen.getAllByText(/5,37 %/).length).toBeGreaterThan(0);
     expect(screen.getByText(/Quand la décision change-t-elle/i)).toBeTruthy();
@@ -232,8 +241,8 @@ describe('Écran Décision', () => {
     const fetchMock = vi.fn(() => jsonResponse({ items: [] }));
     vi.stubGlobal('fetch', fetchMock);
 
-    render(<DecisionView projectId="project-1" projectName="Dossier test" currency="EUR" canRunDecision={false} />);
-    expect(screen.getByText(/autorise la consultation des décisions, mais pas leur exécution/i)).toBeTruthy();
+    render(<DecisionView projectId="project-1" projectName="Dossier test" currency="EUR" horizonYears={5} discountRate={0.05} canRunDecision={false} />);
+    expect(screen.getByText(/Votre rôle peut consulter les décisions, mais ne peut pas lancer un nouveau calcul/i)).toBeTruthy();
 
     const button = screen.getByRole('button', { name: /Calculer la décision/i });
     button.click();
@@ -255,7 +264,7 @@ describe('Écran Décision', () => {
       })
     );
 
-    render(<DecisionView projectId="project-1" projectName="Dossier test" currency="EUR" canRunDecision />);
+    render(<DecisionView projectId="project-1" projectName="Dossier test" currency="EUR" horizonYears={5} discountRate={0.05} canRunDecision />);
     screen.getByRole('button', { name: /Calculer la décision/i }).click();
 
     await waitFor(() => expect(screen.getByText(/Le calcul est bloqué : 1 poste est en erreur\./)).toBeTruthy());
@@ -719,15 +728,16 @@ describe('Approbations du dossier', () => {
 describe('Dossier décisionnel — approbations réelles', () => {
   const seedProject = { ...SEED_PROJECTS[0], ownerName: 'Porteur du dossier (test)', serverWorkflowStatus: 'finance_review' };
   const seedOffers = SEED_OFFERS.filter((offer) => offer.projectId === SEED_PROJECTS[0].id);
+  const seedRun = serverRunFixture(seedProject, seedOffers);
 
   it('T-UI-15 : aucun signataire inventé, et l’absence d’approbation est dite', async () => {
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ items: [], total: 0 })));
 
     const { container } = render(
-      <ExecutiveReportView project={seedProject} offers={seedOffers} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
+      <ExecutiveReportView project={seedProject} offers={seedOffers} decisionRun={seedRun} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
     );
 
-    await waitFor(() => expect(screen.getByText(/Aucune approbation n’est enregistrée/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Aucune transition de statut n'est renvoyée/i)).toBeTruthy());
     for (const inventedName of ['Sophie Valéry', 'Lucas Bernard', 'Éléonore Chen', 'Alexandre de Mortemart']) {
       expect(container.textContent).not.toContain(inventedName);
     }
@@ -769,7 +779,7 @@ describe('Dossier décisionnel — approbations réelles', () => {
     );
 
     render(
-      <ExecutiveReportView project={seedProject} offers={seedOffers} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
+      <ExecutiveReportView project={seedProject} offers={seedOffers} decisionRun={seedRun} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
     );
 
     await waitFor(() => expect(screen.getByText('Responsable Achats Test')).toBeTruthy());
@@ -791,14 +801,61 @@ describe('Dossier décisionnel — approbations réelles', () => {
     );
 
     render(
-      <ExecutiveReportView project={seedProject} offers={seedOffers} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
+      <ExecutiveReportView project={seedProject} offers={seedOffers} decisionRun={seedRun} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
     );
-    await waitFor(() => expect(screen.getByText(/Aucune approbation n’est enregistrée/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Aucune transition de statut n'est renvoyée/i)).toBeTruthy());
 
     // Motif trop court : la transition est refusée localement, avant tout appel.
     fireEvent.change(screen.getByLabelText(/Motif de la décision/i), { target: { value: 'ok' } });
     screen.getByRole('button', { name: /Enregistrer l’étape/i }).click();
     await waitFor(() => expect(screen.getByText(/au moins 10 caractères est exigé par le serveur/i)).toBeTruthy());
     expect(calls.some((call) => call.method === 'POST')).toBe(false);
+  });
+
+  it('T-UI-18 : un rapport ne transforme pas un rang 1 indéterminé en offre lauréate', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ items: [], total: 0 })));
+    const noRecommendationRun: DecisionRunResult = {
+      ...seedRun,
+      recommendation: {
+        offerId: null,
+        supplierName: null,
+        status: 'indetermine',
+        reason: 'Aucune recommandation ferme : les données ne permettent pas de conclure.',
+        economicAdvantage: null,
+      },
+    };
+
+    const { container } = render(
+      <ExecutiveReportView project={seedProject} offers={seedOffers} decisionRun={noRecommendationRun} suppliers={SEED_SUPPLIERS} onBack={() => undefined} />
+    );
+
+    expect(screen.getAllByText(/Aucune recommandation ferme/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Rang 1 : .*aucune recommandation ferme/i)).toBeTruthy();
+    expect(container.textContent).not.toContain('Option proposée :');
+    expect(container.textContent).not.toContain('Proposition serveur');
+  });
+});
+
+describe('Comparateur — traçabilité issue du résultat serveur', () => {
+  const seedProject = SEED_PROJECTS[0];
+  const seedOffers = SEED_OFFERS.filter((offer) => offer.projectId === seedProject.id);
+  const seedRun = serverRunFixture(seedProject, seedOffers);
+
+  it('T-UI-19 : le détail reprend les sources déclarées et les traces du run, sans provenance fabriquée', async () => {
+    render(
+      <ComparatorView
+        project={seedProject}
+        offers={seedOffers}
+        decisionRun={seedRun}
+        onOpenImportModal={() => undefined}
+      />
+    );
+
+    fireEvent.click(screen.getAllByTitle(/Pourquoi ce montant/i)[0]);
+    await waitFor(() => expect(screen.getByText(/Détail du résultat serveur/i)).toBeTruthy());
+    expect(screen.getByText(/test-run-server/)).toBeTruthy();
+    expect(screen.getByText(seedOffers[0].apparentUnitPrice.sourceName)).toBeTruthy();
+    expect(screen.queryByText(/Acheteur Lead|Contrôleur DAF|Devis négocié du fournisseur|Référentiel externe certifié/)).toBeNull();
+    expect(screen.queryByText(/Niveau de confiance des données/i)).toBeNull();
   });
 });

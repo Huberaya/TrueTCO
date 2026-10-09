@@ -145,8 +145,8 @@ beforeAll(async () => {
     isProd: false,
     allowDemoAuth: true,
     allowedOrigins: [],
-    engineVersion: '2.0.0',
-    methodologyVersion: '2026.1',
+    engineVersion: '2.1.0',
+    methodologyVersion: '2026.2',
   });
   server = app.listen(0, '127.0.0.1');
   await new Promise<void>((resolve) => server.once('listening', () => resolve()));
@@ -432,8 +432,8 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
   it('F — la décision est calculée par le serveur, classée, et munie de sa version', async () => {
     const run = await api<any>('POST', `/api/projects/${projectId}/decision-runs`, { cookie: session });
     expect(run.status).toBe(201);
-    expect(run.body.engineVersion).toBe('2.0.0');
-    expect(run.body.methodologyVersion).toBe('2026.1');
+    expect(run.body.engineVersion).toBe('2.1.0');
+    expect(run.body.methodologyVersion).toBe('2026.2');
 
     const ranking = run.body.ranking;
     // Les trois offres sont classées, avec un coût complet et une valeur actualisée.
@@ -628,7 +628,7 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
     expect(simulation.status).toBe(201);
 
     const result = simulation.body.result;
-    expect(result.engineVersion).toBe('2.0.0');
+    expect(result.engineVersion).toBe('2.1.0');
     expect(result.methodologyVersion).toMatch(/monte-carlo/);
     expect(result.seedUsed).toBe('reunion-comite-achat-2026-10-08');
     expect(result.iterations).toBe(2000);
@@ -830,6 +830,7 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
             amount: 12400,
             isRecurringYearly: true,
             yearOccurrences: [1, 2, 3, 4, 5, 6, 7, 8],
+            occurrencesPerYear: 2,
           },
         ],
       },
@@ -863,6 +864,11 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
     expect(maintenance).toBeTruthy();
     expect(energy!.category).toBe('energie_consommables');
     expect(maintenance!.category).toBe('maintenance_reparations');
+    expect(maintenance!.occurrencesPerYear).toBe(2);
+    const offerAudit = await api<{ items: any[] }>('GET', '/api/audit-logs?action=offer.created', { cookie: session });
+    const offerAuditEntry = offerAudit.body.items.find((entry: any) => entry.entity_id === created.body.id);
+    expect(offerAuditEntry.new_value).toContain('"costItemAmountBasis":"per_occurrence"');
+    expect(offerAuditEntry.new_value).toContain('"occurrencesPerYear":2');
 
     // La provenance est conservée, et le poste sans source n'est pas présenté comme
     // vérifié : il est « manquante », donc exclu de la confiance du résultat.
@@ -885,6 +891,22 @@ describe('Parcours PME complet, par HTTP (test de réalité A, C, D, F)', () => 
     expect(rejected.status).toBe(400);
     expect(rejected.body.code).toBe('INVALID_COST_CATEGORY');
     expect(rejected.body.error).toMatch(/acquisition/); // la liste autorisée est donnée
+
+    const invalidFrequency = await api<any>('POST', '/api/offers', {
+      cookie: session,
+      json: {
+        projectId,
+        supplierName: 'Fréquence invalide',
+        offerReference: 'OFF-FREQ-INVALID',
+        apparentTotal: 1000,
+        costItems: [
+          { label: 'Poste décimal', category: 'maintenance', amount: 1000, occurrencesPerYear: 1.5 },
+        ],
+      },
+    });
+    expect(invalidFrequency.status).toBe(400);
+    expect(invalidFrequency.body.code).toBe('INVALID_OCCURRENCES_PER_YEAR');
+    expect(invalidFrequency.body.error).toMatch(/entier strict/);
 
     // Le dossier compte désormais quatre offres dans la décision : la nouvelle y
     // entre sans ressaisie, avec ses propres données.
