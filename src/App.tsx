@@ -404,6 +404,10 @@ export default function App() {
   };
 
   const handleRestoreData = (payload: TrueTCOBackupPayload) => {
+    if (dataSource !== 'cache-local') {
+      setServerError('Import local refusé : les données de la session serveur ne peuvent pas être remplacées depuis le navigateur.');
+      return;
+    }
     setProjects(payload.projects);
     setOffers(payload.offers);
     setSuppliers(payload.suppliers);
@@ -415,6 +419,10 @@ export default function App() {
   };
 
   const handleResetSeed = () => {
+    if (dataSource !== 'cache-local') {
+      setServerError('Réinitialisation refusée : le jeu de démonstration ne peut pas remplacer les données de la session serveur.');
+      return;
+    }
     StorageService.resetToSeed();
     setProjects(SEED_PROJECTS);
     setOffers(SEED_OFFERS);
@@ -711,6 +719,7 @@ export default function App() {
         suppliers={suppliers}
         benchmarks={benchmarks}
         auditLogs={auditLogs}
+        isLocalDemo={dataSource === 'cache-local'}
         onRestoreData={handleRestoreData}
         onResetSeed={handleResetSeed}
       />

@@ -2,7 +2,6 @@ import React, { useRef, useState } from 'react';
 import { StorageService, TrueTCOBackupPayload } from '../services/storageService';
 import { ApiError, fetchHealth } from '../services/serverData';
 import { Project, SupplierOffer, Supplier, ExternalityReferenceBenchmark, AuditLogEntry } from '../types/domain';
-import { TrueTCOBackupPayloadSchema, formatZodError } from '../schemas/validationSchemas';
 import {
   X,
   Download,
@@ -16,7 +15,6 @@ import {
   Copy,
   Check,
   Terminal,
-  ShieldCheck,
 } from 'lucide-react';
 
 interface DataBackupModalProps {
@@ -27,6 +25,7 @@ interface DataBackupModalProps {
   suppliers: Supplier[];
   benchmarks: ExternalityReferenceBenchmark[];
   auditLogs: AuditLogEntry[];
+  isLocalDemo: boolean;
   onRestoreData: (payload: TrueTCOBackupPayload) => void;
   onResetSeed: () => void;
 }
@@ -46,6 +45,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   suppliers,
   benchmarks,
   auditLogs,
+  isLocalDemo,
   onRestoreData,
   onResetSeed,
 }) => {
@@ -53,7 +53,6 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
-  const [zodValidationReport, setZodValidationReport] = useState<{ valid: boolean; messages: string[] } | null>(null);
 
   /**
    * État réel de la base de données, lu auprès du serveur. Aucune valeur par
@@ -91,50 +90,29 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   if (!isOpen) return null;
 
   const handleExport = () => {
+    if (!isLocalDemo) {
+      setFeedback({
+        type: 'error',
+        msg: 'Export local bloqué : ces données appartiennent au serveur PostgreSQL, pas à ce navigateur.',
+      });
+      return;
+    }
     StorageService.exportFullBackup(projects, offers, suppliers, benchmarks, auditLogs);
     setFeedback({
       type: 'success',
-      msg: 'Dossier complet exporté avec succès au format JSON auditable.',
+      msg: 'Sauvegarde locale de démonstration exportée ; elle ne constitue pas une sauvegarde PostgreSQL.',
     });
-  };
-
-  const handleDownloadSql = () => {
-    StorageService.downloadSqlMigrationDump(projects, offers, suppliers, benchmarks, auditLogs);
-    setFeedback({
-      type: 'success',
-      msg: 'Script SQL PostgreSQL généré et téléchargé (truetco_migration_postgresql.sql). Prêt pour injection dans votre SGBD.',
-    });
-  };
-
-  const handleRunZodValidation = () => {
-    const payload = {
-      version: '1.2.0',
-      exportedAt: new Date().toISOString(),
-      organization: 'Acme Group Europe',
-      projects,
-      offers,
-      suppliers,
-      benchmarks,
-      auditLogs,
-    };
-    const res = TrueTCOBackupPayloadSchema.safeParse(payload);
-    if (res.success) {
-      setZodValidationReport({
-        valid: true,
-        messages: [
-          `Validation réussie : ${projects.length} projet(s), ${offers.length} offre(s), ${suppliers.length} fournisseur(s) et ${auditLogs.length} traces d'audit conformes.`,
-          'Les contraintes de format (WACC, budget, structure de coûts) et ESG ont été vérifiées pour la migration.',
-        ],
-      });
-    } else {
-      setZodValidationReport({
-        valid: false,
-        messages: formatZodError(res.error),
-      });
-    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isLocalDemo) {
+      setFeedback({
+        type: 'error',
+        msg: 'Restauration locale bloquée : elle ne peut ni lire ni modifier les données du serveur.',
+      });
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -146,7 +124,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
         onRestoreData(payload);
         setFeedback({
           type: 'success',
-          msg: `Restauration réussie : ${payload.projects.length} projet(s), ${payload.offers.length} offre(s) et ${payload.auditLogs.length} traces d'audit chargées.`,
+          msg: `Jeu local chargé dans ce navigateur : ${payload.projects.length} projet(s), ${payload.offers.length} offre(s). Aucune donnée serveur ni trace d'audit PostgreSQL n'a été restaurée.`,
         });
       } catch (err: any) {
         setFeedback({
@@ -160,9 +138,16 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   };
 
   const handleReset = () => {
+    if (!isLocalDemo) {
+      setFeedback({
+        type: 'error',
+        msg: 'Réinitialisation bloquée : les données du serveur ne peuvent pas être remplacées par le jeu de démonstration.',
+      });
+      return;
+    }
     if (
       window.confirm(
-        'Voulez-vous vraiment réinitialiser toutes les données aux valeurs de démonstration ? Les modifications non exportées seront écrasées.'
+        'Voulez-vous vraiment réinitialiser les données de démonstration locales de ce navigateur ? Les données du serveur ne seront pas modifiées.'
       )
     ) {
       onResetSeed();
@@ -175,7 +160,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
 
   const handleCopySqlPath = () => {
     navigator.clipboard.writeText(
-      'Le schéma réel est décrit par les migrations SQL du dépôt : (src/db/migrations). Chaque migration est figée par son empreinte SHA-256 et appliquée au démarrage.'
+      'Migrations de schéma versionnées dans src/db/migrations/. Commande de déploiement : npm run db:migrate avec DATABASE_URL configurée dans le gestionnaire de secrets. Cette commande n’exporte pas et ne restaure pas les données métier.'
     );
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
@@ -211,7 +196,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             }`}
           >
             <Download className="w-3.5 h-3.5" />
-            Sauvegarde & Portabilité JSON
+            Sauvegarde locale (démo uniquement)
           </button>
 
           <button
@@ -235,7 +220,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             }`}
           >
             <Terminal className="w-3.5 h-3.5 text-amber-400" />
-            Migration & Export SGBD
+            Migrations de schéma
           </button>
         </div>
 
@@ -257,14 +242,14 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
         )}
 
         {/* TAB 1: BACKUP & LOCAL PERSISTENCE */}
-        {activeTab === 'backup' && (
+        {activeTab === 'backup' && isLocalDemo && (
           <div className="space-y-3 text-xs">
             {/* Card 1: Export */}
             <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3">
               <div>
-                <div className="font-semibold text-white">Exporter l'intégralité du portefeuille</div>
+                <div className="font-semibold text-white">Exporter le jeu local de démonstration</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">
-                  Télécharge un fichier JSON (.truetco) avec projets, offres, fournisseurs et journal d'audit.
+                  Télécharge un JSON des données visibles dans ce navigateur. Ce fichier n'est ni un export PostgreSQL ni une preuve d'audit serveur.
                 </div>
               </div>
               <button
@@ -279,9 +264,9 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             {/* Card 2: Import */}
             <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3">
               <div>
-                <div className="font-semibold text-white">Restaurer / Importer une consultation</div>
+                <div className="font-semibold text-white">Restaurer un jeu local</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">
-                  Chargez un fichier de sauvegarde pour reprendre un dossier ou auditer des calculs.
+                  Remplace les données locales de démonstration uniquement. Ne modifie pas la base serveur.
                 </div>
               </div>
               <input
@@ -320,6 +305,18 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
           </div>
         )}
 
+        {activeTab === 'backup' && !isLocalDemo && (
+          <div role="alert" className="rounded-xl border border-amber-700/70 bg-amber-950/40 p-4 text-xs leading-relaxed text-amber-100">
+            <strong className="block text-sm">Sauvegarde locale désactivée pour une session serveur.</strong>
+            <p className="mt-1">
+              Exporter, restaurer ou réinitialiser depuis le navigateur agirait uniquement sur un cache local — jamais sur PostgreSQL — et pourrait afficher des données trompeuses. Ces actions sont donc bloquées.
+            </p>
+            <p className="mt-1 text-amber-200/80">
+              La sauvegarde et la restauration des données serveur doivent être opérées par l’outil d’exploitation de la base.
+            </p>
+          </div>
+        )}
+
         {/* Onglet 2 : état RÉEL de la base de données.
             L'onglet précédent affichait un schéma de tables fabriqué (colonnes qui
             n'existent pas), un nom d'hôte d'instance inventé et la mention
@@ -353,8 +350,9 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl text-[11px] text-slate-400 leading-relaxed">
               Les données de production vivent dans PostgreSQL, sur le serveur. Elles ne sont ni sauvegardées ni
               restaurées depuis ce navigateur : une sauvegarde locale ne protégerait pas les données du serveur et
-              donnerait une fausse assurance. La sauvegarde de la base relève de l'exploitation (voir DEPLOYMENT.md).
-              L'onglet « Sauvegarde locale » ne concerne que les données de DÉMONSTRATION affichées sans session.
+              donnerait une fausse assurance. Les sauvegardes et restaurations relèvent des outils d'exploitation
+              PostgreSQL. L'onglet « Sauvegarde locale » ne concerne que les données de DÉMONSTRATION affichées sans
+              session.
             </div>
           </div>
         )}
@@ -415,97 +413,40 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                 silence.
               </p>
               <p className="text-slate-400">
-                Aucune sauvegarde ni restauration des données de production n'est possible depuis le navigateur — cette
-                opération relève de l'exploitation de la base (voir DEPLOYMENT.md).
+                Aucune sauvegarde ni restauration des données de production n'est possible depuis le navigateur. Le
+                runner de migrations du dépôt agit sur le schéma ; la sauvegarde et la restauration des données relèvent
+                des outils d'exploitation PostgreSQL.
               </p>
             </div>
           </div>
         )}
 
-        {/* TAB 3: MIGRATION SGBD & EXPORT SQL */}
+        {/* Onglet 3 : migrations versionnées du schéma, pas un dump de données */}
         {activeTab === 'migration' && (
-          <div className="space-y-3.5 text-xs max-h-[380px] overflow-y-auto pr-1">
-            {/* Action 1: Download SQL Dump */}
-            <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-white flex items-center gap-1.5">
-                    <Terminal className="w-4 h-4 text-emerald-400" />
-                    Dump SQL de Migration PostgreSQL (DDL & DML)
-                  </div>
-                  <div className="text-slate-400 text-[11px] mt-0.5">
-                    Génère un script SQL exécutable contenant toutes les tables et données réelles actuelles (projets, offres, CBS, audit).
-                  </div>
-                </div>
-                <button
-                  onClick={handleDownloadSql}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  Générer .sql
-                </button>
+          <div className="space-y-3 text-xs max-h-[380px] overflow-y-auto pr-1">
+            <div className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-slate-300">
+              <div className="mb-2 flex items-center gap-2 font-semibold text-white">
+                <Terminal className="h-4 w-4 text-emerald-400" />
+                Migrations versionnées de la base
               </div>
-
-              <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2.5 font-mono text-[11px] text-slate-300">
-                <span className="text-slate-500"># Commande d'injection directe sur votre serveur PostgreSQL :</span>
-                <div className="text-emerald-300 mt-1 select-all">
-                  psql -h $SQL_HOST -U $SQL_USER -d $SQL_DB_NAME -f truetco_migration_postgresql.sql
-                </div>
-              </div>
-            </div>
-
-            {/* Action 2: Pre-migration Zod Validation */}
-            <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl space-y-2.5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="font-semibold text-white flex items-center gap-1.5">
-                    <ShieldCheck className="w-4 h-4 text-sky-400" />
-                    Contrôle d'Intégrité Zod Pré-Migration
-                  </div>
-                  <div className="text-slate-400 text-[11px] mt-0.5">
-                    Vérifie la conformité de chaque champ financier (WACC, inflation, offres, risques) avant transfert en base de données.
-                  </div>
-                </div>
-                <button
-                  onClick={handleRunZodValidation}
-                  className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Tester la validité
-                </button>
-              </div>
-
-              {zodValidationReport && (
-                <div
-                  className={`p-3 rounded-lg border text-[11px] space-y-1 ${
-                    zodValidationReport.valid
-                      ? 'bg-emerald-950/50 border-emerald-800/80 text-emerald-200'
-                      : 'bg-rose-950/50 border-rose-800/80 text-rose-200'
-                  }`}
-                >
-                  <div className="font-semibold flex items-center gap-1.5">
-                    {zodValidationReport.valid ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    ) : (
-                      <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                    )}
-                    {zodValidationReport.valid
-                      ? 'Toutes les données respectent les schémas de validation (Zod). Aucune certification externe n’est en jeu.'
-                      : 'Erreurs de validation détectées :'}
-                  </div>
-                  <ul className="list-disc list-inside space-y-0.5 text-slate-300">
-                    {zodValidationReport.messages.map((m, idx) => (
-                      <li key={idx}>{m}</li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-            </div>
-
-            {/* Architecture note */}
-            <div className="p-3 bg-slate-950/60 border border-slate-800/60 rounded-xl text-[11px] text-slate-400 space-y-1">
-              <span className="font-semibold text-slate-300 block">Souveraineté des Données & Mode Hors-Ligne (PWA) :</span>
-              En l'absence de base cloud connectée, TrueTCO fonctionne à 100% en local sécurisé dans le navigateur avec réplication IndexedDB/LocalStorage et cache PWA Service Worker. Toutes les données peuvent être injectées ultérieurement sur votre infrastructure sans aucune perte.
+              <p>
+                Les fichiers de schéma sont versionnés dans <code className="font-mono text-slate-100">src/db/migrations/</code>.
+                Le runner <code className="font-mono text-slate-100">npm run db:migrate</code> applique les migrations
+                manquantes, enregistre leur empreinte SHA-256 et exécute chacune dans une transaction.
+              </p>
+              <p className="mt-2">
+                Pour une base persistante, exécutez la commande dans le pipeline d’exploitation après validation de la
+                cible et de la sauvegarde, avec <code className="font-mono text-slate-100">DATABASE_URL</code> injectée
+                par un gestionnaire de secrets. Ne collez jamais cette URL dans le navigateur ou dans un fichier commité.
+              </p>
+              <p className="mt-2 text-amber-200">
+                Cette commande migre le schéma ; elle n’exporte, ne sauvegarde et ne restaure aucune donnée métier.
+                Le dépôt ne fournit pas de dump serveur depuis cette interface.
+              </p>
+              <p className="mt-2 text-slate-400">
+                Le mode <code className="font-mono">TRUETCO_USE_PGLITE=true</code> sert aux essais locaux éphémères :
+                la base embarquée disparaît à la fermeture du processus et ne vaut pas migration d’une base persistante.
+              </p>
             </div>
           </div>
         )}

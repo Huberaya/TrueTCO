@@ -28,10 +28,11 @@ npm run verify        # typecheck + tests + build + bundle:check
 | `tests/ui.spec.tsx` | Rendu des écrans (jsdom) : décision, import, journal, approbations, comparateur et dossier décisionnel | 19 |
 | `tests/excel-export.spec.ts` | Export du résultat serveur et de ses traces, dont les années, la fréquence et les qualifications | 6 |
 | `tests/server-data.spec.ts` | Refus d'afficher un résultat serveur absent ou non exploitable | 1 |
+| `tests/data-backup.spec.tsx` | Blocage des opérations de cache local sur des données serveur ; instructions de migration de schéma réelles | 3 |
 
-Dernière suite vérifiée : **195 tests passés** répartis dans 12 fichiers. `npm run test:coverage`
+Dernière suite vérifiée : **198 tests passés** répartis dans 13 fichiers. `npm run test:coverage`
 exécute la même suite avec le fournisseur V8 et génère le rapport de couverture ;
-la dernière exécution a mesuré 49,47 % de lignes, 70,58 % de branches et 72,53 %
+la dernière exécution a mesuré 51,78 % de lignes/instructions, 70,61 % de branches et 68,87 %
 de fonctions sur l'ensemble des fichiers inclus. Aucun seuil minimal n'est
 configuré ; ce pourcentage ne doit donc pas être lu comme un critère de succès. Les contrôles de compilation
 (`tsc --noEmit`), statiques (`check:static`, 10 règles) et de taille de paquet
@@ -41,8 +42,10 @@ configuré ; ce pourcentage ne doit donc pas être lu comme un critère de succ�
 `dist/index.html` (mesure informative). L'alerte historique à 1 100 Ko et le
 plafond bloquant à 1 500 Ko s'appliquent tous deux à la somme de tous les JS/CSS
 livrés, chunks différés `React.lazy` compris. Le shell permet d'isoler l'effet sur
-l'entrée statique, sans masquer l'alerte du paquet complet. Le build actuel de la
-PWA précache 49 entrées (1 203,34 KiB) : le découpage réduit l'entrée JS et le
+l'entrée statique, sans masquer l'alerte du paquet complet. Dernière mesure : entrée
+JS `index` 489,82 kB (142,90 kB gzip), shell statique 543,7 Ko, total livré
+1 207,9 Ko. Le plafond de 1 500 Ko passe, mais l'alerte de 1 100 Ko reste déclenchée.
+La PWA précache 49 entrées (1 197,88 KiB) : le découpage réduit l'entrée JS et le
 travail au démarrage, mais ne réduit pas le volume total précaché hors ligne.
 
 ## Fréquence d'occurrences annuelles et traçabilité financière

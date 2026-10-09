@@ -199,7 +199,7 @@ export const SEED_PROJECTS: Project[] = [
     updatedAt: '2026-03-20T14:30:00Z',
     discountRate: 0.045, // WACC 4.5%
     carbonScenario: 'central',
-    carbonPricePerTonne: 120, // 120 €/tCO2e (Trajectoire tutélaire Quinet)
+    carbonPricePerTonne: 120, // hypothèse de démonstration, non institutionnelle
     inflationRate: 0.022,
     energyInflationRate: 0.045,
   },
@@ -223,7 +223,7 @@ export const SEED_PROJECTS: Project[] = [
     updatedAt: '2026-03-18T16:00:00Z',
     discountRate: 0.045,
     carbonScenario: 'central',
-    carbonPricePerTonne: 120,
+    carbonPricePerTonne: 120, // hypothèse de démonstration, non institutionnelle
     inflationRate: 0.02,
     energyInflationRate: 0.03,
   },
@@ -1701,7 +1701,7 @@ export const SEED_AUDIT_LOGS: AuditLogEntry[] = [
     oldValue: '100 €/tCO2e',
     newValue: '120 €/tCO2e',
     unit: '€/tCO2e',
-    justification: 'Mise en conformité avec la trajectoire tutélaire Quinet 2026 pour refléter la valeur sociétale du carbone dans les arbitrages CAPEX.',
+    justification: 'Exemple fictif de démonstration : hypothèse interne non institutionnelle, sans validation ni attribution à une trajectoire Quinet 2026.',
   },
   {
     id: 'log-003',
