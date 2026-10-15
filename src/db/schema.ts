@@ -1,3 +1,7 @@
+// ⚠️ OBSOLÈTE — NE PLUS UTILISER (ni drizzle-kit push).
+// Ce schéma ne correspond plus à la base réelle ni au code serveur et ne porte ni RLS ni clés composites.
+// Source de vérité : db/migrations/ (npm run db:migrate). Reconstruction du schéma Drizzle : chantier 7.
+
 import {
   pgTable,
   text,

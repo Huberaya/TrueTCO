@@ -1,4 +1,5 @@
 import { DocumentParseResult, DocumentCategory, SupplierOffer } from '../types/domain';
+import { apiFetch } from './apiClient';
 
 export interface SampleDocumentItem {
   id: string;
@@ -183,9 +184,8 @@ export class AiParserService {
     category: DocumentCategory;
   }): Promise<DocumentParseResult> {
     try {
-      const res = await fetch('/api/ai/parse-document', {
+      const res = await apiFetch('/api/ai/parse-document', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           filename: params.filename,
           category: params.category,

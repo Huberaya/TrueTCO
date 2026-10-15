@@ -1,135 +1,56 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { AuthService, EnterpriseUser, SSOProvider } from '../services/authService';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState, ReactNode } from 'react';
+import { useAuth as useClerkAuth } from '@clerk/clerk-react';
+import { AuthService, EnterpriseUser, Membership } from '../services/authService';
 import { UserRole } from '../types/domain';
+import { ACTIVE_TENANT_KEY, purgeLegacySessionArtifacts, setActiveTenant, setTokenProvider } from '../services/apiClient';
+import { AuthLoadingScreen, AuthErrorScreen, OnboardingScreen, SignInScreen } from '../components/AuthScreens';
+
+export const CLERK_ENABLED = !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 interface AuthContextType {
   user: EnterpriseUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /** true : profil local fictif, aucune donnée n'est lue ni écrite sur le serveur. */
+  isDemo: boolean;
+  memberships: Membership[];
   isLoginModalOpen: boolean;
   openLoginModal: () => void;
   closeLoginModal: () => void;
-  loginWithSSO: (params: {
-    email: string;
-    ssoProvider: SSOProvider;
-    fullName?: string;
-    role?: UserRole;
-    department?: string;
-  }) => Promise<EnterpriseUser>;
   logout: () => Promise<void>;
+  /** Démonstration uniquement : en mode connecté, le rôle est imposé par le serveur. */
   switchRole: (newRole: UserRole) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Default Corporate user (Sophie Valéry - Azure AD SSO)
-const DEFAULT_ENTERPRISE_USER: EnterpriseUser = {
-  id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-  email: 'sophie.valery@acme.com',
-  fullName: 'Sophie Valéry',
+const DEMO_USER: EnterpriseUser = {
+  id: 'demo-user',
+  email: 'demo@truetco.local',
+  fullName: 'Profil de démonstration',
   role: 'directeur_achats',
-  ssoProvider: 'azure_ad',
-  department: 'Direction des Achats Groupe',
+  ssoProvider: 'demo',
+  department: 'Démonstration locale',
   isActive: true,
-  lastLoginAt: new Date().toISOString(),
 };
 
-export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<EnterpriseUser | null>(() => {
-    return AuthService.getCachedUser() || DEFAULT_ENTERPRISE_USER;
-  });
-  const [isLoading, setIsLoading] = useState(true);
-  const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+/** Mode démo : pas de Clerk configuré. Aucune requête serveur n'est émise. */
+const DemoAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const [user, setUser] = useState<EnterpriseUser>(DEMO_USER);
+  const [isLoginModalOpen, setLoginModalOpen] = useState(false);
 
   useEffect(() => {
-    let isMounted = true;
-
-    // Verify session with Neon backend on startup
-    AuthService.getCurrentUser()
-      .then((remoteUser) => {
-        if (!isMounted) return;
-        if (remoteUser) {
-          setUser(remoteUser);
-        } else {
-          // If no remote session token, auto-provision default enterprise session with Azure AD
-          AuthService.loginWithSSO({
-            email: DEFAULT_ENTERPRISE_USER.email,
-            ssoProvider: DEFAULT_ENTERPRISE_USER.ssoProvider,
-            fullName: DEFAULT_ENTERPRISE_USER.fullName,
-            role: DEFAULT_ENTERPRISE_USER.role,
-            department: DEFAULT_ENTERPRISE_USER.department,
-          })
-            .then((res) => {
-              if (isMounted) setUser(res.user);
-            })
-            .catch((err) => {
-              console.warn('Auto-login fallback error:', err);
-              if (isMounted) setUser(DEFAULT_ENTERPRISE_USER);
-            });
-        }
-      })
-      .catch(() => {
-        if (isMounted) setUser(DEFAULT_ENTERPRISE_USER);
-      })
-      .finally(() => {
-        if (isMounted) setIsLoading(false);
-      });
-
-    return () => {
-      isMounted = false;
-    };
+    purgeLegacySessionArtifacts();
+    setTokenProvider(null);
   }, []);
-
-  const loginWithSSO = async (params: {
-    email: string;
-    ssoProvider: SSOProvider;
-    fullName?: string;
-    role?: UserRole;
-    department?: string;
-  }) => {
-    setIsLoading(true);
-    try {
-      const res = await AuthService.loginWithSSO(params);
-      setUser(res.user);
-      setIsLoginModalOpen(false);
-      return res.user;
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const logout = async () => {
-    setIsLoading(true);
-    try {
-      await AuthService.logout();
-      setUser(null);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const switchRole = (newRole: UserRole) => {
-    if (!user) return;
-    const updated: EnterpriseUser = {
-      ...user,
-      role: newRole,
-    };
-    setUser(updated);
-    AuthService.setCachedUser(updated);
-  };
 
   return (
     <AuthContext.Provider
       value={{
-        user,
-        isAuthenticated: !!user,
-        isLoading,
-        isLoginModalOpen,
-        openLoginModal: () => setIsLoginModalOpen(true),
-        closeLoginModal: () => setIsLoginModalOpen(false),
-        loginWithSSO,
-        logout,
-        switchRole,
+        user, isAuthenticated: true, isLoading: false, isDemo: true, memberships: [],
+        isLoginModalOpen, openLoginModal: () => setLoginModalOpen(true), closeLoginModal: () => setLoginModalOpen(false),
+        logout: async () => undefined,
+        switchRole: (role) => setUser((u) => ({ ...u, role })),
       }}
     >
       {children}
@@ -137,10 +58,80 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   );
 };
 
+/** Mode connecté : identité Clerk, rôle et organisation lus auprès du serveur. */
+const ClerkAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { isLoaded, isSignedIn, getToken, signOut } = useClerkAuth();
+  const getTokenRef = useRef(getToken);
+  getTokenRef.current = getToken;
+
+  const [user, setUser] = useState<EnterpriseUser | null>(null);
+  const [memberships, setMemberships] = useState<Membership[]>([]);
+  const [needsOnboarding, setNeedsOnboarding] = useState(false);
+  const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [isLoginModalOpen, setLoginModalOpen] = useState(false);
+
+  const loadSession = useCallback(async () => {
+    setStatus('loading');
+    try {
+      let session = await AuthService.fetchSession();
+      // Réutilise la dernière organisation choisie SI l'utilisateur en est membre (le serveur revérifie).
+      const stored = localStorage.getItem(ACTIVE_TENANT_KEY);
+      const wanted = session.memberships.find((m) => m.organizationId === stored)?.organizationId ?? session.organizationId;
+      if (wanted && wanted !== session.organizationId) session = await AuthService.fetchSession(wanted);
+      setActiveTenant(wanted ?? null);
+      setUser(session.user);
+      setMemberships(session.memberships);
+      setNeedsOnboarding(session.needsOnboarding);
+      setStatus('ready');
+    } catch {
+      setStatus('error');
+    }
+  }, []);
+
+  useEffect(() => {
+    purgeLegacySessionArtifacts();
+    if (!isLoaded) return;
+    if (!isSignedIn) {
+      setTokenProvider(null);
+      setUser(null);
+      setMemberships([]);
+      setStatus('ready');
+      return;
+    }
+    setTokenProvider(() => getTokenRef.current());
+    void loadSession();
+  }, [isLoaded, isSignedIn, loadSession]);
+
+  const logout = useCallback(async () => {
+    setTokenProvider(null);
+    setUser(null);
+    await signOut();
+  }, [signOut]);
+
+  if (!isLoaded || (isSignedIn && status === 'loading')) return <AuthLoadingScreen />;
+  if (!isSignedIn) return <SignInScreen />;
+  if (status === 'error') return <AuthErrorScreen onRetry={loadSession} onLogout={logout} />;
+  if (needsOnboarding || !user) return <OnboardingScreen onCreated={loadSession} onLogout={logout} />;
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user, isAuthenticated: true, isLoading: false, isDemo: false, memberships,
+        isLoginModalOpen, openLoginModal: () => setLoginModalOpen(true), closeLoginModal: () => setLoginModalOpen(false),
+        logout,
+        switchRole: () => undefined, // le rôle est celui du serveur : non modifiable côté client
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
+  CLERK_ENABLED ? <ClerkAuthProvider>{children}</ClerkAuthProvider> : <DemoAuthProvider>{children}</DemoAuthProvider>;
+
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
-  }
+  if (!context) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 };

@@ -19,9 +19,7 @@ interface NewTenantModalProps {
 export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose }) => {
   const { createTenant } = useTenant();
   const [name, setName] = useState('');
-  const [domain, setDomain] = useState('');
   const [legalNumber, setLegalNumber] = useState('');
-  const [tier, setTier] = useState('enterprise');
   const [currency, setCurrency] = useState('EUR');
   const [countryCode, setCountryCode] = useState('FR');
   const [isLoading, setIsLoading] = useState(false);
@@ -41,8 +39,6 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
     try {
       await createTenant({
         name: name.trim(),
-        domain: domain.trim() || undefined,
-        subscriptionTier: tier,
         defaultCurrency: currency,
         countryCode: countryCode,
         legalRegistrationNumber: legalNumber.trim() || undefined,
@@ -108,19 +104,6 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-slate-300 font-semibold block">
-                Domaine Email Professionnel
-              </label>
-              <input
-                type="text"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder="ex: totalenergies.com"
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-semibold block">
                 Numéro d'Immatriculation / SIREN
               </label>
               <input
@@ -133,22 +116,7 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
             </div>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <label className="text-slate-300 font-semibold block">
-                Niveau de Souscription
-              </label>
-              <select
-                value={tier}
-                onChange={(e) => setTier(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
-              >
-                <option value="enterprise">Entreprise Dédié</option>
-                <option value="sovereign">Souverain (SecNumCloud)</option>
-                <option value="starter">Standard</option>
-              </select>
-            </div>
-
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <label className="text-slate-300 font-semibold block">
                 Devise Principale

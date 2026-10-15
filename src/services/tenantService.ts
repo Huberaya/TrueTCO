@@ -13,7 +13,7 @@ export interface Tenant {
   userCount?: number | string;
 }
 
-const ACTIVE_TENANT_KEY = 'truetco_active_tenant_id';
+import { ACTIVE_TENANT_KEY, apiFetch, hasServerSession, setActiveTenant } from './apiClient';
 
 export const DEFAULT_TENANT: Tenant = {
   id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
@@ -36,28 +36,26 @@ export class TenantService {
   public static setActiveTenantId(tenantId: string): void {
     if (typeof window === 'undefined') return;
     localStorage.setItem(ACTIVE_TENANT_KEY, tenantId);
+    setActiveTenant(tenantId);
   }
 
   public static async getTenants(): Promise<Tenant[]> {
+    // Mode démo (aucune session serveur) : organisation locale fictive uniquement.
+    if (!hasServerSession()) return [DEFAULT_TENANT];
     try {
-      const res = await fetch('/api/tenants');
-      if (!res.ok) return [DEFAULT_TENANT];
+      const res = await apiFetch('/api/tenants');
+      if (!res.ok) return [];
       const data = await res.json();
-      return Array.isArray(data) && data.length > 0 ? data : [DEFAULT_TENANT];
+      return Array.isArray(data) ? data : [];
     } catch (err) {
-      console.warn('[TenantService] Failed to fetch tenants from Neon, using default:', err);
-      return [DEFAULT_TENANT];
+      console.warn('[TenantService] Failed to fetch tenants:', err);
+      return [];
     }
   }
 
   public static async getCurrentTenant(): Promise<Tenant | null> {
-    const tenantId = this.getActiveTenantId();
     try {
-      const res = await fetch('/api/tenants/current', {
-        headers: {
-          'x-tenant-id': tenantId,
-        },
-      });
+      const res = await apiFetch('/api/tenants/current');
       if (!res.ok) return null;
       return await res.json();
     } catch {
@@ -67,21 +65,18 @@ export class TenantService {
 
   public static async createTenant(payload: {
     name: string;
-    domain?: string;
-    subscriptionTier?: string;
     countryCode?: string;
     defaultCurrency?: string;
     legalRegistrationNumber?: string;
   }): Promise<Tenant> {
-    const res = await fetch('/api/tenants', {
+    const res = await apiFetch('/api/tenants', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
     if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Erreur lors de la création du tenant' }));
-      throw new Error(err.error || `Erreur HTTP ${res.status}`);
+      const err = await res.json().catch(() => ({ message: 'Erreur lors de la création' }));
+      throw new Error(err.message || err.error || `Erreur HTTP ${res.status}`);
     }
 
     const data = await res.json();

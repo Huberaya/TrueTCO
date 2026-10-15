@@ -1,3 +1,7 @@
+-- ⚠️ OBSOLÈTE — NE PLUS UTILISER.
+-- Ce fichier ne correspond plus au code (colonnes manquantes, aucune isolation).
+-- Source de vérité : db/migrations/ (npm run db:migrate).
+
 -- =============================================================================
 -- TRUETCO - JEU D'ESSAIS INITIAL & RÉFÉRENTIELS CERTIFIÉS (SEED SQL)
 -- Cas d'école : Renouvellement de 50 Véhicules Utilitaires Légers (VUL)

@@ -11,8 +11,6 @@ interface TenantContextType {
   switchTenant: (tenantId: string) => Promise<void>;
   createTenant: (payload: {
     name: string;
-    domain?: string;
-    subscriptionTier?: string;
     countryCode?: string;
     defaultCurrency?: string;
     legalRegistrationNumber?: string;
@@ -61,8 +59,6 @@ export const TenantProvider: React.FC<{ children: ReactNode }> = ({ children }) 
 
   const createTenant = async (payload: {
     name: string;
-    domain?: string;
-    subscriptionTier?: string;
     countryCode?: string;
     defaultCurrency?: string;
     legalRegistrationNumber?: string;

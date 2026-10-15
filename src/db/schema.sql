@@ -1,3 +1,7 @@
+-- ⚠️ OBSOLÈTE — NE PLUS UTILISER.
+-- Ce fichier ne correspond plus au code (colonnes manquantes, aucune isolation).
+-- Source de vérité : db/migrations/ (npm run db:migrate).
+
 -- =============================================================================
 -- TRUETCO - SCHEMA RELATIONNEL POSTGRESQL & DDL OFFICIEL
 -- Application SaaS B2B d'Aide à la Décision & Arbitrage Coût Complet (TCO / LCC)

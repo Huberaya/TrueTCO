@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { UserRole, Project } from '../types/domain';
-import { NeonUserRecord } from '../services/neonService';
 import {
   ShieldCheck,
   Plus,
@@ -31,8 +30,6 @@ interface HeaderProps {
   onOpenTestsModal: () => void;
   onOpenReportModal: () => void;
   onOpenBackupModal?: () => void;
-  syncedUser?: NeonUserRecord | null;
-  isSyncingUser?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -46,7 +43,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenReportModal,
   onOpenBackupModal,
 }) => {
-  const { user, isAuthenticated, logout, openLoginModal, switchRole } = useAuth();
+  const { user, isAuthenticated, logout, openLoginModal, switchRole, isDemo } = useAuth();
   const { currentTenant } = useTenant();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -72,6 +69,8 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const providerBadges: Record<string, { label: string; icon: string; border: string; bg: string }> = {
+    clerk: { label: 'Session vérifiée', icon: '🔐', border: 'border-emerald-700/80', bg: 'bg-emerald-950/80 text-emerald-300' },
+    demo: { label: 'Démo locale', icon: '🧪', border: 'border-amber-700/80', bg: 'bg-amber-950/80 text-amber-300' },
     azure_ad: { label: 'Azure AD SSO', icon: '🔷', border: 'border-sky-700/80', bg: 'bg-sky-950/80 text-sky-300' },
     google_workspace: { label: 'Google Workspace', icon: '🔴', border: 'border-rose-700/80', bg: 'bg-rose-950/80 text-rose-300' },
     auth0: { label: 'Auth0 IdP', icon: '🛡️', border: 'border-indigo-700/80', bg: 'bg-indigo-950/80 text-indigo-300' },
@@ -79,9 +78,10 @@ export const Header: React.FC<HeaderProps> = ({
     magic_link: { label: 'SSO Link', icon: '✉️', border: 'border-emerald-700/80', bg: 'bg-emerald-950/80 text-emerald-300' },
   };
 
-  const currentProviderBadge = user ? providerBadges[user.ssoProvider] || providerBadges.azure_ad : providerBadges.azure_ad;
+  const currentProviderBadge = user ? providerBadges[user.ssoProvider] || providerBadges.clerk : providerBadges.clerk;
 
   const handleRoleChange = (newRole: UserRole) => {
+    if (!isDemo) return; // en mode connecté, le rôle est imposé par le serveur
     onChangeRole(newRole);
     switchRole(newRole);
   };
@@ -98,7 +98,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="font-extrabold tracking-tight text-white flex items-center gap-1.5 text-base">
               TrueTCO
               <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 font-bold">
-                SSO
+                {isDemo ? 'DÉMO' : 'SSO'}
               </span>
             </span>
           </div>
@@ -174,9 +174,10 @@ export const Header: React.FC<HeaderProps> = ({
         <div className="flex items-center pl-2 border-l border-slate-800">
           <select
             value={activeRole}
+            disabled={!isDemo}
+            title={isDemo ? undefined : 'Rôle attribué par votre administrateur'}
             onChange={(e) => handleRoleChange(e.target.value as UserRole)}
             className="bg-slate-900 border border-slate-700/80 rounded px-2 py-1 text-slate-200 text-xs font-medium focus:outline-none focus:border-emerald-500"
-            title="Basculer de rôle utilisateur pour tester les perspectives métiers"
           >
             {Object.entries(roleLabels).map(([roleKey, label]) => (
               <option key={roleKey} value={roleKey}>
@@ -266,7 +267,9 @@ export const Header: React.FC<HeaderProps> = ({
                     </label>
                     <select
                       value={activeRole}
-                      onChange={(e) => handleRoleChange(e.target.value as UserRole)}
+                      disabled={!isDemo}
+            title={isDemo ? undefined : 'Rôle attribué par votre administrateur'}
+            onChange={(e) => handleRoleChange(e.target.value as UserRole)}
                       className="w-full bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-200 text-xs font-semibold focus:outline-none focus:border-emerald-500"
                     >
                       {Object.entries(roleLabels).map(([roleKey, label]) => (

@@ -1,0 +1,40 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install --no-audit --no-fund --legacy-peer-deps
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests (isolation multi-tenant, RBAC, RLS, migrations, validation)
+        run: npm test
+      - name: Build
+        run: npm run build
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Non bloquant tant que `xlsx` (CVE sans correctif sur npm : prototype pollution + ReDoS) n'est pas remplacé.
+    # À passer en bloquant (supprimer continue-on-error) dès son remplacement.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund --legacy-peer-deps
+      - run: npm audit --omit=dev --audit-level=high

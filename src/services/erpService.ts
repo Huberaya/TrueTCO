@@ -1,4 +1,5 @@
 import { ErpConnector, ErpSyncLog, SupplierOffer } from '../types/domain';
+import { apiFetch } from './apiClient';
 
 const STORAGE_KEYS = {
   CONNECTORS: 'truetco_erp_connectors_v1',
@@ -231,9 +232,8 @@ export class ErpService {
   public static async testHandshake(connectorId: string): Promise<{ success: boolean; durationMs: number; message: string; httpCode: number }> {
     const start = Date.now();
     try {
-      const res = await fetch(`/api/erp/connectors/${connectorId}/test`, {
+      const res = await apiFetch(`/api/erp/connectors/${connectorId}/test`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
       });
       const data = await res.json();
       const durationMs = Date.now() - start;
@@ -296,9 +296,8 @@ export class ErpService {
     projectId: string
   ): Promise<{ success: boolean; offersImported: number; offers: SupplierOffer[]; message: string }> {
     try {
-      const res = await fetch(`/api/erp/connectors/${connectorId}/sync-inbound`, {
+      const res = await apiFetch(`/api/erp/connectors/${connectorId}/sync-inbound`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId }),
       });
       if (res.ok) {
@@ -426,9 +425,8 @@ export class ErpService {
     rationale: string
   ): Promise<{ success: boolean; poReference: string; message: string }> {
     try {
-      const res = await fetch(`/api/erp/connectors/${connectorId}/push-award`, {
+      const res = await apiFetch(`/api/erp/connectors/${connectorId}/push-award`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ projectId, offerId, rationale }),
       });
       if (res.ok) {
