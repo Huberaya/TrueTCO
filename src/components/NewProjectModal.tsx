@@ -1,3 +1,5 @@
+import { useAuth } from '../context/AuthContext';
+import { useTenant } from '../context/TenantContext';
 import React, { useState } from 'react';
 import { X, Plus, FolderPlus, Info, AlertTriangle } from 'lucide-react';
 import { Project, ProcurementCategory, HorizonYears } from '../types/domain';
@@ -14,6 +16,8 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   onClose,
   onAddProject,
 }) => {
+  const { user } = useAuth();
+  const { currentTenant } = useTenant();
   const [name, setName] = useState('');
   const [companyName, setCompanyName] = useState('Acme Industrial Europe');
   const [reference, setReference] = useState(`AO-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
@@ -26,7 +30,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [unitName, setUnitName] = useState('unités');
   const [purchaseFrequency, setPurchaseFrequency] = useState<'unique' | 'annuel' | 'pluriannuel'>('unique');
   const [objective, setObjective] = useState('');
-  const [ownerName, setOwnerName] = useState('Sophie Valéry');
+  const [ownerName, setOwnerName] = useState(user?.fullName ?? '');
   const [discountRate, setDiscountRate] = useState(0.045);
   const [carbonPrice, setCarbonPrice] = useState(120);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -88,7 +92,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
     setValidationErrors([]);
 
     const candidatePayload = {
-      organizationId: 'org-acme-fr',
+      organizationId: currentTenant.id,
       name: name.trim(),
       companyName: companyName.trim(),
       reference,
@@ -367,7 +371,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                 </select>
               </div>
               <div>
-                <label className="block text-slate-400 text-[11px] mb-1">WACC actualisation</label>
+                <label className="block text-slate-400 text-[11px] mb-1">Taux d'actualisation (WACC)</label>
                 <input
                   type="number"
                   step="0.005"
@@ -386,6 +390,10 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
                   className="w-full px-2.5 py-1.5 bg-slate-900 border border-slate-700 rounded text-white font-mono text-xs"
                 />
               </div>
+              <p className="col-span-full text-[10px] text-amber-300/90 leading-snug">
+                Les valeurs de départ du taux d'actualisation et du prix du carbone sont <strong>indicatives</strong> : remplacez-les par celles de votre
+                organisation et documentez leur source (Référentiels et hypothèses).
+              </p>
             </div>
           </div>
 

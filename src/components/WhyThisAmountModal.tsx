@@ -29,13 +29,13 @@ export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
     switch (type) {
       case 'verifiee':
         return {
-          label: 'Donnée vérifiée contractuelle',
+          label: 'Déclarée vérifiée (par le saisissant)',
           badgeClass: 'text-emerald-400 bg-emerald-950/50 border-emerald-800/60',
           icon: <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />,
         };
       case 'source_externe':
         return {
-          label: 'Référentiel externe certifié',
+          label: 'Source externe (non contrôlée par TrueTCO)',
           badgeClass: 'text-sky-400 bg-sky-950/50 border-sky-800/60',
           icon: <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />,
         };
@@ -131,7 +131,7 @@ export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
               <div className="flex items-start justify-between gap-4 pt-1">
                 <span className="text-slate-400 text-xs">Source documentaire :</span>
                 <span className="text-right text-xs font-medium text-slate-200">
-                  {auditedValue?.sourceName || 'Formule algorithmique certifiée du moteur TrueTCO'}
+                  {auditedValue?.sourceName || 'Calcul du moteur à partir des données saisies'}
                   {auditedValue?.sourceUrl && (
                     <a
                       href={auditedValue.sourceUrl}
@@ -192,9 +192,9 @@ export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
             </div>
           )}
 
-          {/* Internal Audit Defense Statement */}
-          <div className="p-3 bg-indigo-950/30 border border-indigo-900/40 rounded-lg text-xs text-indigo-300">
-            <strong>Garantie d'auditabilité :</strong> Ce poste a été normalisé et peut être présenté devant le Comité d'Investissement, la DAF ou le Commissaire aux Comptes sans zone d'ombre.
+          <div className="p-3 bg-slate-800/40 border border-slate-700 rounded-lg text-xs text-slate-300">
+            <strong>À savoir :</strong> la provenance affichée est celle déclarée lors de la saisie ; TrueTCO ne la vérifie pas automatiquement.
+            Avant de présenter ce chiffre à une instance de décision, contrôlez la source indiquée.
           </div>
         </div>
 

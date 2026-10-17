@@ -152,17 +152,9 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
           {onNavigate && (
             <>
               <button
-                onClick={() => onNavigate('erp_connectors')}
-                className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-sky-400 hover:text-sky-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-                title="Synchroniser les offres depuis votre ERP (SAP Ariba, Coupa, Ivalua)"
-              >
-                <Network className="w-3.5 h-3.5" />
-                Sync ERP
-              </button>
-              <button
                 onClick={() => onNavigate('ai_parser')}
                 className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-purple-400 hover:text-purple-300 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-                title="Numériser un devis PDF ou fiche FDES par IA"
+                title="Extraire des données d'un devis par IA (résultats à valider avant utilisation)"
               >
                 <Sparkles className="w-3.5 h-3.5" />
                 Parser IA
@@ -397,15 +389,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                         handleExplain(
                           'Entretien préventif et pièces d\'usure',
                           'OPEX Maintenance',
-                          {
-                            value: 'Forfait contractuel pièces & main d\'œuvre',
-                            unit: '€',
-                            sourceType: 'verifiee',
-                            sourceName: 'Barème constructeur certifié',
-                            confidenceLevel: 92,
-                            lastUpdated: '2026-03-10',
-                            updatedBy: 'Acheteur Lead',
-                          },
+                          undefined,
                           'Maint_Total = Σ(t=1..H) [ Forfait_Annuel × (1 + Inflation)^(t-1) × Facteur_Usure(t) ]',
                           'Intègre les révisions obligatoires, consommables d\'usure et coefficient de vieillissement matériel.'
                         )
@@ -476,15 +460,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                         handleExplain(
                           'Fiscalité écologique & Malus annuel',
                           'Conformité Fiscale',
-                          {
-                            value: 'Barème officiel Loi de Finances',
-                            unit: '€',
-                            sourceType: 'source_externe',
-                            sourceName: 'Code Général des Impôts 2026',
-                            confidenceLevel: 98,
-                            lastUpdated: '2026-03-01',
-                            updatedBy: 'Contrôleur DAF',
-                          },
+                          undefined,
                           'Fiscalité = Taxe_Annuelle_CO2 + Malus_Masse',
                           'Exonération totale pour les véhicules 100% électriques.'
                         )
@@ -550,15 +526,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                         handleExplain(
                           'TCO Économique Nominal (hors risques & carbone)',
                           'Moteur TCO Modulaire',
-                          {
-                            value: 'Somme arithmétique des flux CAPEX et OPEX',
-                            unit: '€',
-                            sourceType: 'verifiee',
-                            sourceName: 'Moteur de calcul certifié TrueTCO',
-                            confidenceLevel: 94,
-                            lastUpdated: '2026-03-20',
-                            updatedBy: 'Moteur TCO',
-                          },
+                          undefined,
                           'TCO_eco = Acquisition + Logistique + Installation + Énergie + Maintenance + Pannes + Taxes + Fin_de_vie - Valeur_résiduelle',
                           'Coût total économique conventionnel avant monétisation des externalités et risques de non-conformité.'
                         )
@@ -708,15 +676,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                         handleExplain(
                           'Lifecycle Costing (LCC) Actualisé',
                           'Actualisation Financière WACC',
-                          {
-                            value: `WACC = ${(project.discountRate * 100).toFixed(1)}%`,
-                            unit: '%',
-                            sourceType: 'source_externe',
-                            sourceName: 'Norme ISO 15686-5 & consensus Trésorerie',
-                            confidenceLevel: 95,
-                            lastUpdated: '2026-02-01',
-                            updatedBy: 'Contrôleur DAF',
-                          },
+                          undefined,
                           'LCC = CAPEX_0 + Σ(t=1..H) [ CashFlow_t / (1 + r)^t ]',
                           'Calcule la valeur actuelle nette de l\'ensemble des sorties de fonds réelles au fil des années.'
                         )

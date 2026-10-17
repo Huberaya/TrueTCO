@@ -131,7 +131,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Chantier 3 · Cadrage, Gouvernance des statuts et Hypothèses Financières
+                Cadrage, statut et hypothèses financières
               </p>
             </div>
           </div>
@@ -310,9 +310,8 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
               <div className="p-3.5 bg-sky-950/30 border border-sky-900/60 rounded-xl flex items-start gap-2.5 text-sky-300">
                 <AlertCircle className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
                 <div className="text-[11px] leading-relaxed">
-                  Conformément au <strong>Principe 37 (Neutralité ESG)</strong> et aux standards ISO 20400,
-                  les paramètres financiers (WACC, inflation, prix tutélaire carbone) s'appliquent de manière rigoureusement
-                  identique à toutes les offres en concurrence afin d'interdire tout biais méthodologique.
+                  Les paramètres financiers (taux d'actualisation, inflation, prix du carbone) s'appliquent de manière identique à toutes les offres
+                  en concurrence du projet, afin de comparer sur une base commune. Ce sont des hypothèses saisies : documentez leur source.
                 </div>
               </div>
 
@@ -331,7 +330,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 mb-1">Horizon d'Analyse (ISO 20400) *</label>
+                  <label className="block text-slate-400 mb-1">Horizon d'analyse *</label>
                   <select
                     value={horizonYears}
                     onChange={(e) => setHorizonYears(Number(e.target.value) as HorizonYears)}

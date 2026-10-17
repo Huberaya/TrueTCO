@@ -30,7 +30,7 @@ export const TenantSwitcher: React.FC = () => {
   const getTierBadge = (tier: string) => {
     switch (tier) {
       case 'sovereign':
-        return { label: 'Souverain SecNumCloud', color: 'bg-purple-950 text-purple-300 border-purple-800' };
+        return { label: 'Souverain', color: 'bg-purple-950 text-purple-300 border-purple-800' };
       case 'enterprise':
         return { label: 'Entreprise Dédié', color: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
       default:

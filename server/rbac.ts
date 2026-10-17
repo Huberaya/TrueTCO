@@ -16,8 +16,7 @@ export type Permission =
   | 'user:read'
   | 'user:manage'
   | 'tenant:update'
-  | 'ai:parse'
-  | 'erp:use';
+  | 'ai:parse';
 
 const ALL_ROLES: Role[] = ['admin', 'directeur_achats', 'acheteur', 'finance_controleur', 'rse_esg', 'direction_generale'];
 
@@ -41,7 +40,6 @@ export const PERMISSIONS: Record<Permission, readonly Role[]> = {
   'user:manage': ['admin'],
   'tenant:update': ['admin'],
   'ai:parse': ['admin', 'directeur_achats', 'acheteur'],
-  'erp:use': ['admin', 'directeur_achats'],
 };
 
 export function can(ctx: AuthContext | undefined, permission: Permission): boolean {

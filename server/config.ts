@@ -25,6 +25,8 @@ const EnvSchema = z.object({
   /** En production : refuse de démarrer si la connexion peut contourner le RLS. */
   REQUIRE_RLS: bool,
   GEMINI_API_KEY: z.string().optional(),
+  /** Modèle Gemini utilisé pour l'extraction. À vérifier auprès de Google : les noms de modèles évoluent. */
+  GEMINI_MODEL: z.string().default('gemini-2.5-flash'),
 });
 
 export interface Config {
@@ -39,6 +41,7 @@ export interface Config {
   trustProxy: number;
   requireRls: boolean;
   geminiApiKey?: string;
+  geminiModel: string;
 }
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
@@ -55,6 +58,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: e.TRUST_PROXY,
     requireRls: e.REQUIRE_RLS,
     geminiApiKey: e.GEMINI_API_KEY || undefined,
+    geminiModel: e.GEMINI_MODEL,
   };
 
   if (cfg.isProd) {

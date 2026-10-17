@@ -304,6 +304,18 @@ ON CONFLICT (id) DO NOTHING;`
   /**
    * Reset all data back to baseline seed demonstration values
    */
+  /**
+   * Efface les données métier du navigateur. Appelé à l'ouverture d'une session connectée :
+   * un poste partagé ne doit conserver NI des données de démonstration, NI celles d'un autre utilisateur.
+   */
+  public static clearBusinessData(): void {
+    try {
+      Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));
+    } catch {
+      /* stockage indisponible : rien à purger */
+    }
+  }
+
   public static resetToSeed(): void {
     try {
       Object.values(STORAGE_KEYS).forEach((k) => localStorage.removeItem(k));

@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { auditDiff, writeAudit } from '../audit';
 import { entityId } from '../auth';
 import { type Db, withTenant } from '../db';
-import { asyncHandler, notFound } from '../errors';
+import { asyncHandler, forbidden, notFound } from '../errors';
 import { requirePermission } from '../rbac';
 import {
   AuditNoteInput, BenchmarkInput, OfferInput, ProjectInput, SupplierInput, UUID_RE, parse,
@@ -26,7 +26,7 @@ export function dataRouter(deps: { db: Db }): Router {
     budget_cap::float8 AS "budgetCap", currency, planned_volume AS "plannedVolume", unit_name AS "unitName",
     horizon_years AS "horizonYears", status, discount_rate::float8 AS "discountRate",
     energy_inflation_rate::float8 AS "energyInflationRate", general_inflation_rate::float8 AS "inflationRate",
-    carbon_price_per_tonne::float8 AS "carbonPricePerTonne", created_at AS "createdAt", updated_at AS "updatedAt"`;
+    carbon_price_per_tonne::float8 AS "carbonPricePerTonne", created_at AS "createdAt", updated_at AS "updatedAt", document`;
 
   r.get('/projects', requirePermission('project:read'), asyncHandler(async (req, res) => {
     const rows = await withTenant(db, req.ctx!, async (q, org) =>
@@ -43,23 +43,28 @@ export function dataRouter(deps: { db: Db }): Router {
     const project = await withTenant(db, req.ctx!, async (q, org) => {
       const id = entityId(p.id, org);
       const before = (await q.query('SELECT * FROM projects WHERE id = $1 AND organization_id = $2', [id, org])).rows[0] ?? null;
+      // Décision structurante : l'adjudication ne peut être enregistrée que par la direction achats ou un administrateur.
+      if (p.status === 'adjudique' && before?.status !== 'adjudique' && !['admin', 'directeur_achats'].includes(req.ctx!.active!.role)) {
+        throw forbidden("Seuls un administrateur ou le directeur achats peuvent enregistrer une adjudication");
+      }
       const saved = (await q.query(
         `INSERT INTO projects (id, organization_id, reference, name, description, category, company_name, budget_cap, currency,
                                planned_volume, unit_name, horizon_years, status, discount_rate, energy_inflation_rate,
-                               general_inflation_rate, carbon_price_per_tonne, created_by_user_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+                               general_inflation_rate, carbon_price_per_tonne, created_by_user_id, document)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,COALESCE($19::jsonb, '{}'::jsonb))
          ON CONFLICT (id) DO UPDATE SET
            reference = EXCLUDED.reference, name = EXCLUDED.name, description = EXCLUDED.description,
            category = EXCLUDED.category, company_name = EXCLUDED.company_name, budget_cap = EXCLUDED.budget_cap,
            currency = EXCLUDED.currency, planned_volume = EXCLUDED.planned_volume, unit_name = EXCLUDED.unit_name,
            horizon_years = EXCLUDED.horizon_years, status = EXCLUDED.status, discount_rate = EXCLUDED.discount_rate,
            energy_inflation_rate = EXCLUDED.energy_inflation_rate, general_inflation_rate = EXCLUDED.general_inflation_rate,
-           carbon_price_per_tonne = EXCLUDED.carbon_price_per_tonne
+           carbon_price_per_tonne = EXCLUDED.carbon_price_per_tonne,
+           document = COALESCE($19::jsonb, projects.document)
          WHERE projects.organization_id = EXCLUDED.organization_id
          RETURNING *`,
         [id, org, p.reference, p.name, p.description, p.category, p.companyName ?? req.ctx!.active!.organizationName, p.budgetCap,
          p.currency, p.plannedVolume, p.unitName, p.horizonYears, p.status, p.discountRate, p.energyInflationRate,
-         p.inflationRate, p.carbonPricePerTonne, req.ctx!.active!.userId]
+         p.inflationRate, p.carbonPricePerTonne, req.ctx!.active!.userId, p.document ? JSON.stringify(p.document) : null]
       )).rows[0];
       if (!saved) throw notFound('Projet'); // id appartenant à un autre tenant : indiscernable d'un id inconnu
       await auditDiff(q, req.ctx!, { projectId: saved.id, entity: `Projet ${saved.reference}` }, before, saved, PROJECT_AUDITED);
@@ -73,7 +78,7 @@ export function dataRouter(deps: { db: Db }): Router {
     id, name, country_code AS country, incoterm AS "defaultIncoterm", payment_terms_days AS "paymentTermsDays",
     standard_lead_time_days AS "leadTimeDays", minimum_order_quantity AS moq, warranty_months AS "warrantyMonths",
     historical_defect_rate::float8 AS "historicalDefectRate", esg_score AS "esgScore",
-    data_quality_score AS "dataQualityScore", COALESCE(certifications, ARRAY[]::text[]) AS certifications`;
+    data_quality_score AS "dataQualityScore", COALESCE(certifications, ARRAY[]::text[]) AS certifications, document`;
 
   r.get('/suppliers', requirePermission('supplier:read'), asyncHandler(async (req, res) => {
     const rows = await withTenant(db, req.ctx!, async (q, org) =>
@@ -89,18 +94,19 @@ export function dataRouter(deps: { db: Db }): Router {
       const before = (await q.query('SELECT * FROM suppliers WHERE id = $1 AND organization_id = $2', [id, org])).rows[0] ?? null;
       const saved = (await q.query(
         `INSERT INTO suppliers (id, organization_id, name, country_code, incoterm, payment_terms_days, standard_lead_time_days,
-                                minimum_order_quantity, warranty_months, historical_defect_rate, esg_score, data_quality_score, certifications)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+                                minimum_order_quantity, warranty_months, historical_defect_rate, esg_score, data_quality_score, certifications, document)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,COALESCE($14::jsonb, '{}'::jsonb))
          ON CONFLICT (id) DO UPDATE SET
            name = EXCLUDED.name, country_code = EXCLUDED.country_code, incoterm = EXCLUDED.incoterm,
            payment_terms_days = EXCLUDED.payment_terms_days, standard_lead_time_days = EXCLUDED.standard_lead_time_days,
            minimum_order_quantity = EXCLUDED.minimum_order_quantity, warranty_months = EXCLUDED.warranty_months,
            historical_defect_rate = EXCLUDED.historical_defect_rate, esg_score = EXCLUDED.esg_score,
-           data_quality_score = EXCLUDED.data_quality_score, certifications = EXCLUDED.certifications
+           data_quality_score = EXCLUDED.data_quality_score, certifications = EXCLUDED.certifications,
+           document = COALESCE($14::jsonb, suppliers.document)
          WHERE suppliers.organization_id = EXCLUDED.organization_id
          RETURNING *`,
         [id, org, s.name, s.country, s.defaultIncoterm, s.paymentTermsDays, s.leadTimeDays, s.moq, s.warrantyMonths,
-         s.historicalDefectRate, s.esgScore, s.dataQualityScore, s.certifications]
+         s.historicalDefectRate, s.esgScore, s.dataQualityScore, s.certifications, s.document ? JSON.stringify(s.document) : null]
       )).rows[0];
       if (!saved) throw notFound('Fournisseur');
       await auditDiff(q, req.ctx!, { entity: `Fournisseur ${saved.name}` }, before, saved,
@@ -115,7 +121,7 @@ export function dataRouter(deps: { db: Db }): Router {
     o.id, o.project_id AS "projectId", o.supplier_id AS "supplierId", o.offer_reference AS "offerReference",
     o.apparent_total::float8 AS "apparentTotal", o.quantity, o.delivery_lead_time_weeks AS "deliveryLeadTimeWeeks",
     o.warranty_months AS "warrantyMonths", o.technical_suitability_score AS "technicalSuitabilityScore",
-    o.is_responsible_candidate AS "isResponsibleCandidate"`;
+    o.is_responsible_candidate AS "isResponsibleCandidate", o.document`;
 
   r.get('/offers', requirePermission('offer:read'), asyncHandler(async (req, res) => {
     const projectId = typeof req.query.projectId === 'string' ? req.query.projectId : undefined;
@@ -153,17 +159,19 @@ export function dataRouter(deps: { db: Db }): Router {
       const before = (await q.query('SELECT * FROM supplier_offers WHERE id = $1 AND organization_id = $2', [offerId, org])).rows[0] ?? null;
       const saved = (await q.query(
         `INSERT INTO supplier_offers (id, organization_id, project_id, supplier_id, offer_reference, apparent_total, quantity,
-                                      delivery_lead_time_weeks, warranty_months, technical_suitability_score, is_responsible_candidate)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+                                      delivery_lead_time_weeks, warranty_months, technical_suitability_score, is_responsible_candidate, document)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12::jsonb, '{}'::jsonb))
          ON CONFLICT (id) DO UPDATE SET
            supplier_id = EXCLUDED.supplier_id, offer_reference = EXCLUDED.offer_reference, apparent_total = EXCLUDED.apparent_total,
            quantity = EXCLUDED.quantity, delivery_lead_time_weeks = EXCLUDED.delivery_lead_time_weeks,
            warranty_months = EXCLUDED.warranty_months, technical_suitability_score = EXCLUDED.technical_suitability_score,
-           is_responsible_candidate = EXCLUDED.is_responsible_candidate
+           is_responsible_candidate = EXCLUDED.is_responsible_candidate,
+           document = COALESCE($12::jsonb, supplier_offers.document)
          WHERE supplier_offers.organization_id = EXCLUDED.organization_id AND supplier_offers.project_id = EXCLUDED.project_id
          RETURNING *`,
         [offerId, org, projectId, supplierId, o.offerReference ?? `OFF-${offerId.slice(0, 8)}`, o.apparentTotal, o.quantity,
-         o.deliveryLeadTimeWeeks ?? null, o.warrantyMonths ?? null, o.technicalSuitabilityScore ?? null, o.isResponsibleCandidate]
+         o.deliveryLeadTimeWeeks ?? null, o.warrantyMonths ?? null, o.technicalSuitabilityScore ?? null, o.isResponsibleCandidate,
+         o.document ? JSON.stringify(o.document) : null]
       )).rows[0];
       if (!saved) throw notFound('Offre');
 
@@ -191,7 +199,7 @@ export function dataRouter(deps: { db: Db }): Router {
     const rows = await withTenant(db, req.ctx!, async (q, org) =>
       (await q.query(
         `SELECT id, name, category, source, value::float8 AS value, unit, confidence_score AS "confidenceLevel",
-                legal_reference AS "documentRef", updated_at AS "lastUpdated"
+                legal_reference AS "documentRef", updated_at AS "lastUpdated", document
            FROM reference_benchmarks WHERE organization_id = $1 ORDER BY name`, [org])).rows
     );
     res.json(rows);
@@ -203,15 +211,17 @@ export function dataRouter(deps: { db: Db }): Router {
       const before = (await q.query('SELECT * FROM reference_benchmarks WHERE organization_id = $1 AND name = $2', [org, b.name])).rows[0] ?? null;
       const saved = (await q.query(
         `INSERT INTO reference_benchmarks (id, organization_id, name, category, source, value, unit, valid_until, confidence_score,
-                                           last_audit_date, legal_reference)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,CURRENT_TIMESTAMP,$10)
+                                           last_audit_date, legal_reference, document)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,CURRENT_TIMESTAMP,$10,COALESCE($11::jsonb, '{}'::jsonb))
          ON CONFLICT (organization_id, name) DO UPDATE SET
            category = EXCLUDED.category, value = EXCLUDED.value, source = EXCLUDED.source, unit = EXCLUDED.unit,
            valid_until = EXCLUDED.valid_until, confidence_score = EXCLUDED.confidence_score,
-           last_audit_date = CURRENT_TIMESTAMP, legal_reference = EXCLUDED.legal_reference
-         RETURNING id, name, category, source, value::float8 AS value, unit, confidence_score AS "confidenceLevel", legal_reference AS "documentRef"`,
-        [crypto.randomUUID(), org, b.name, b.category, b.source, b.value, b.unit,
-         b.validUntil ?? new Date(Date.now() + 365 * 24 * 3600 * 1000), Math.round(b.confidenceLevel), b.documentRef ?? b.methodology ?? null]
+           last_audit_date = CURRENT_TIMESTAMP, legal_reference = EXCLUDED.legal_reference,
+           document = COALESCE($11::jsonb, reference_benchmarks.document)
+         RETURNING id, name, category, source, value::float8 AS value, unit, confidence_score AS "confidenceLevel", legal_reference AS "documentRef", document`,
+        [entityId(b.id, org), org, b.name, b.category, b.source, b.value, b.unit,
+         b.validUntil ?? new Date(Date.now() + 365 * 24 * 3600 * 1000), Math.round(b.confidenceLevel), b.documentRef ?? b.methodology ?? null,
+         b.document ? JSON.stringify(b.document) : null]
       )).rows[0];
       await writeAudit(q, req.ctx!, {
         entity: `Référentiel ${b.name}`, field: before ? 'Valeur' : 'Création',

@@ -182,3 +182,46 @@ describe('Gardes statiques sur le code serveur', () => {
     for (const f of files.filter((x) => !/legacy-simulated/.test(x))) expect(src(f), rel(f)).not.toMatch(/error:\s*(err|e|error)\??\.message/);
   });
 });
+
+describe('Sauvegarde sans perte (document)', () => {
+  let h: Harness;
+  beforeAll(async () => { h = await createHarness('rls'); await seed(h); });
+  afterAll(async () => { await h.close(); });
+
+  const offerDoc = { id: 'x', supplierName: 'S', carbonItems: [{ scope: 'Scope 2', emissionsPerUnitTonneCO2e: { value: 1.5, unit: 't', sourceType: 'source_externe' } }],
+    riskItems: [{ id: 'r', probability: { value: 0.1 } }], expectedLifespanYears: 7, notes: 'é "guillemets" 🚚' };
+
+  it("un objet offre complet (carbone, risques, durée de vie…) est restitué à l'identique", async () => {
+    const w = await h.call('uAdmin').post('/api/offers').send({ id: 'rt-1', projectId: id('d', 1), supplierId: id('c', 1), apparentTotal: 5, quantity: 1, document: offerDoc });
+    expect(w.status).toBe(200);
+    const g = await h.call('uAdmin').get(`/api/offers?projectId=${id('d', 1)}`);
+    expect(g.body.find((o: any) => o.document?.notes)?.document).toEqual(offerDoc);
+  });
+
+  it("omettre `document` à la mise à jour CONSERVE l'existant (pas d'écrasement par {})", async () => {
+    await h.call('uAdmin').post('/api/offers').send({ id: 'rt-1', projectId: id('d', 1), supplierId: id('c', 1), apparentTotal: 6, quantity: 1 });
+    const g = await h.call('uAdmin').get(`/api/offers?projectId=${id('d', 1)}`);
+    const o = g.body.find((x: any) => x.document?.notes);
+    expect(o.apparentTotal).toBe(6);
+    expect(o.document.expectedLifespanYears).toBe(7);
+  });
+
+  it('document volumineux (> 200 Ko) refusé', async () => {
+    const r = await h.call('uAdmin').post('/api/suppliers').send({ name: 'Gros', document: { blob: 'x'.repeat(210_000) } });
+    expect(r.status).toBe(400);
+  });
+
+  it('le document reste étanche entre organisations (projets, fournisseurs, offres, benchmarks)', async () => {
+    await h.pg.exec(`UPDATE projects SET document='{"secret":"B-SECRET"}' WHERE id='${id('d', 2)}'`);
+    for (const u of ['/api/projects', '/api/suppliers', '/api/offers', '/api/benchmarks']) {
+      expect(JSON.stringify((await h.call('uAdmin').get(u)).body)).not.toMatch(/B-SECRET/);
+    }
+  });
+
+  it('projet : le document complet fait l\'aller-retour', async () => {
+    const doc = { objective: 'Électrifier', multicriteriaWeights: { cost: 0.4, esg: 0.6 } };
+    await h.call('uAdmin').post('/api/projects').send(validProject({ reference: 'RT-P', id: id('d', 8), document: doc }));
+    const g = await h.call('uAdmin').get('/api/projects');
+    expect(g.body.find((p: any) => p.reference === 'RT-P').document).toEqual(doc);
+  });
+});

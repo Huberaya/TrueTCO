@@ -21,8 +21,7 @@ describe.each<Mode>(['rls', 'app-only'])('Authentification & isolation multi-ten
       ['GET', '/api/auth/users'], ['GET', '/api/admin/tenants'], ['GET', '/api/route-qui-nexiste-pas'],
       ['POST', '/api/projects'], ['POST', '/api/suppliers'], ['POST', '/api/offers'], ['POST', '/api/benchmarks'],
       ['POST', '/api/audit-logs'], ['POST', '/api/tenants'], ['POST', '/api/users/invitations'],
-      ['POST', '/api/erp/connectors/x/test'], ['POST', '/api/erp/connectors/x/sync-inbound'],
-      ['POST', '/api/erp/connectors/x/push-award'], ['POST', '/api/ai/parse-document'],
+      ['POST', '/api/erp/connectors/x/test'], ['POST', '/api/ai/parse-document'],
       ['PATCH', '/api/users/x'], ['PATCH', '/api/tenants/current'],
     ];
     it.each(routes)('%s %s sans jeton => 401', async (method, url) => {

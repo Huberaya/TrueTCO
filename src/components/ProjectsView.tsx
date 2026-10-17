@@ -103,13 +103,13 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <FolderKanban className="w-4 h-4 text-emerald-400" />
-            Chantier 3 · Module « Projets & Appels d'Offres »
+            Projets & appels d'offres
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Gestion du Cycle de Vie des Projets d'Achat
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Gestion multicritères conforme à la Section 5 : horizons (1, 3, 5, 7, 10 ans), volumes d'achat, gouvernance des statuts et isolation des hypothèses financières.
+            Horizons d'analyse, volumes d'achat, statuts et hypothèses financières propres à chaque projet.
           </p>
         </div>
 

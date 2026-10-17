@@ -13,7 +13,7 @@ const PROJ = `(id,organization_id,reference,name,category,company_name,budget_ca
 describe('Migrations', () => {
   it('base vierge : applique tout, et la ré-exécution est un no-op', async () => {
     const pg = new PGlite();
-    expect(await applyMigrations(pgliteExecutor(pg), MIGRATIONS_DIR)).toEqual(['001_baseline.sql', '002_tenant_isolation.sql']);
+    expect(await applyMigrations(pgliteExecutor(pg), MIGRATIONS_DIR)).toEqual(['001_baseline.sql', '002_tenant_isolation.sql', '003_entity_documents.sql']);
     expect(await applyMigrations(pgliteExecutor(pg), MIGRATIONS_DIR)).toEqual([]);
   });
 

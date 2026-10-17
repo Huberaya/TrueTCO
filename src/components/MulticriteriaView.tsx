@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { Project, SupplierOffer, Supplier, AuditLogEntry, UserRole } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
 import {
@@ -38,6 +39,7 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
   activeRole,
   onLogAudit,
 }) => {
+  const { user } = useAuth();
   // Default Balanced Preset: 45% TCO, 25% Carbone, 15% Risques, 15% RSE
   const [weights, setWeights] = useState<WeightingPillars>({
     tcoWeight: 45,
@@ -143,12 +145,12 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: 'u-dir-achats',
-      userName: 'Sophie Valéry',
+      userId: user?.id ?? 'demo-user',
+      userName: user?.fullName ?? 'Utilisateur',
       userRole: activeRole,
       projectId: project.id,
       entityName: 'Grille Multicritères 360°',
-      fieldChanged: 'Pondérations officielles d\'attribution',
+      fieldChanged: 'Pondérations d\'attribution',
       oldValue: 'Grille standard 45/25/15/15',
       newValue: `TCO: ${weights.tcoWeight}% | Climat: ${weights.carbonWeight}% | Risque: ${weights.riskWeight}% | RSE: ${weights.esgWeight}%`,
       justification: justificationNote.trim() || `Validation de la grille multicritères (${activePreset}) pour arbitrage en commission d'appels d'offres.`,
@@ -573,7 +575,7 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2">
             <FileCheck2 className="w-4 h-4 text-emerald-400" />
-            <span className="font-bold text-white text-xs">Consignation de la Grille d'Arbitrage Officielle</span>
+            <span className="font-bold text-white text-xs">Enregistrer la grille de pondération</span>
           </div>
           <span className="text-[11px] text-slate-400">Rôle actif : <strong className="text-white uppercase font-mono">{activeRole}</strong></span>
         </div>
@@ -584,7 +586,7 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
               type="text"
               value={justificationNote}
               onChange={(e) => setJustificationNote(e.target.value)}
-              placeholder="Motivation formelle pour la commission (ex: Validation de la grille 360° pour arbitrage conforme CSRD)"
+              placeholder="Motivation (ex. : arbitrage entre coût, risque et critères ESG)"
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
             />
           </div>

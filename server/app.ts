@@ -4,16 +4,19 @@ import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import { type AuthVerifier, authenticate } from './auth';
 import type { Config } from './config';
+import type { AiExtractor } from './ai';
 import type { Db } from './db';
 import { HttpError, mapDbError } from './errors';
 import { dataRouter } from './routes/data';
-import { legacySimulatedRouter } from './routes/legacy-simulated';
+import { aiRouter } from './routes/ai';
 import { sessionRouter } from './routes/session';
 
 export interface AppDeps {
   db: Db;
   verifier: AuthVerifier;
   config: Config;
+  /** Fournisseur de modèle IA ; absent => /api/ai/* répond 503 (aucun repli fictif). */
+  ai?: AiExtractor;
   /** Sortie de logs structurés (jamais de corps de requête ni de jeton). */
   log?: (entry: Record<string, unknown>) => void;
 }
@@ -86,7 +89,7 @@ export function createApp(deps: AppDeps): Express {
   app.use('/api', authenticate({ db, verifier, config }));
   app.use('/api', sessionRouter({ db, verifier }));
   app.use('/api', dataRouter({ db }));
-  app.use('/api', legacySimulatedRouter());
+  app.use('/api', aiRouter({ db, ai: deps.ai, log }));
   app.use('/api', (_req, _res, next) => next(new HttpError(404, 'not_found', 'Route inconnue')));
 
   const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {

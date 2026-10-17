@@ -1,3 +1,4 @@
+import { useTenant } from '../context/TenantContext';
 import React, { useState } from 'react';
 import { Supplier } from '../types/domain';
 import { X, Building2, ShieldCheck, Award } from 'lucide-react';
@@ -13,22 +14,25 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   onClose,
   onAddSupplier,
 }) => {
+  const { currentTenant } = useTenant();
   const [name, setName] = useState('');
   const [country, setCountry] = useState('France');
-  const [sector, setSector] = useState('Véhicules & Mobilité Pro');
+  const [sector, setSector] = useState('');
   const [contactName, setContactName] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [defaultIncoterm, setDefaultIncoterm] = useState('DDP');
   const [currency, setCurrency] = useState('EUR');
   const [paymentTerms, setPaymentTerms] = useState('30 jours fin de mois');
-  const [moq, setMoq] = useState(1);
-  const [leadTimeDays, setLeadTimeDays] = useState(30);
-  const [warrantyMonths, setWarrantyMonths] = useState(36);
-  const [historicalDefectRate, setHistoricalDefectRate] = useState(1.5);
-  const [esgScore, setEsgScore] = useState(85);
-  const [certificationsText, setCertificationsText] = useState('ISO 9001, ISO 14001, EcoVadis Gold');
-  const [envDataText, setEnvDataText] = useState('Bilan Carbone certifié, Fiche ACV ISO 14044');
+  // Aucune valeur présumée : chaque indicateur doit être saisi (une note par défaut fausserait les classements).
+  const [moq, setMoq] = useState('');
+  const [leadTimeDays, setLeadTimeDays] = useState('');
+  const [warrantyMonths, setWarrantyMonths] = useState('');
+  const [historicalDefectRate, setHistoricalDefectRate] = useState('');
+  const [esgScore, setEsgScore] = useState('');
+  const [performanceScore, setPerformanceScore] = useState('');
+  const [certificationsText, setCertificationsText] = useState('');
+  const [envDataText, setEnvDataText] = useState('');
 
   if (!isOpen) return null;
 
@@ -46,33 +50,30 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       .map((e) => e.trim())
       .filter(Boolean);
 
-    // Calculate realistic data quality score based on documentary maturity
-    let quality = 70;
-    if (certList.length >= 2) quality += 15;
-    if (envList.length >= 1) quality += 10;
-    if (contactPhone.trim()) quality += 5;
-    quality = Math.min(100, quality);
+    // Indicateur de COMPLÉTUDE de la fiche (part des informations documentaires renseignées), pas une mesure de fiabilité.
+    const docFields = [certList.length > 0, envList.length > 0, contactPhone.trim() !== '', contactName.trim() !== '', sector.trim() !== ''];
+    const quality = Math.round((100 * docFields.filter(Boolean).length) / docFields.length);
 
     const newSupplier: Supplier = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`,
-      organizationId: 'org-acme-fr',
+      organizationId: currentTenant.id,
       name: name.trim(),
       country: country.trim(),
       sector: sector.trim(),
       contactName: contactName.trim() || undefined,
       contactEmail: contactEmail.trim(),
       contactPhone: contactPhone.trim() || undefined,
-      certifications: certList.length ? certList : ['En cours d\'audit'],
+      certifications: certList,
       defaultIncoterm,
       currency,
       paymentTerms,
-      moq: Number(moq) || 1,
-      leadTimeDays: Number(leadTimeDays) || 30,
-      historicalDefectRate: (Number(historicalDefectRate) || 1.5) / 100,
-      warrantyMonths: Number(warrantyMonths) || 24,
-      performanceScore: 88,
-      esgScore: Number(esgScore) || 75,
-      environmentalDataAvailable: envList.length ? envList : ['Données constructeur déclaratives'],
+      moq: Number(moq),
+      leadTimeDays: Number(leadTimeDays),
+      historicalDefectRate: Number(historicalDefectRate) / 100,
+      warrantyMonths: Number(warrantyMonths),
+      performanceScore: Number(performanceScore),
+      esgScore: Number(esgScore),
+      environmentalDataAvailable: envList,
       dataQualityScore: quality,
     };
 
@@ -184,20 +185,33 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
                 type="number"
                 min="1"
                 value={leadTimeDays}
-                onChange={(e) => setLeadTimeDays(Number(e.target.value))}
+                required
+                onChange={(e) => setLeadTimeDays(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+            <div>
+              <label className="block text-slate-400 mb-1">Commande minimale (qté) *</label>
+              <input
+                type="number"
+                min="1"
+                required
+                value={moq}
+                onChange={(e) => setMoq(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+              />
+            </div>
             <div>
               <label className="block text-slate-400 mb-1">Garantie standard (mois)</label>
               <input
                 type="number"
                 min="6"
                 value={warrantyMonths}
-                onChange={(e) => setWarrantyMonths(Number(e.target.value))}
+                required
+                onChange={(e) => setWarrantyMonths(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -208,7 +222,20 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
                 step="0.1"
                 min="0"
                 value={historicalDefectRate}
-                onChange={(e) => setHistoricalDefectRate(Number(e.target.value))}
+                required
+                onChange={(e) => setHistoricalDefectRate(e.target.value)}
+                className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+            <div>
+              <label className="block text-slate-400 mb-1">Performance historique (0-100) *</label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                required
+                value={performanceScore}
+                onChange={(e) => setPerformanceScore(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -219,14 +246,15 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
                 min="0"
                 max="100"
                 value={esgScore}
-                onChange={(e) => setEsgScore(Number(e.target.value))}
+                required
+                onChange={(e) => setEsgScore(e.target.value)}
                 className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-slate-400 mb-1">Certifications reconnues (séparées par des virgules)</label>
+            <label className="block text-slate-400 mb-1">Certifications déclarées par le fournisseur (séparées par des virgules)</label>
             <input
               type="text"
               value={certificationsText}
@@ -236,7 +264,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-slate-400 mb-1">Données environnementales vérifiées (séparées par des virgules)</label>
+            <label className="block text-slate-400 mb-1">Données environnementales fournies (séparées par des virgules)</label>
             <input
               type="text"
               value={envDataText}

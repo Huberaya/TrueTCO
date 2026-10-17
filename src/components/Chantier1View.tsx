@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { Project, SupplierOffer } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
-import { runAllTCOEngineTests, TestResultItem } from '../engine/tcoEngine.test';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -25,21 +24,12 @@ interface Chantier1ViewProps {
 }
 
 export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers }) => {
-  // Test suite state
-  const [testResults, setTestResults] = useState<{
-    total: number;
-    passed: number;
-    failed: number;
-    results: TestResultItem[];
-  }>(() => runAllTCOEngineTests());
-  const [isRunningTests, setIsRunningTests] = useState(false);
-
   // Selected offer for step-by-step mathematical trace
   const [selectedOfferId, setSelectedOfferId] = useState<string>(offers[0]?.id || '');
   const activeOffer = offers.find((o) => o.id === selectedOfferId) || offers[0];
 
-  // Active sub-tab in Chantier 1
-  const [activeTab, setActiveTab] = useState<'demo' | 'tests' | 'model' | 'formulas' | 'spec'>('demo');
+  // Onglet actif
+  const [activeTab, setActiveTab] = useState<'demo' | 'model' | 'formulas'>('demo');
 
   // Explainability modal
   const [modalData, setModalData] = useState<{
@@ -58,40 +48,18 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
 
   const calculation = TCOEngine.calculateOfferTCO(project, activeOffer);
 
-  const handleRunTests = () => {
-    setIsRunningTests(true);
-    setTimeout(() => {
-      setTestResults(runAllTCOEngineTests());
-      setIsRunningTests(false);
-    }, 200);
-  };
-
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-4 pb-4 border-b border-slate-800">
-        <div>
-          <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            Validation des Fondations · Jalons du Produit
-          </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">
-            Chantier 1 — Architecture, Modèle de Données & Moteur TCO
-          </h2>
-          <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Vérification formelle des 10 exigences du Chantier 1 : modèle d'entités, typage strict, formules mathématiques certifiées, neutralité ESG, suite de tests unitaires et banc d'essai interactif.
-          </p>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-950/60 border border-emerald-800/80 rounded-lg text-emerald-400 text-xs font-semibold">
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Chantier 1 Validé (100%)</span>
-          </div>
-        </div>
+      {/* En-tête */}
+      <div className="pb-4 border-b border-slate-800">
+        <h2 className="text-2xl font-bold text-white tracking-tight">Détail du calcul</h2>
+        <p className="text-xs text-slate-400 mt-1 max-w-3xl">
+          Décomposition pas à pas du coût complet d'une offre, avec les formules telles qu'elles sont implémentées dans la version actuelle du moteur.
+          Les résultats dépendent des hypothèses et des données saisies ; les limites connues sont listées dans l'onglet « Formules et hypothèses ».
+        </p>
       </div>
 
-      {/* Chantier 1 Navigation Sub-Tabs */}
+      {/* Sous-onglets */}
       <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-900 border border-slate-800 rounded-xl text-xs font-medium">
         <button
           onClick={() => setActiveTab('demo')}
@@ -102,19 +70,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
           }`}
         >
           <Calculator className="w-3.5 h-3.5 text-emerald-400" />
-          10. Banc de Démonstration Interactif
-        </button>
-
-        <button
-          onClick={() => setActiveTab('tests')}
-          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-            activeTab === 'tests'
-              ? 'bg-slate-800 text-white font-semibold border border-slate-700'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          09. Tests Automatisés ({testResults.passed}/{testResults.total})
+          Calcul pas à pas
         </button>
 
         <button
@@ -126,7 +82,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
           }`}
         >
           <Binary className="w-3.5 h-3.5 text-indigo-400" />
-          04. Formules & Hypothèses Auditées
+          Formules et hypothèses
         </button>
 
         <button
@@ -138,20 +94,9 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
           }`}
         >
           <Layers className="w-3.5 h-3.5 text-sky-400" />
-          01-03. Modèle de Données & Relations
+          Modèle de données
         </button>
 
-        <button
-          onClick={() => setActiveTab('spec')}
-          className={`px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5 ${
-            activeTab === 'spec'
-              ? 'bg-slate-800 text-white font-semibold border border-slate-700'
-              : 'text-slate-400 hover:text-white'
-          }`}
-        >
-          <FileCheck className="w-3.5 h-3.5 text-amber-400" />
-          Rapport de Clôture du Chantier 1
-        </button>
       </div>
 
       {/* TAB 1: BANC DE DÉMONSTRATION INTERACTIF */}
@@ -339,7 +284,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               ))}
             </div>
             <div className="text-[11px] text-slate-400 pt-2 flex justify-between">
-              <span>Formule ISO 15686-5 : LCC = CAPEX_0 + Σ [ CF_t / (1 + r)^t ]</span>
+              <span>Formule du coût global actualisé : LCC = CAPEX_0 + Σ [ CF_t / (1 + r)^t ]</span>
               <span className="font-mono text-white font-bold">
                 Total LCC Actualisé (NPV) : {calculation.lifecycleCostLCC.toLocaleString('fr-FR')} €
               </span>
@@ -349,77 +294,25 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
         )
       )}
 
-      {/* TAB 2: TESTS AUTOMATISÉS CERTIFIÉS */}
-      {activeTab === 'tests' && (
-        <div className="space-y-4">
-          <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between gap-4">
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-white">
-                Rapport d'Exécution des Tests Mathématiques
-              </h3>
-              <p className="text-xs text-slate-400">
-                La suite de tests unitaires valide l'absence de régression sur les calculs de CAPEX, d'OPEX indexé, d'actualisation WACC, de monétisation carbone et d'objectivité sans biais.
-              </p>
-            </div>
-
-            <button
-              onClick={handleRunTests}
-              disabled={isRunningTests}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:bg-slate-800 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors"
-            >
-              <RotateCcw className={`w-3.5 h-3.5 ${isRunningTests ? 'animate-spin' : ''}`} />
-              <span>{isRunningTests ? 'Exécution...' : 'Ré-exécuter tous les tests'}</span>
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {testResults.results.map((test) => (
-              <div
-                key={test.id}
-                className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-2 hover:border-slate-700 transition-colors"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2.5">
-                    {test.passed ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
-                    ) : (
-                      <XCircle className="w-5 h-5 text-rose-400 shrink-0" />
-                    )}
-                    <div>
-                      <span className="font-bold text-white text-xs">{test.id} · {test.name}</span>
-                      <span className="ml-2 text-[10px] font-mono px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-slate-400">
-                        {test.category}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="text-xs font-mono text-slate-400">{test.durationMs} ms</span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-3 bg-slate-950 rounded-lg text-xs font-mono">
-                  <div>
-                    <div className="text-[10px] text-slate-500 font-sans">Condition d'assertion attendue :</div>
-                    <div className="text-slate-300 text-[11px] mt-0.5">{test.expected}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-slate-500 font-sans">Valeur calculée par le moteur :</div>
-                    <div className="text-emerald-400 text-[11px] mt-0.5">{test.actual}</div>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {/* TAB 3: FORMULES & HYPOTHÈSES AUDITÉES */}
       {activeTab === 'formulas' && (
         <div className="space-y-4">
           <div className="p-5 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Formules Mathématiques Normalisées du Moteur TrueTCO
+              Formules du moteur de calcul (version actuelle)
             </h3>
+            <div className="p-3.5 bg-amber-950/40 border border-amber-800/60 rounded-lg text-xs text-amber-100 space-y-1.5">
+              <div className="font-bold">Limites connues de cette version — à prendre en compte avant toute décision</div>
+              <ul className="list-disc pl-5 space-y-1 text-amber-200/90">
+                <li>Le « LCC actualisé » n'inclut pas le carbone monétisé : celui-ci est ajouté au TCO nominal, non actualisé. Les deux totaux ne sont pas directement comparables.</li>
+                <li>Le point mort est calculé par division linéaire des totaux sur la durée d'analyse (sans actualisation) : il s'agit d'une estimation grossière, pas d'un croisement de flux cumulés.</li>
+                <li>Les coefficients de vieillissement (maintenance, pannes) et les paramètres des scénarios sont fixes dans le code, non paramétrables et non sourcés.</li>
+                <li>L'intervalle d'incertitude est un encadrement indicatif lié au score de qualité des données, et non un intervalle de confiance statistique.</li>
+                <li>Aucune de ces formules n'a fait l'objet d'une certification ou d'un audit externe.</li>
+              </ul>
+            </div>
             <p className="text-xs text-slate-400 leading-relaxed">
-              Toutes les formules ci-dessous sont implémentées dans une couche de calcul autonome (`src/engine/tcoEngine.ts`), sans dépendance d'affichage UI.
+              Les formules ci-dessous sont implémentées dans une couche de calcul séparée de l'interface (`src/engine/tcoEngine.ts`).
             </p>
 
             <div className="space-y-4 text-xs">
@@ -449,7 +342,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
                   Coût_Carbone = Émissions_Totales_(tCO2e) × Valeur_Tutélaire_(€/t)
                 </div>
                 <div className="text-slate-400 text-[11px] pt-1">
-                  Basé sur les facteurs d'émission officiels ADEME Base Carbone et la trajectoire de la commission Quinet (120 €/t en 2026).
+                  Le prix du carbone (€/t) est une hypothèse saisie dans le projet ; la valeur proposée par défaut est indicative et doit être documentée par votre organisation. Les facteurs d'émission proviennent des données saisies pour chaque offre.
                 </div>
               </div>
 
@@ -516,43 +409,11 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-1">
                 <div className="font-bold text-emerald-400 font-mono">TCOCalculationResult</div>
                 <div className="text-slate-300">
-                  Sortie immuable du moteur : TCO standard, LCC actualisé, intervalle d'incertitude et cash flows.
+                  Sortie du moteur : TCO standard, LCC actualisé, intervalle d'incertitude et cash flows.
                 </div>
                 <div className="text-[10px] text-slate-500">Prêt pour l'exportation et le reporting de direction</div>
               </div>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 5: RAPPORT DE CLÔTURE DU CHANTIER 1 */}
-      {activeTab === 'spec' && (
-        <div className="p-6 bg-slate-900 border border-slate-800 rounded-xl space-y-4 text-xs text-slate-300">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Rapport de Clôture & Revue de Code — Chantier 1
-            </h3>
-            <span className="text-emerald-400 font-mono font-bold text-xs">Statut : Validé 100%</span>
-          </div>
-
-          <div className="space-y-2">
-            <div className="font-bold text-white">1. Ce qui est terminé et vérifié :</div>
-            <ul className="list-disc pl-5 space-y-1 text-slate-300">
-              <li>Définition intégrale du modèle de données (`src/types/domain.ts`) avec unités, traçabilité et sources.</li>
-              <li>Moteur de calcul modulaire (`src/engine/tcoEngine.ts`) : TCO économique, LCC actualisé WACC, externalités carbone, risques $P \times I$, point mort, scénarios et sensibilité.</li>
-              <li>Suite de tests unitaires automatisés (`src/engine/tcoEngine.test.ts`) avec 7 assertions critiques vérifiées (0 échec).</li>
-              <li>Assertion de neutralité ESG (Principe 37) prouvée par test automatique : le moteur refuse tout biais systématique et privilégie l'offre conventionnelle si l'alternative ESG est économiquement irrationnelle.</li>
-              <li>Banc d'essai et décomposition interactive des flux de trésorerie.</li>
-            </ul>
-          </div>
-
-          <div className="space-y-2 pt-2 border-t border-slate-800">
-            <div className="font-bold text-white">2. Décisions techniques prises :</div>
-            <ul className="list-disc pl-5 space-y-1 text-slate-300">
-              <li>Séparation absolue entre le moteur mathématique et les composants d'interface pour permettre de futurs appels via API REST / ERP.</li>
-              <li>Affichage systématique en chiffres tabulaires (`tabular-nums`) pour aligner parfaitement les décimales dans les tableaux de gestion.</li>
-              <li>Gestion explicite de l'incertitude financière via un intervalle [TCO_min, TCO_max] calibré sur le score de qualité des données pour interdire la fausse précision.</li>
-            </ul>
           </div>
         </div>
       )}

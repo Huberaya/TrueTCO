@@ -1,148 +1,91 @@
-import { Project, SupplierOffer, AuditLogEntry } from '../types/domain';
+import { AuditLogEntry, ExternalityReferenceBenchmark, Project, Supplier, SupplierOffer } from '../types/domain';
 import { apiFetch } from './apiClient';
 
+/**
+ * Client des données serveur (source de vérité en mode connecté).
+ *
+ * - Les erreurs sont EXPLICITES (ApiError) : l'interface peut distinguer « liste vide » de « échec ».
+ * - Sauvegarde sans perte : l'objet complet est envoyé dans `document` ; à la relecture, `document`
+ *   l'emporte sur les colonnes normalisées (seul l'identifiant reste celui de la base).
+ */
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly code?: string, public readonly requestId?: string) {
+    super(message);
+  }
+}
+
+async function request<T>(url: string, init: RequestInit = {}, tenantId?: string): Promise<T> {
+  let res: Response;
+  try {
+    res = await apiFetch(url, init, { tenantId });
+  } catch {
+    throw new ApiError('Serveur injoignable', 0, 'network');
+  }
+  if (res.status === 401 && !res.headers.get('x-request-id')) throw new ApiError('Session expirée ou absente', 401, 'unauthorized');
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const fields = body?.details?.fields ? ` (champs : ${body.details.fields.join(', ')})` : '';
+    throw new ApiError(`${body?.message ?? `Erreur HTTP ${res.status}`}${fields}`, res.status, body?.error, body?.requestId);
+  }
+  return body as T;
+}
+
+const post = (url: string, payload: unknown, tenantId?: string) =>
+  request<unknown>(url, { method: 'POST', body: JSON.stringify(payload) }, tenantId);
+
 export class NeonService {
-  /**
-   * Persist a project to Neon PostgreSQL (Hermetically partitioned by tenant)
-   */
-  public static async saveProject(project: Project, tenantId?: string): Promise<boolean> {
-    try {
-      const res = await apiFetch('/api/projects', {
-        method: 'POST',
-        body: JSON.stringify(project),
-      }, { tenantId });
-      return res.ok;
-    } catch (err) {
-      console.warn('[NeonService] Could not persist project to Neon (offline fallback active):', err);
-      return false;
-    }
+  static async saveProject(project: Project, tenantId?: string): Promise<void> {
+    await post('/api/projects', { ...project, document: project }, tenantId);
   }
 
-  /**
-   * Persist an offer and its cost items to Neon PostgreSQL
-   */
-  public static async saveOffer(offer: SupplierOffer, tenantId?: string): Promise<boolean> {
-    try {
-      const res = await apiFetch('/api/offers', {
-        method: 'POST',
-        body: JSON.stringify(offer),
-      }, { tenantId });
-      return res.ok;
-    } catch (err) {
-      console.warn('[NeonService] Could not persist offer to Neon:', err);
-      return false;
-    }
+  static async saveOffer(offer: SupplierOffer, tenantId?: string): Promise<void> {
+    await post('/api/offers', { ...offer, document: offer }, tenantId);
   }
 
-  /**
-   * Persist an audit log to Neon PostgreSQL (Hermetically partitioned by tenant)
-   */
-  public static async saveAuditLog(log: AuditLogEntry, tenantId?: string): Promise<boolean> {
-    try {
-      const res = await apiFetch('/api/audit-logs', {
-        method: 'POST',
-        body: JSON.stringify(log),
-      }, { tenantId });
-      return res.ok;
-    } catch (err) {
-      console.warn('[NeonService] Could not persist audit log to Neon:', err);
-      return false;
-    }
+  static async saveSupplier(supplier: Supplier, tenantId?: string): Promise<void> {
+    await post('/api/suppliers', { ...supplier, document: supplier }, tenantId);
   }
 
-  /**
-   * Persist a supplier to Neon PostgreSQL (Hermetically partitioned by tenant)
-   */
-  public static async saveSupplier(supplier: any, tenantId?: string): Promise<boolean> {
-    try {
-      const res = await apiFetch('/api/suppliers', {
-        method: 'POST',
-        body: JSON.stringify(supplier),
-      }, { tenantId });
-      return res.ok;
-    } catch (err) {
-      console.warn('[NeonService] Could not persist supplier to Neon:', err);
-      return false;
-    }
+  static async saveBenchmark(benchmark: ExternalityReferenceBenchmark, tenantId?: string): Promise<void> {
+    await post('/api/benchmarks', { ...benchmark, document: benchmark }, tenantId);
   }
 
-  /**
-   * Load suppliers from Neon PostgreSQL for the active or specified tenant
-   */
-  public static async fetchSuppliers(tenantId?: string): Promise<any[] | null> {
-    try {
-      const res = await apiFetch('/api/suppliers', {}, { tenantId });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) return null;
-      return data;
-    } catch (err) {
-      console.warn('[NeonService] Fetching suppliers from Neon failed:', err);
-      return null;
-    }
+  /** Justification saisie par l'utilisateur ; auteur, rôle et date sont ceux du serveur. */
+  static async saveAuditNote(note: AuditLogEntry, tenantId?: string): Promise<void> {
+    await post('/api/audit-logs', {
+      projectId: note.projectId,
+      entityName: note.entityName,
+      fieldChanged: note.fieldChanged,
+      oldValue: note.oldValue == null ? null : String(note.oldValue),
+      newValue: note.newValue == null ? null : String(note.newValue),
+      justification: note.justification,
+    }, tenantId);
   }
 
-  /**
-   * Load audit logs from Neon PostgreSQL for the active or specified tenant
-   */
-  public static async fetchAuditLogs(tenantId?: string): Promise<AuditLogEntry[] | null> {
-    try {
-      const res = await apiFetch('/api/audit-logs', {}, { tenantId });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) return null;
-      return data as AuditLogEntry[];
-    } catch (err) {
-      console.warn('[NeonService] Fetching audit logs from Neon failed:', err);
-      return null;
-    }
+  static async fetchProjects(tenantId?: string): Promise<Project[]> {
+    const rows = await request<any[]>('/api/projects', {}, tenantId);
+    return rows.map(({ document, ...cols }) => ({ ...cols, ...(document ?? {}), id: cols.id }) as Project);
   }
 
-  /**
-   * Save an institutional benchmark to Neon PostgreSQL
-   */
-  public static async saveBenchmark(benchmark: any, tenantId?: string): Promise<boolean> {
-    try {
-      const res = await apiFetch('/api/benchmarks', {
-        method: 'POST',
-        body: JSON.stringify(benchmark),
-      }, { tenantId });
-      return res.ok;
-    } catch (err) {
-      console.warn('[NeonService] Could not persist benchmark to Neon:', err);
-      return false;
-    }
+  static async fetchSuppliers(tenantId?: string): Promise<Supplier[]> {
+    const rows = await request<any[]>('/api/suppliers', {}, tenantId);
+    return rows.map(({ document, ...cols }) => ({ ...cols, ...(document ?? {}), id: cols.id }) as Supplier);
   }
 
-  /**
-   * Load institutional benchmarks from Neon PostgreSQL
-   */
-  public static async fetchBenchmarks(tenantId?: string): Promise<any[] | null> {
-    try {
-      const res = await apiFetch('/api/benchmarks', {}, { tenantId });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) return null;
-      return data;
-    } catch (err) {
-      console.warn('[NeonService] Fetching benchmarks from Neon failed:', err);
-      return null;
-    }
+  static async fetchBenchmarks(tenantId?: string): Promise<ExternalityReferenceBenchmark[]> {
+    const rows = await request<any[]>('/api/benchmarks', {}, tenantId);
+    return rows.map(({ document, ...cols }) => ({ ...cols, ...(document ?? {}), id: cols.id }) as ExternalityReferenceBenchmark);
   }
 
-  /**
-   * Load all projects from Neon PostgreSQL for the active or specified tenant
-   */
-  public static async fetchProjects(tenantId?: string): Promise<Project[] | null> {
-    try {
-      const res = await apiFetch('/api/projects', {}, { tenantId });
-      if (!res.ok) return null;
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) return null;
-      return data as Project[];
-    } catch (err) {
-      console.warn('[NeonService] Fetching projects from Neon failed (using local cache):', err);
-      return null;
-    }
+  /** Les offres sans document (lignes antérieures à la sauvegarde sans perte) sont ignorées : incomplètes pour l'interface. */
+  static async fetchOffers(tenantId?: string): Promise<SupplierOffer[]> {
+    const rows = await request<any[]>('/api/offers', {}, tenantId);
+    return rows
+      .filter((r) => r.document && Object.keys(r.document).length > 0)
+      .map((r) => ({ ...r.document, id: r.id, projectId: r.projectId, supplierId: r.supplierId }) as SupplierOffer);
+  }
+
+  static async fetchAuditLogs(tenantId?: string): Promise<AuditLogEntry[]> {
+    return request<AuditLogEntry[]>('/api/audit-logs?limit=1000', {}, tenantId);
   }
 }

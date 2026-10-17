@@ -5,7 +5,7 @@ import { TCOEngine } from '../engine/tcoEngine';
 export class ExcelExportService {
   /**
    * Generates and downloads a multi-tab financial workbook (XLSX)
-   * designed for Financial Controllers (DAF) and Statutory Auditors (CAC).
+   * pour les équipes Finance et Achats. Copie des données et résultats ; aucune certification n'est attestée.
    */
   public static exportFinancialWorkbook(
     project: Project,
@@ -30,7 +30,7 @@ export class ExcelExportService {
     // ==========================================
     const tab1Data: any[][] = [
       ['TRUETCO - RAPPORT FINANCIER D\'ARBITRAGE ÉCONOMIQUE & COÛT COMPLET (LCC)'],
-      ['Document officiel certifié pour Comité d\'Investissement & Contrôle de Gestion'],
+      ['Synthèse de calcul — dépend des hypothèses saisies ; document non certifié'],
       [''],
       ['1. PARAMÈTRES GÉNÉRAUX DE LA CONSULTATION'],
       ['Nom du Projet', project.name],
@@ -178,7 +178,7 @@ export class ExcelExportService {
     // TAB 4 : BILAN CARBONE & VALEUR TUTÉLAIRE
     // ==========================================
     const tab4Data: any[][] = [
-      ['ÉVALUATION DE L\'EMPREINTE CARBONE ACV & EXTERNALITÉS MONÉTISÉES (SECTION 11)'],
+      ['EMPREINTE CARBONE & EXTERNALITÉS MONÉTISÉES'],
       [`Valeur tutélaire de l'action climat : ${project.carbonPricePerTonne} €/tCO2e (Commission Quinet)`],
       [''],
       [
@@ -222,15 +222,15 @@ export class ExcelExportService {
     XLSX.utils.book_append_sheet(workbook, ws4, 'Carbone & Externalités');
 
     // ==========================================
-    // TAB 5 : REGISTRE D'AUDIT IMMUABLE (CAC)
+    // Onglet 5 : journal d'audit (copie)
     // ==========================================
     const tab5Data: any[][] = [
-      ['JOURNAL D\'AUDIT LÉGAL & TRAÇABILITÉ DES HYPOTHÈSES (SECTION 26)'],
-      ['Piste d\'audit fiable certifiée pour Commissaires aux Comptes & Contrôle Interne'],
+      ['JOURNAL D\'AUDIT — COPIE DES ENTRÉES'],
+      ['Copie du journal à la date d\'export ; non signée, sans horodatage par un tiers'],
       [''],
       [
         'ID Audit',
-        'Horodatage Certifié',
+        'Horodatage',
         'Auteur de la Modification',
         'Rôle / Profil Système',
         'Élément Révisé',
@@ -256,7 +256,7 @@ export class ExcelExportService {
     });
 
     const ws5 = XLSX.utils.aoa_to_sheet(tab5Data);
-    XLSX.utils.book_append_sheet(workbook, ws5, 'Journal d\'Audit CAC');
+    XLSX.utils.book_append_sheet(workbook, ws5, 'Journal d\'audit');
 
     // Auto-size columns for readability across all sheets
     [ws1, ws2, ws3, ws4, ws5].forEach((sheet) => {

@@ -33,7 +33,6 @@ describe.each<Mode>(['rls', 'app-only'])('RBAC & identité [%s]', (mode) => {
     'user:manage': () => ({ method: 'post', url: '/api/users/invitations', body: { email: `m${Math.random().toString(36).slice(2, 8)}@a.com`, fullName: 'M', role: 'acheteur' } }),
     'tenant:update': () => ({ method: 'patch', url: '/api/tenants/current', body: { name: 'Acme A' } }),
     'ai:parse': () => ({ method: 'post', url: '/api/ai/parse-document', body: { text: 'devis 50 unités', filename: 'd.txt' } }),
-    'erp:use': () => ({ method: 'post', url: '/api/erp/connectors/ariba/test', body: {} }),
   };
 
   // Toute la matrice, rôle × permission : 6 × 15 = 90 cas dérivés de la table PERMISSIONS (source unique).
@@ -162,5 +161,30 @@ describe.each<Mode>(['rls', 'app-only'])('RBAC & identité [%s]', (mode) => {
       for (let i = 0; i < 6; i++) last = (await h.call('uSpam').post('/api/tenants').send({ name: `Org ${i} spam` })).status;
       expect([403, 429]).toContain(last);
     });
+  });
+});
+
+describe('Adjudication : décision réservée', () => {
+  let h: Harness;
+  beforeAll(async () => {
+    h = await createHarness('rls'); await seed(h);
+    await h.pg.exec(`INSERT INTO users(organization_id,email,full_name,role,clerk_id) VALUES ('${ORG_A}','da@a.com','DA','directeur_achats','uDirAchats')`);
+  });
+  afterAll(async () => { await h.close(); });
+  const proj = (status: string) => validProject({ id: id('d', 1), reference: 'A-REF-1', status });
+
+  it("RÉGRESSION : le statut 'adjudique' est accepté (il était refusé par la base)", async () => {
+    expect((await h.call('uDirAchats').post('/api/projects').send(proj('adjudique'))).status).toBe(200);
+    expect(((await h.pg.query(`SELECT status FROM projects WHERE id='${id('d', 1)}'`)).rows[0] as any).status).toBe('adjudique');
+  });
+
+  it("un acheteur ne peut pas adjuger (403), le projet reste inchangé", async () => {
+    await h.pg.exec(`UPDATE projects SET status='decision' WHERE id='${id('d', 1)}'`);
+    expect((await h.call('uBuyer').post('/api/projects').send(proj('adjudique'))).status).toBe(403);
+    expect(((await h.pg.query(`SELECT status FROM projects WHERE id='${id('d', 1)}'`)).rows[0] as any).status).toBe('decision');
+  });
+
+  it('finance et acheteur peuvent en revanche modifier les autres statuts', async () => {
+    expect((await h.call('uBuyer').post('/api/projects').send(proj('analyse'))).status).toBe(200);
   });
 });

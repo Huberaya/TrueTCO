@@ -113,15 +113,10 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
-            <Database className="w-4 h-4 text-emerald-400" />
-            Chantier 5 · Module « Référentiels d'Externalités & Traçabilité »
-          </div>
-          <h2 className="text-2xl font-bold text-white tracking-tight">
-            Base de Données des Externalités (ADEME / Quinet / WACC)
-          </h2>
+          <h2 className="text-2xl font-bold text-white tracking-tight">Référentiels et hypothèses</h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Conforme à la Section 12 : gestion des 10 attributs normatifs (nom, valeur, unité, source, URL, date, pays, méthode, intervalle, confiance). Toute révision exige une justification formelle inscrite au journal d'audit.
+            Valeurs de référence utilisées dans les calculs (prix du carbone, facteurs, taux). Chaque valeur doit indiquer sa source et son niveau de confiance ;
+            ces informations sont <strong>déclarées par votre organisation</strong> et ne sont pas vérifiées par TrueTCO. Toute révision exige une justification inscrite au journal d'audit.
           </p>
         </div>
 
@@ -139,29 +134,29 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
           <div className="text-slate-400 text-[11px]">Facteurs Indexés</div>
           <div className="text-xl font-bold font-mono text-white mt-0.5">{benchmarks.length}</div>
-          <div className="text-[10px] text-slate-500">ADEME, Quinet, WACC, CRE</div>
+          <div className="text-[10px] text-slate-500">Valeurs saisies par votre organisation</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Prix Tutélaire Quinet 2026</div>
+          <div className="text-slate-400 text-[11px]">Prix du carbone (référentiel)</div>
           <div className="text-xl font-bold font-mono text-sky-400 mt-0.5">
-            {benchmarks.find((b) => b.id === 'bench-carbone-quinet')?.value || 120} €/t
+            {(() => { const b = benchmarks.find((x) => x.category === 'carbone' && /€\s*\/\s*t/i.test(x.unit)); return b ? `${b.value} €/t` : '—'; })()}
           </div>
-          <div className="text-[10px] text-slate-500">Trajectoire officielle France</div>
+          <div className="text-[10px] text-slate-500">Valeur saisie ; aucune valeur par défaut</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Confiance Moyenne</div>
+          <div className="text-slate-400 text-[11px]">Confiance moyenne déclarée</div>
           <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">
             {Math.round(benchmarks.reduce((acc, b) => acc + b.confidenceLevel, 0) / (benchmarks.length || 1))}%
           </div>
-          <div className="text-[10px] text-slate-500">Données certifiées de rang A</div>
+          <div className="text-[10px] text-slate-500">Moyenne des niveaux déclarés (non vérifiée)</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Traçabilité Audit</div>
-          <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">100% Immuable</div>
-          <div className="text-[10px] text-slate-500">Justification CAC obligatoire</div>
+          <div className="text-slate-400 text-[11px]">Traçabilité</div>
+          <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">Journalisée</div>
+          <div className="text-[10px] text-slate-500">Justification obligatoire à chaque révision</div>
         </div>
       </div>
 
@@ -292,7 +287,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
         </div>
       </div>
 
-      {/* Edit Factor Modal with Mandatory Justification (Section 26 Compliance) */}
+      {/* Modale d'édition avec justification obligatoire */}
       {selectedBenchmark && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 space-y-5 shadow-2xl">
@@ -321,7 +316,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-400 text-[11px]">
-                  <span>Source officielle :</span>
+                  <span>Source déclarée :</span>
                   <span className="text-slate-300">{selectedBenchmark.source}</span>
                 </div>
               </div>
@@ -362,7 +357,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
 
               <div>
                 <label className="block text-slate-400 mb-1">
-                  Justification d'audit obligatoire * (Section 26)
+                  Justification obligatoire *
                 </label>
                 <textarea
                   required

@@ -27,7 +27,7 @@ const currency = z
   .pipe(z.string().regex(/^[A-Z]{3}$/, 'code devise ISO 4217'));
 
 export const PROJECT_STATUSES = [
-  'brouillon', 'collecte_offres', 'analyse', 'validation_finance', 'validation_achats', 'decision', 'termine', 'archive',
+  'brouillon', 'collecte_offres', 'analyse', 'validation_finance', 'validation_achats', 'decision', 'adjudique', 'termine', 'archive',
   'Brouillon', 'Cahier des charges', 'Consultation', 'Analyse', 'Validation Finance', 'Validation Achats', 'Décision',
   'Contractualisé', 'En exploitation', 'Archivé', 'Terminé / Arbitré',
 ] as const;
@@ -37,7 +37,17 @@ export const PROJECT_STATUSES = [
  * un taux de 0 % par 5 % (`Number(x) || 0.05`). Un champ absent est une erreur, un 0 est un 0.
  * Les clés inconnues sont ignorées ; organizationId / tenantId / role fournis par le client ne sont jamais lus.
  */
+/**
+ * Objet applicatif complet, conservé tel quel (sauvegarde sans perte). Jamais interprété par le serveur.
+ * Optionnel : absent => le document existant est conservé (pas d'écrasement par {}).
+ */
+const documentField = z
+  .record(z.string(), z.unknown())
+  .refine((d) => JSON.stringify(d).length <= 200_000, 'document trop volumineux')
+  .optional();
+
 export const ProjectInput = z.object({
+  document: documentField,
   id: clientId.optional(),
   reference: text(1, 100),
   name: text(1, 255),
@@ -77,6 +87,7 @@ const CostItemInput = z.object({
 });
 
 export const OfferInput = z.object({
+  document: documentField,
   id: clientId,
   projectId: clientId,
   supplierId: clientId,
@@ -91,6 +102,7 @@ export const OfferInput = z.object({
 });
 
 export const SupplierInput = z.object({
+  document: documentField,
   id: clientId.optional(),
   name: text(1, 255),
   country: z.string().trim().length(2).transform((s) => s.toUpperCase()).default('FR'),
@@ -107,9 +119,12 @@ export const SupplierInput = z.object({
 
 export const BENCHMARK_CATEGORIES = [
   'energie', 'carbone', 'financier', 'social', 'dechets', 'wacc', 'pollution_locale', 'main_d_oeuvre', 'taux_interet',
+  'energie_kwh', 'recyclage',
 ] as const;
 
 export const BenchmarkInput = z.object({
+  id: clientId.optional(),
+  document: documentField,
   name: text(1, 255),
   category: z.enum(BENCHMARK_CATEGORIES).default('carbone'),
   source: text(1, 255),
@@ -162,5 +177,6 @@ export const UserUpdateInput = z.object({
 export const AiParseInput = z.object({
   filename: text(1, 255).default('document'),
   category: text(1, 50).optional(),
-  text: z.string().min(1).max(500_000),
+  // Pas de troncature silencieuse : un document trop long est refusé (400) plutôt que partiellement analysé.
+  text: z.string().min(1).max(60_000),
 });

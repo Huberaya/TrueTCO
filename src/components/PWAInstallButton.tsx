@@ -49,7 +49,7 @@ export const PWAInstallButton: React.FC = () => {
 
             <div className="space-y-3">
               <p className="text-slate-300 leading-relaxed">
-                TrueTCO est certifiée <strong>PWA (Progressive Web App)</strong> avec mise en cache Workbox et Service Worker. Vous pouvez l'utiliser directement comme une application de bureau ou mobile native, <strong>même en déplacement sans aucune connexion Internet</strong>.
+                TrueTCO est installable comme application (<strong>PWA</strong>). Vous pouvez l'utiliser directement comme une application de bureau ou mobile native, <strong>même en déplacement sans aucune connexion Internet</strong>.
               </p>
 
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">

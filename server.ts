@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import { createApp } from './server/app';
+import { GeminiExtractor } from './server/ai';
 import { ClerkVerifier } from './server/auth';
 import { loadConfig } from './server/config';
 import { PgDb, checkRlsEnforced } from './server/db';
@@ -31,7 +32,12 @@ async function startServer() {
     console.warn(`⚠️  ${msg} L'isolation repose alors uniquement sur la couche applicative.`);
   }
 
-  const app = createApp({ db, verifier: new ClerkVerifier(config), config });
+  const app = createApp({
+    db,
+    verifier: new ClerkVerifier(config),
+    config,
+    ai: config.geminiApiKey ? new GeminiExtractor(config.geminiApiKey, config.geminiModel) : undefined,
+  });
   const server = http.createServer(app);
 
   if (!config.isProd) {

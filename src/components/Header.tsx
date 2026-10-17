@@ -21,13 +21,14 @@ import { useTenant } from '../context/TenantContext';
 import { TenantSwitcher } from './TenantSwitcher';
 
 interface HeaderProps {
-  currentProject: Project;
+  currentProject: Project | undefined;
   projects: Project[];
   onSelectProject: (proj: Project) => void;
   activeRole: UserRole;
   onChangeRole: (role: UserRole) => void;
   onOpenNewProject: () => void;
-  onOpenTestsModal: () => void;
+  /** État RÉEL de la synchronisation avec le serveur. */
+  syncStatus: 'demo' | 'syncing' | 'synced' | 'error';
   onOpenReportModal: () => void;
   onOpenBackupModal?: () => void;
 }
@@ -39,7 +40,7 @@ export const Header: React.FC<HeaderProps> = ({
   activeRole,
   onChangeRole,
   onOpenNewProject,
-  onOpenTestsModal,
+  syncStatus,
   onOpenReportModal,
   onOpenBackupModal,
 }) => {
@@ -110,13 +111,14 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Project Selector dropdown */}
         <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-1">
           <select
-            value={currentProject.id}
+            value={currentProject?.id ?? ''}
             onChange={(e) => {
               const selected = projects.find((p) => p.id === e.target.value);
               if (selected) onSelectProject(selected);
             }}
             className="bg-transparent text-xs font-semibold text-slate-200 focus:outline-none cursor-pointer max-w-[200px] truncate pr-2 pl-1"
           >
+            {projects.length === 0 && <option value="">Aucun projet</option>}
             {projects.map((p) => (
               <option key={p.id} value={p.id} className="bg-slate-900 text-slate-200">
                 {p.reference} - {p.name}
@@ -126,29 +128,27 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
       </div>
 
-      {/* Right Actions: Test runner, Neon status, Report, New Project, and Enterprise SSO User */}
+      {/* Actions : statut de synchronisation, rapport, nouveau projet, session */}
       <div className="flex items-center gap-3">
-        {/* Automated Tests trigger */}
-        <button
-          onClick={onOpenTestsModal}
-          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-colors"
-          title="Ouvrir le banc de tests automatisés (7 tests unitaires conformité ISO/WACC)"
-        >
-          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="hidden xl:inline">Tests TCO (7/7)</span>
-        </button>
-
         {/* Neon Database indicator & Backup Modal Trigger */}
-        {onOpenBackupModal && (
-          <button
-            onClick={onOpenBackupModal}
-            className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-colors"
-            title="Base Neon PostgreSQL connectée. Cliquez pour ouvrir le gestionnaire de sauvegarde."
-          >
-            <Database className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden lg:inline text-emerald-300 font-mono text-[11px]">Neon DB</span>
-          </button>
-        )}
+        {onOpenBackupModal && (() => {
+          const status = {
+            demo: { label: 'Données locales (démo)', tone: 'text-amber-300', icon: 'text-amber-400', title: 'Mode démonstration : données stockées uniquement dans ce navigateur. Cliquez pour gérer l\'export.' },
+            syncing: { label: 'Synchronisation…', tone: 'text-slate-300', icon: 'text-slate-400', title: 'Synchronisation avec le serveur en cours.' },
+            synced: { label: 'Synchronisé', tone: 'text-emerald-300', icon: 'text-emerald-400', title: 'Données chargées depuis le serveur. Cliquez pour exporter une copie.' },
+            error: { label: 'Erreur de synchro', tone: 'text-rose-300', icon: 'text-rose-400', title: 'La dernière synchronisation a échoué : les données affichées peuvent être incomplètes.' },
+          }[syncStatus];
+          return (
+            <button
+              onClick={onOpenBackupModal}
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-colors"
+              title={status.title}
+            >
+              <Database className={`w-3.5 h-3.5 ${status.icon}`} />
+              <span className={`hidden lg:inline font-mono text-[11px] ${status.tone}`}>{status.label}</span>
+            </button>
+          );
+        })()}
 
         {/* PWA In-App Install Trigger */}
         <PWAInstallButton />

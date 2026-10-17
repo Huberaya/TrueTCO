@@ -28,62 +28,12 @@ interface DataBackupModalProps {
   auditLogs: AuditLogEntry[];
   onRestoreData: (payload: TrueTCOBackupPayload) => void;
   onResetSeed: () => void;
+  /** true : démonstration locale. false : le serveur fait foi (ni restauration ni réinitialisation). */
+  isDemo: boolean;
 }
 
-const SQL_TABLES_INFO = [
-  {
-    name: 'organizations',
-    role: 'Racine Multi-Tenant (SIRET, devises, isolation clients)',
-    fields: ['id UUID PK', 'name VARCHAR', 'legal_registration_number', 'default_currency', 'created_at', 'updated_at'],
-  },
-  {
-    name: 'users',
-    role: 'Comptes utilisateurs & Contrôle d\'accès RBAC (Acheteur, DAF, RSE)',
-    fields: ['id UUID PK', 'organization_id FK', 'email', 'full_name', 'role CHECK', 'is_active', 'created_at'],
-  },
-  {
-    name: 'projects',
-    role: 'Consultations d\'achats (12 champs normés, horizon, WACC, inflation)',
-    fields: ['id UUID PK', 'reference UNIQUE', 'name', 'budget_cap', 'planned_volume', 'horizon_years', 'discount_rate', 'status'],
-  },
-  {
-    name: 'suppliers',
-    role: 'Référentiel fournisseurs (Incoterms, délais, MOQ, score ESG, pannes)',
-    fields: ['id UUID PK', 'name', 'country_code', 'incoterm', 'historical_defect_rate', 'warranty_months', 'data_quality_score'],
-  },
-  {
-    name: 'supplier_offers',
-    role: 'Propositions candidates (Prix facial, LCC NPV, TCO global, carbone)',
-    fields: ['id UUID PK', 'project_id FK', 'supplier_id FK', 'apparent_total', 'economic_tco_nominal', 'lifecycle_cost_lcc', 'total_comprehensive_tco'],
-  },
-  {
-    name: 'cost_items',
-    role: 'Ventilation analytique TCO / CBS (15 postes décomposés)',
-    fields: ['id UUID PK', 'offer_id FK', 'category', 'label', 'amount', 'unit', 'source_name', 'source_type', 'confidence_level'],
-  },
-  {
-    name: 'carbon_items',
-    role: 'Bilan d\'émissions ACV Scopes 1, 2, 3 (Monétisation Quinet)',
-    fields: ['id UUID PK', 'offer_id FK', 'scope CHECK', 'lifecycle_phase', 'emissions_per_unit_tonne_co2e', 'total_lifecycle_emissions'],
-  },
-  {
-    name: 'risk_items',
-    role: 'Événements de risques probabilisés P x I (ZFE, ruptures, pénalités)',
-    fields: ['id UUID PK', 'offer_id FK', 'description', 'probability NUMERIC', 'financial_impact NUMERIC', 'source_evidence'],
-  },
-  {
-    name: 'reference_benchmarks',
-    role: 'Référentiel institutionnel des facteurs (ADEME, Quinet, WACC, CRE)',
-    fields: ['id UUID PK', 'name', 'category', 'source', 'value NUMERIC', 'unit', 'valid_until', 'confidence_score'],
-  },
-  {
-    name: 'audit_logs',
-    role: 'Journal d\'audit immuable légal (Horodatage, auteur, justification CAC)',
-    fields: ['id UUID PK', 'organization_id FK', 'timestamp', 'user_name', 'user_role', 'entity_name', 'field_changed', 'old_value', 'new_value', 'justification'],
-  },
-];
-
 export const DataBackupModal: React.FC<DataBackupModalProps> = ({
+  isDemo,
   isOpen,
   onClose,
   projects,
@@ -94,7 +44,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   onRestoreData,
   onResetSeed,
 }) => {
-  const [activeTab, setActiveTab] = useState<'backup' | 'schema' | 'migration'>('backup');
+  const [activeTab, setActiveTab] = useState<'backup' | 'migration'>('backup');
   const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
@@ -134,8 +84,8 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
       setZodValidationReport({
         valid: true,
         messages: [
-          `Validation réussie : ${projects.length} projet(s), ${offers.length} offre(s), ${suppliers.length} fournisseur(s) et ${auditLogs.length} traces d'audit conformes.`,
-          'Toutes les contraintes financières (WACC, budget, CBS) et ESG sont certifiées pour la migration.',
+          `Validation réussie : ${projects.length} projet(s), ${offers.length} offre(s), ${suppliers.length} fournisseur(s) et ${auditLogs.length} traces d'audit conformes au schéma de structure.`,
+          'Cette validation contrôle la STRUCTURE des données (types, bornes), pas l\'exactitude des valeurs ni leurs sources.',
         ],
       });
     } else {
@@ -180,18 +130,11 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
       onResetSeed();
       setFeedback({
         type: 'success',
-        msg: 'Données réinitialisées aux valeurs initiales certifiées.',
+        msg: 'Données de démonstration (fictives) rétablies.',
       });
     }
   };
 
-  const handleCopySqlPath = () => {
-    navigator.clipboard.writeText(
-      'Fichiers DDL créés :\n- src/db/schema.ts (Drizzle ORM)\n- src/db/schema.sql (PostgreSQL DDL 10 tables)\n- src/db/seed.sql (Données de démarrage)\n- src/db/drizzle.config.ts'
-    );
-    setCopied(true);
-    setTimeout(() => setCopied(false), 3000);
-  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
@@ -226,17 +169,6 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             Sauvegarde & Portabilité JSON
           </button>
 
-          <button
-            onClick={() => setActiveTab('schema')}
-            className={`px-3 py-1.5 rounded-lg font-medium transition-colors flex items-center gap-1.5 ${
-              activeTab === 'schema'
-                ? 'bg-emerald-600 text-white shadow-sm'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <FileCode2 className="w-3.5 h-3.5 text-sky-400" />
-            Schéma SQL & Drizzle ORM (10 Tables)
-          </button>
 
           <button
             onClick={() => setActiveTab('migration')}
@@ -293,7 +225,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               <div>
                 <div className="font-semibold text-white">Restaurer / Importer une consultation</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">
-                  Chargez un fichier de sauvegarde pour reprendre un dossier ou auditer des calculs.
+                  Mode démonstration : rechargez une copie JSON exportée. Désactivé en mode connecté (le serveur fait foi).
                 </div>
               </div>
               <input
@@ -305,19 +237,21 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               />
               <button
                 onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
+                disabled={!isDemo}
+                title={isDemo ? undefined : 'Restauration désactivée : le serveur fait foi'}
+                className="disabled:opacity-40 disabled:cursor-not-allowed px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
               >
                 <Upload className="w-3.5 h-3.5" />
                 Importer (.json)
               </button>
             </div>
 
-            {/* Card 3: Reset */}
-            <div className="p-3.5 bg-slate-950 border border-rose-900/40 rounded-xl flex items-center justify-between gap-3">
+            {/* Card 3: Reset (démonstration uniquement) */}
+            {isDemo && <div className="p-3.5 bg-slate-950 border border-rose-900/40 rounded-xl flex items-center justify-between gap-3">
               <div>
                 <div className="font-semibold text-rose-300">Réinitialiser aux valeurs de référence</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">
-                  Rétablit les jeux d'essais initiaux certifiés (50 VUL électriques vs thermiques).
+                  Rétablit les données de démonstration fictives (mode démonstration uniquement).
                 </div>
               </div>
               <button
@@ -327,84 +261,11 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                 <RotateCcw className="w-3.5 h-3.5" />
                 Réinitialiser
               </button>
-            </div>
+            </div>}
           </div>
         )}
 
-        {/* TAB 2: SCHEMA & DRIZZLE ORM */}
-        {activeTab === 'schema' && (
-          <div className="space-y-3 text-xs max-h-[360px] overflow-y-auto pr-1">
-            {/* Neon Connection Status Banner */}
-            <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </span>
-                <div>
-                  <div className="font-semibold text-emerald-300 text-xs">Instance Neon PostgreSQL Connectée & Migrée</div>
-                  <div className="text-[10px] text-slate-400 font-mono">
-                    ep-summer-mouse-b2kmuvkr · 10 tables actives & contraintes FK synchronisées
-                  </div>
-                </div>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 bg-emerald-900/80 text-emerald-200 border border-emerald-700/60 rounded font-mono font-semibold">
-                NEON LIVE
-              </span>
-            </div>
-
-            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between">
-              <div>
-                <span className="font-bold text-white flex items-center gap-1.5">
-                  <Layers className="w-4 h-4 text-emerald-400" />
-                  Modèle Relationnel PostgreSQL & Drizzle ORM
-                </span>
-                <span className="text-[11px] text-slate-400 block mt-0.5">
-                  Fichiers sources synchronisés : <code>src/db/schema.ts</code> & <code>src/db/schema.sql</code>.
-                </span>
-              </div>
-              <button
-                onClick={handleCopySqlPath}
-                className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-[11px] font-medium flex items-center gap-1 transition-colors"
-              >
-                {copied ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                {copied ? 'Copié !' : 'Copier références'}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {SQL_TABLES_INFO.map((tbl) => (
-                <div
-                  key={tbl.name}
-                  className="p-3 bg-slate-950 border border-slate-800/80 rounded-xl space-y-1.5 hover:border-slate-700 transition-colors"
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-mono font-bold text-sky-400 text-xs">{tbl.name}</span>
-                    <span className="text-[10px] text-slate-500 font-mono">{tbl.fields.length} champs</span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 leading-snug">{tbl.role}</p>
-                  <div className="flex flex-wrap gap-1 mt-1">
-                    {tbl.fields.slice(0, 4).map((f) => (
-                      <span
-                        key={f}
-                        className="text-[9px] font-mono px-1.5 py-0.5 bg-slate-900 text-slate-400 rounded border border-slate-800"
-                      >
-                        {f}
-                      </span>
-                    ))}
-                    {tbl.fields.length > 4 && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 text-slate-500">
-                        +{tbl.fields.length - 4}...
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: MIGRATION SGBD & EXPORT SQL */}
+        {/* Onglet : validation de structure */}
         {activeTab === 'migration' && (
           <div className="space-y-3.5 text-xs max-h-[380px] overflow-y-auto pr-1">
             {/* Action 1: Download SQL Dump */}
@@ -472,7 +333,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                       <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                     )}
                     {zodValidationReport.valid
-                      ? 'Toutes les données sont certifiées et conformes aux schémas DTO Zod.'
+                      ? 'Structure conforme au schéma de validation (ne garantit pas l\'exactitude des valeurs).'
                       : 'Erreurs de validation détectées :'}
                   </div>
                   <ul className="list-disc list-inside space-y-0.5 text-slate-300">
@@ -484,18 +345,17 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               )}
             </div>
 
-            {/* Architecture note */}
             <div className="p-3 bg-slate-950/60 border border-slate-800/60 rounded-xl text-[11px] text-slate-400 space-y-1">
-              <span className="font-semibold text-slate-300 block">Souveraineté des Données & Mode Hors-Ligne (PWA) :</span>
-              En l'absence de base cloud connectée, TrueTCO fonctionne à 100% en local sécurisé dans le navigateur avec réplication IndexedDB/LocalStorage et cache PWA Service Worker. Toutes les données peuvent être injectées ultérieurement sur votre infrastructure sans aucune perte.
+              <span className="font-semibold text-slate-300 block">Où sont stockées vos données ?</span>
+              {isDemo
+                ? "Mode démonstration : les données restent dans ce navigateur (localStorage) et ne sont ni sauvegardées ni synchronisées. Exportez-les pour en conserver une copie."
+                : "Les données sont enregistrées sur le serveur ; l'export fournit une copie JSON (non signée). La restauration depuis un fichier est désactivée : le serveur fait foi."}
             </div>
           </div>
         )}
 
         <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs">
-          <span className="text-slate-500 text-[11px]">
-            Conforme norme ISO 20400 & Piste d'audit fiable (Article L. 123-14 du Code de Commerce)
-          </span>
+          <span className="text-slate-500 text-[11px]">Export JSON : copie des données, sans signature ni horodatage par un tiers.</span>
           <button
             onClick={onClose}
             className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-semibold transition-colors"

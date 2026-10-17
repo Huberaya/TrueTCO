@@ -1,6 +1,6 @@
 /**
  * TrueTCO - Moteur de Calcul TCO, LCC, Carbone & Risques
- * Architecture financière indépendante et certifiée
+ * Couche de calcul indépendante de l'interface
  */
 
 import {

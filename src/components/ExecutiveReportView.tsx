@@ -1,3 +1,4 @@
+import { useAuth } from '../context/AuthContext';
 import React, { useState, useMemo } from 'react';
 import {
   Project,
@@ -40,16 +41,6 @@ interface ExecutiveReportViewProps {
   onBack: () => void;
   onUpdateProject?: (updated: Project) => void;
   onAddAuditLog?: (entry: AuditLogEntry) => void;
-}
-
-interface ComexVisa {
-  id: string;
-  roleTitle: string;
-  signatoryName: string;
-  roleCode: string;
-  status: 'signe' | 'en_attente';
-  signedAt?: string;
-  statement: string;
 }
 
 export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
@@ -116,7 +107,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
     );
   }, [conv, winningCandidate]);
 
-  // Verification Hash
+  // Référence de repérage du contenu (hachage simple NON cryptographique : ne prouve ni intégrité ni authenticité)
   const reportSealHash = useMemo(() => {
     const raw = `${project.id}:${project.reference}:${winningCandidate?.offer.id}:${netSavings}:${project.status}`;
     let hash = 0x811c9dc5;
@@ -124,49 +115,10 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
       hash ^= raw.charCodeAt(i);
       hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
     }
-    return `COMEX-${(hash >>> 0).toString(16).toUpperCase()}-ISO15686`;
+    return `REF-${(hash >>> 0).toString(16).toUpperCase()}`;
   }, [project, winningCandidate, netSavings]);
 
-  // Visas state
-  const [visas, setVisas] = useState<ComexVisa[]>([
-    {
-      id: 'visa-acheteur',
-      roleTitle: 'Acheteur Référent / Chef de Projet',
-      signatoryName: 'Sophie Valéry',
-      roleCode: 'acheteur',
-      status: 'signe',
-      signedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-      statement: 'Dossier de consultation instruit selon le CCTP et le modèle TCO certifié.',
-    },
-    {
-      id: 'visa-finance',
-      roleTitle: 'Contrôle de Gestion / Direction Financière (DAF)',
-      signatoryName: 'Lucas Bernard',
-      roleCode: 'finance_controleur',
-      status: 'signe',
-      signedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
-      statement: 'Hypothèses de taux WACC (4.5%), LCC actualisé et retour sur investissement validés.',
-    },
-    {
-      id: 'visa-rse',
-      roleTitle: 'Direction RSE & Climat',
-      signatoryName: 'Éléonore Chen',
-      roleCode: 'rse_esg',
-      status: 'signe',
-      signedAt: new Date(Date.now() - 3600000).toISOString(),
-      statement: 'Bilan carbone ACV et facteurs d’émission ADEME/Quinet certifiés conformes CSRD.',
-    },
-    {
-      id: 'visa-dg',
-      roleTitle: 'Direction Générale / Présidence du Comité',
-      signatoryName: 'Alexandre de Mortemart',
-      roleCode: 'direction_generale',
-      status: project.status === 'adjudique' ? 'signe' : 'en_attente',
-      signedAt: project.status === 'adjudique' ? new Date().toISOString() : undefined,
-      statement: 'Adjudication prononcée et engagement juridique de la dépense autorisé.',
-    },
-  ]);
-
+  const { user } = useAuth();
   const [isAdjudicationSuccess, setIsAdjudicationSuccess] = useState(false);
 
   // Handle printing
@@ -179,98 +131,49 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
     ExcelExportService.exportFinancialWorkbook(project, offers, suppliers, auditLogs, benchmarks);
   };
 
-  // Sign a specific visa interactively
-  const handleSignVisa = (visaId: string) => {
+  /**
+   * Enregistre la décision (statut « adjudiqué »). Ce n'est PAS une signature ni un acte juridique :
+   * c'est un changement de statut tracé (auteur, date) — le serveur n'accepte que admin / directeur achats.
+   */
+  const canRecordDecision = user?.role === 'admin' || user?.role === 'directeur_achats';
+  const handleRecordDecision = () => {
+    if (!onUpdateProject || !winningCandidate || !canRecordDecision) return;
     const nowIso = new Date().toISOString();
-    setVisas((prev) =>
-      prev.map((v) =>
-        v.id === visaId
-          ? {
-              ...v,
-              status: 'signe',
-              signedAt: nowIso,
-            }
-          : v
-      )
-    );
-
-    const targetVisa = visas.find((v) => v.id === visaId);
-    if (targetVisa && onAddAuditLog) {
-      const logEntry: AuditLogEntry = {
+    onUpdateProject({ ...project, status: 'adjudique', updatedAt: nowIso });
+    if (onAddAuditLog && user) {
+      onAddAuditLog({
         id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log-${Date.now()}`,
         timestamp: nowIso,
-        userId: 'u-comex',
-        userName: targetVisa.signatoryName,
-        userRole: targetVisa.roleCode as any,
-        projectId: project.id,
-        entityName: 'Dossier d’Arbitrage Comex',
-        fieldChanged: `Visa Comex : ${targetVisa.roleTitle}`,
-        oldValue: 'En attente de signature',
-        newValue: 'Visa Électronique Apposé',
-        justification: targetVisa.statement,
-      };
-      onAddAuditLog(logEntry);
-    }
-  };
-
-  // Pronounce adjudication of the winning offer
-  const handleAdjudicateProject = () => {
-    if (!onUpdateProject || !winningCandidate) return;
-
-    const nowIso = new Date().toISOString();
-    const updatedProject: Project = {
-      ...project,
-      status: 'adjudique',
-      updatedAt: nowIso,
-    };
-
-    onUpdateProject(updatedProject);
-
-    // Sign DG Visa automatically
-    setVisas((prev) =>
-      prev.map((v) =>
-        v.id === 'visa-dg'
-          ? { ...v, status: 'signe', signedAt: nowIso }
-          : v
-      )
-    );
-
-    if (onAddAuditLog) {
-      const logEntry: AuditLogEntry = {
-        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log-${Date.now()}`,
-        timestamp: nowIso,
-        userId: 'u-dg',
-        userName: 'Alexandre de Mortemart',
-        userRole: 'direction_generale',
+        userId: user.id,
+        userName: user.fullName,
+        userRole: user.role,
         projectId: project.id,
         entityName: project.name,
-        fieldChanged: 'Statut du projet',
+        fieldChanged: 'Décision enregistrée',
         oldValue: project.status,
         newValue: 'adjudique',
-        justification: `Adjudication officielle prononcée en faveur de ${winningCandidate.offer.supplierName} (Offre ${winningCandidate.offer.offerReference}) suite à l'arbitrage TCO/LCC.`,
-      };
-      onAddAuditLog(logEntry);
+        justification: `Offre retenue : ${winningCandidate.offer.supplierName} (${winningCandidate.offer.offerReference}), d'après le classement par coût complet. Décision à formaliser selon la gouvernance interne.`,
+      });
     }
-
     setIsAdjudicationSuccess(true);
   };
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto pb-20">
-      {/* Chantier 6 Top Banner & Action Bar (Hidden on print) */}
+      {/* Barre d'actions (masquée à l'impression) */}
       <div className="no-print space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
           <div>
             <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
               <FileCheck className="w-4 h-4 text-emerald-400" />
-              Chantier 6 · Dossier d'Arbitrage Comex & Adjudication Décisionnelle
+              Dossier de synthèse pour la décision
             </div>
             <h1 className="text-2xl font-bold text-white tracking-tight">
-              Rapport Décisionnel d'Adjudication & Coût Complet (TCO / LCC)
+              Rapport de synthèse : coût complet (TCO / LCC)
             </h1>
             <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-              Synthèse exécutive certifiée pour la Direction Générale, le Comité d’Investissement et le Conseil d’Administration.
-              Formalisation probante de l'arbitrage Prix Facial vs Coût Global, amortissement et signatures électroniques.
+              Synthèse des résultats de calcul pour appuyer une décision d'achat. Les résultats dépendent des hypothèses saisies et de la
+              provenance indiquée pour chaque donnée ; ce document n'est ni certifié, ni signé, ni un avis juridique ou comptable.
             </p>
           </div>
 
@@ -302,16 +205,18 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
 
             {project.status !== 'adjudique' ? (
               <button
-                onClick={handleAdjudicateProject}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-950/40"
+                onClick={handleRecordDecision}
+                disabled={!canRecordDecision}
+                title={canRecordDecision ? undefined : "Réservé à l'administrateur ou au directeur achats"}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold flex items-center gap-2 transition-colors shadow-lg shadow-emerald-950/40"
               >
                 <Award className="w-4 h-4" />
-                <span>Prononcer l'Adjudication</span>
+                <span>Enregistrer l'offre retenue</span>
               </button>
             ) : (
               <div className="px-3.5 py-2 bg-emerald-950/80 border border-emerald-700/80 text-emerald-300 rounded-lg text-xs font-semibold flex items-center gap-2 shadow-sm">
                 <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                <span>Consultation Adjudiquée</span>
+                <span>Décision enregistrée</span>
               </div>
             )}
           </div>
@@ -324,12 +229,12 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
               <div>
                 <div className="font-bold text-white text-sm">
-                  Adjudication officielle prononcée avec succès !
+                  Décision enregistrée
                 </div>
                 <div className="mt-1 text-slate-300">
-                  L'offre de <strong>{winningCandidate?.offer.supplierName}</strong> est officiellement retenue.
-                  Le statut du projet a été basculé à <code>adjudique</code>, le visa Direction Générale est scellé,
-                  et l'événement est enregistré de manière immuable dans le journal d'audit Neon PostgreSQL.
+                  L'offre de <strong>{winningCandidate?.offer.supplierName}</strong> est enregistrée comme offre retenue (statut <code>adjudique</code>).
+                  Le changement est tracé dans le journal d'audit avec votre identité et la date. Il ne constitue pas une validation formelle :
+                  celle-ci relève de votre gouvernance interne.
                 </div>
               </div>
             </div>
@@ -369,10 +274,9 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
             </div>
 
             <div className="text-left sm:text-right text-xs font-mono text-slate-400 print:text-slate-600 space-y-0.5">
-              <div>Date d'Arbitrage : {new Date().toLocaleDateString('fr-FR')}</div>
-              <div>Gouvernance : Direction des Achats & DAF</div>
+              <div>Date d'édition : {new Date().toLocaleDateString('fr-FR')}</div>
               <div className="text-emerald-400 print:text-emerald-700 font-semibold select-all">
-                Sceau : {reportSealHash}
+                Réf. contenu : {reportSealHash}
               </div>
             </div>
           </div>
@@ -448,7 +352,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               <strong>{winningCandidate?.offer.supplierName}</strong> génère une économie d'exploitation majeure grâce à une
               consommation énergétique optimisée, des coûts d'entretien réduits de moitié et une valeur résiduelle de revente supérieure.
               Elle permet en outre d'éviter{' '}
-              <strong>{avoidedCO2Tonnes.toLocaleString('fr-FR')} tonnes de CO2e</strong>, alignant l'entreprise avec ses objectifs CSRD et évitant la fiscalité carbone projetée.
+              <strong>{avoidedCO2Tonnes.toLocaleString('fr-FR')} tonnes de CO2e</strong>, selon les facteurs d'émission et le prix du carbone retenus dans les hypothèses.
             </p>
           </div>
         </section>
@@ -507,7 +411,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
               Décomposition Analytique du Coût Complet (Tableau CBS)
             </h3>
             <span className="text-[11px] font-mono text-slate-400 print:text-slate-600">
-              Norme ISO 15686-5 (LCC)
+              Méthode : coût global actualisé (approche inspirée de l'ISO 15686-5 ; aucune certification de conformité)
             </span>
           </div>
 
@@ -598,7 +502,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
                   {/* Fiscalité & Conformité */}
                   <tr className="hover:bg-slate-900/30">
                     <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 font-medium text-slate-400">
-                      6. Fiscalité, Taxes & Conformité légale
+                      6. Fiscalité et taxes
                     </td>
                     {results.map(({ calc }) => (
                       <td key={calc.offerId} className="py-2 px-3 text-right font-mono text-slate-400">
@@ -782,84 +686,25 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
         </section>
 
         {/* ========================================================= */}
-        {/* 6. COLLÈGE DES VISAS & SIGNATURES ÉLECTRONIQUES COMEX */}
+        {/* 6. VALIDATION & LIMITES */}
         {/* ========================================================= */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between border-b border-slate-800 print:border-slate-300 pb-2">
-            <h3 className="text-base font-bold text-white print:text-slate-900 flex items-center gap-2">
-              <span className="text-emerald-400 print:text-emerald-700 font-mono">06.</span>
-              Collège des Visas & Signatures Électroniques Comex (Section 26)
-            </h3>
-            <span className="text-[11px] font-mono text-emerald-400 print:text-emerald-700 flex items-center gap-1 font-semibold">
-              <Lock className="w-3.5 h-3.5" />
-              Horodatage Immuable
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {visas.map((visa) => (
-              <div
-                key={visa.id}
-                className="p-4 bg-slate-950/80 print:bg-slate-100 border border-slate-800 print:border-slate-300 rounded-xl space-y-2 text-xs"
-              >
-                <div className="flex items-center justify-between">
-                  <div className="font-bold text-white print:text-slate-950 flex items-center gap-1.5">
-                    <Stamp className="w-4 h-4 text-emerald-400 print:text-emerald-700" />
-                    {visa.roleTitle}
-                  </div>
-                  {visa.status === 'signe' ? (
-                    <span className="px-2 py-0.5 bg-emerald-950/70 border border-emerald-800 text-emerald-400 print:bg-emerald-200 print:text-emerald-900 rounded font-semibold text-[10px] flex items-center gap-1 font-mono">
-                      <CheckCircle2 className="w-3 h-3" />
-                      SIGNÉ
-                    </span>
-                  ) : (
-                    <button
-                      onClick={() => handleSignVisa(visa.id)}
-                      className="no-print px-2 py-0.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded text-[10px] transition-colors"
-                    >
-                      Apposer le Visa
-                    </button>
-                  )}
-                </div>
-
-                <div className="text-[11px] text-slate-400 print:text-slate-600 font-medium">
-                  Signataire : <span className="text-slate-200 print:text-slate-900 font-semibold">{visa.signatoryName}</span>
-                </div>
-
-                <p className="text-[11px] text-slate-300 print:text-slate-700 italic border-l-2 border-slate-700 print:border-slate-400 pl-2">
-                  « {visa.statement} »
-                </p>
-
-                <div className="text-[10px] font-mono text-slate-500 print:text-slate-600 flex items-center justify-between pt-1">
-                  <span>Horodatage : {visa.signedAt ? new Date(visa.signedAt).toLocaleString('fr-FR') : 'En attente'}</span>
-                  <span>Certifié</span>
-                </div>
-              </div>
-            ))}
-          </div>
+        <section className="space-y-3">
+          <h3 className="text-base font-bold text-white print:text-slate-900 flex items-center gap-2 border-b border-slate-800 print:border-slate-300 pb-2">
+            <span className="text-emerald-400 print:text-emerald-700 font-mono">06.</span>
+            Validation et limites de ce document
+          </h3>
+          <ul className="text-xs text-slate-300 print:text-slate-700 space-y-1.5 list-disc pl-5">
+            <li>Aucun circuit de validation électronique (visas, signatures) n'est disponible dans cette version : les validations Finance, RSE et Direction se formalisent hors de l'outil.</li>
+            <li>Les changements de statut du projet et les modifications de données sont tracés dans le journal d'audit (auteur, date, anciennes et nouvelles valeurs).</li>
+            <li>Les résultats reposent sur les hypothèses et les données saisies ; chaque donnée porte sa provenance et son niveau de confiance, à examiner avant décision.</li>
+            <li>Ce rapport n'est pas un avis juridique, comptable ou réglementaire, et n'atteste d'aucune conformité (CSRD, taxonomie, normes ISO).</li>
+          </ul>
         </section>
 
-        {/* ========================================================= */}
-        {/* 7. SCEAU DE CERTIFICATION LÉGALE & CLÔTURE */}
-        {/* ========================================================= */}
-        <div className="pt-6 border-t-2 border-slate-800 print:border-slate-300 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4 text-xs text-slate-400 print:text-slate-600">
-          <div className="space-y-1">
-            <div className="flex items-center gap-1.5 font-bold text-white print:text-slate-900">
-              <ShieldCheck className="w-4 h-4 text-emerald-400 print:text-emerald-700" />
-              Document Certifié par le Moteur Algorithmique TrueTCO
-            </div>
-            <div>Normes d'évaluation : ISO 15686-5 (Life Cycle Costing) & GHG Protocol (Scope 1, 2, 3)</div>
-            <div className="font-mono text-[10px] select-all">
-              Empreinte de scellement : {reportSealHash}
-            </div>
-          </div>
-
-          <div className="text-left sm:text-right space-y-1">
-            <div className="text-slate-300 print:text-slate-800 font-semibold">
-              Comité d'Investissement & Direction Générale
-            </div>
-            <div>Consultation scellée et enregistrée dans le registre d'audit légal.</div>
-          </div>
+        <div className="pt-6 border-t-2 border-slate-800 print:border-slate-300 text-xs text-slate-400 print:text-slate-600 space-y-1">
+          <div className="font-bold text-white print:text-slate-900">Généré par TrueTCO — aide à la décision</div>
+          <div>Méthode de coût global actualisé ; émissions exprimées en tCO₂e selon les facteurs saisis. Aucune certification ni conformité normative n'est attestée.</div>
+          <div className="font-mono text-[10px]">Réf. contenu (repérage non cryptographique) : {reportSealHash}</div>
         </div>
 
       </div>

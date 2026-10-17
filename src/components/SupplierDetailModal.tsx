@@ -139,7 +139,7 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Chantier 4 · Référentiel Tiers, Incoterms & Indice de Fiabilité Documentaire
+                Fiche fournisseur : conditions, Incoterms et fiabilité documentaire
               </p>
             </div>
           </div>
@@ -437,7 +437,7 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
                 />
 
                 <div className="flex items-center justify-between text-[10px] text-slate-500">
-                  <span>Score EcoVadis / B Corp audité</span>
+                  <span>Score EcoVadis / B Corp (déclaré)</span>
                   <span>Impacte la pondération ESG dans la matrice 360°</span>
                 </div>
               </div>

@@ -129,13 +129,13 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
         <div>
           <div className="text-xs uppercase tracking-wider font-semibold text-emerald-400 mb-1 flex items-center gap-1.5">
             <Building2 className="w-4 h-4 text-emerald-400" />
-            Chantier 4 · Module « Base Fournisseurs & Qualité des Données »
+            Base fournisseurs
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
             Référentiel Fournisseurs, Incoterms & Scoring Qualité
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Gestion des tiers conforme à la Section 6 : Incoterms contractuels (frais cachés logistiques), taux de défaillance $P \times I$, certifications environnementales et pénalités d'incertitude documentaire.
+            Gestion des tiers : Incoterms contractuels (frais cachés logistiques), taux de défaillance $P \times I$, certifications environnementales et pénalités d'incertitude documentaire.
           </p>
         </div>
 
@@ -180,13 +180,13 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Certifiés ISO 14001 / EcoVadis</div>
+          <div className="text-slate-400 text-[11px]">Déclarant ISO 14001 / EcoVadis (non vérifié)</div>
           <div className="text-xl font-bold font-mono text-indigo-400 mt-0.5">{iso14001Count}</div>
           <div className="text-[10px] text-slate-500">Management environnemental</div>
         </div>
       </div>
 
-      {/* Chantier 4 Navigation Sub-Tabs */}
+      {/* Sous-onglets */}
       <div className="flex items-center gap-2 border-b border-slate-800 text-xs">
         <button
           onClick={() => setActiveTab('list')}
@@ -415,7 +415,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
         </div>
       )}
 
-      {/* TAB 2: SIMULATEUR D'INCOTERMS & COUTS LOGISTIQUES */}
+      {/* Onglet 2 : simulateur d'Incoterms */}
       {activeTab === 'incoterms' && (
         <div className="space-y-6">
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-4 text-xs">
@@ -476,12 +476,13 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                 const current = rates[simulatedIncoterm] || rates.EXW;
                 const hiddenCost = simulatedPurchaseAmount * current.rate;
                 const realisticTotal = simulatedPurchaseAmount + hiddenCost;
+                // Taux forfaitaires INDICATIFS, non sourcés : à remplacer par les coûts réels de votre organisation.
 
                 return (
                   <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-400 text-[11px] uppercase font-semibold">Surcoût Logistique Estimé</span>
+                        <span className="text-slate-400 text-[11px] uppercase font-semibold">Surcoût logistique indicatif</span>
                         <span className="text-xs font-mono font-bold text-amber-400">
                           +{(current.rate * 100).toFixed(0)}%
                         </span>
@@ -530,7 +531,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                   <Award className="w-4 h-4 text-emerald-400" />
                 </div>
                 <p className="text-[11px] text-slate-400">
-                  Fournisseurs certifiés avec score ESG &gt; 80 et taux de qualité &gt; 85%. Relation de co-développement recommandée.
+                  Fournisseurs avec score ESG &gt; 80 et qualité des données &gt; 85 % (valeurs déclarées). Relation de co-développement à envisager.
                 </p>
                 <div className="space-y-1.5 pt-2">
                   {suppliers

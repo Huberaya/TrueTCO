@@ -17,14 +17,14 @@ import { ACTIVE_TENANT_KEY, apiFetch, hasServerSession, setActiveTenant } from '
 
 export const DEFAULT_TENANT: Tenant = {
   id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-  name: 'Acme Logistics Europe SAS',
-  slug: 'acme-logistics',
-  domain: 'acme.com',
-  subscriptionTier: 'enterprise',
-  dataResidency: 'EU-FRANCE-PARIS (SecNumCloud)',
+  name: 'Organisation de démonstration',
+  slug: 'demo',
+  domain: '',
+  subscriptionTier: 'starter',
+  dataResidency: 'Local (navigateur)',
   countryCode: 'FR',
   defaultCurrency: 'EUR',
-  legalRegistrationNumber: '849 203 910 00024',
+  legalRegistrationNumber: '',
 };
 
 export class TenantService {

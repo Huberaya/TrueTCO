@@ -235,7 +235,7 @@ export const ExternalityReferenceBenchmarkSchema = z.object({
   category: z.enum(['carbone', 'wacc', 'energie_kwh', 'recyclage', 'energie', 'dechets', 'pollution_locale']),
   value: z.number(),
   unit: z.string().min(1, 'Unité requise.'),
-  source: z.string().min(2, 'Source certifiée obligatoire (ex: ADEME, Quinet).'),
+  source: z.string().min(2, 'Source obligatoire (ex. : base publique, document interne).'),
   sourceUrl: z.string().url().optional().or(z.literal('')),
   documentRef: z.string().min(1, 'Référence documentaire requise.'),
   lastUpdated: z.string().min(1),
