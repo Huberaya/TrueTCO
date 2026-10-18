@@ -405,7 +405,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                   {s.dataQualityScore < 75 && (
                     <div className="text-[10px] text-amber-400/90 flex items-center gap-1 mt-0.5">
                       <AlertTriangle className="w-3 h-3 shrink-0" />
-                      Incertitude modérée : intervalle de confiance élargi à ±15%
+                      Documentation incomplète : données à fiabiliser
                     </div>
                   )}
                 </div>

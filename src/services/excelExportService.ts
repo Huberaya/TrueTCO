@@ -1,8 +1,19 @@
 import * as XLSX from 'xlsx';
 import { Project, SupplierOffer, Supplier, AuditLogEntry, ExternalityReferenceBenchmark } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
+import { type Cell, buildReproducibleSheet, colLetter, isFormula } from './reproducibleSheet';
 
 export class ExcelExportService {
+  /** Grille de la feuille reproductible → feuille Excel avec de VRAIES formules (et leur valeur en cache). */
+  public static formulaWorksheet(grid: Cell[][]): XLSX.WorkSheet {
+    const ws = XLSX.utils.aoa_to_sheet(grid.map((row) => row.map((c) => (isFormula(c) ? null : c))));
+    grid.forEach((row, r) => row.forEach((c, col) => {
+      // La valeur en cache (v) est OBLIGATOIRE : sans elle, la formule est supprimée à l'écriture du fichier.
+      if (isFormula(c)) ws[`${colLetter(col)}${r + 1}`] = { t: 'n', f: c.f, v: c.v };
+    }));
+    return ws;
+  }
+
   /**
    * Generates and downloads a multi-tab financial workbook (XLSX)
    * pour les équipes Finance et Achats. Copie des données et résultats ; aucune certification n'est attestée.
@@ -42,7 +53,7 @@ export class ExcelExportService {
       ['Horizon d\'Analyse Retenu', project.horizonYears, 'ans'],
       ['Taux d\'Actualisation Financière (WACC)', (project.discountRate * 100).toFixed(2), '%'],
       ['Inflation Énergétique Annuelle Projetée', (project.energyInflationRate * 100).toFixed(2), '%'],
-      ['Valeur Tutélaire du Carbone (Quinet)', project.carbonPricePerTonne, '€ / tCO2e'],
+      ['Prix du carbone (hypothèse du projet)', project.carbonPricePerTonne, '€ / tCO2e'],
       ['Date d\'Extraction du Modèle', new Date().toLocaleString('fr-FR')],
       [''],
       ['2. COMPARATIF SYNTHÉTIQUE DES OFFRES CANDIDATES'],
@@ -52,18 +63,18 @@ export class ExcelExportService {
         'Statut Proposition',
         'Prix Facial Devis (Achat Brut)',
         'TCO Économique Nominal',
-        'LCC Actualisé (NPV @ WACC)',
-        'Monétisation Carbone Quinet',
+        'Coût complet actualisé (direct + risques + carbone)',
+        'Carbone monétisé',
         'Exposition Risques & Pannes',
-        'TCO GLOBAL COMPLET',
+        'TCO complet nominal',
         'Qualité Données (%)',
-        'Écart vs Offre Conventionnelle',
+        'Écart de coût complet actualisé vs offre conventionnelle',
       ],
     ];
 
     calculated.forEach(({ offer, calc }) => {
       const deltaVsBaseline = baseline
-        ? calc.totalComprehensiveTCO - baseline.calc.totalComprehensiveTCO
+        ? calc.lifecycleCostLCC - baseline.calc.lifecycleCostLCC
         : 0;
 
       tab1Data.push([
@@ -179,7 +190,7 @@ export class ExcelExportService {
     // ==========================================
     const tab4Data: any[][] = [
       ['EMPREINTE CARBONE & EXTERNALITÉS MONÉTISÉES'],
-      [`Valeur tutélaire de l'action climat : ${project.carbonPricePerTonne} €/tCO2e (Commission Quinet)`],
+      [`Prix du carbone retenu (hypothèse du projet) : ${project.carbonPricePerTonne} €/tCO2e`],
       [''],
       [
         'Offre',
@@ -276,6 +287,20 @@ export class ExcelExportService {
     // Write and trigger download
     const cleanProjectRef = project.reference.replace(/[^a-zA-Z0-9-_]/g, '_');
     const fileName = `TrueTCO_Modele_Financier_${cleanProjectRef}_${new Date().toISOString().split('T')[0]}.xlsx`;
+    // ── Feuilles de calcul REPRODUCTIBLES : une par offre, avec de vraies formules (modifiables et auditables) ──
+    const usedNames = new Set<string>(workbook.SheetNames);
+    calculated.slice(0, 8).forEach(({ offer }, i) => {
+      const { grid } = buildReproducibleSheet(project, offer);
+      const ws = ExcelExportService.formulaWorksheet(grid);
+      ws['!cols'] = [{ wch: 52 }, { wch: 26 }, { wch: 16 }, ...Array.from({ length: Math.max(0, (grid[0]?.length ?? 3) - 3) }, () => ({ wch: 13 }))];
+      let name = `Calcul ${i + 1} - ${offer.supplierName}`.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31).trim();
+      while (usedNames.has(name)) name = `${name.slice(0, 28)}_${i}`;
+      usedNames.add(name);
+      XLSX.utils.book_append_sheet(workbook, ws, name);
+    });
+    // Valeurs en cache fournies ; on force néanmoins un recalcul complet à l'ouverture.
+    workbook.Workbook = { ...(workbook.Workbook ?? {}), CalcPr: { fullCalcOnLoad: true } } as XLSX.WorkBook['Workbook'];
+
     XLSX.writeFile(workbook, fileName);
   }
 }

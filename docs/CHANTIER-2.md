@@ -39,8 +39,8 @@ Principe : **aucune fonction ne simule un résultat, aucune donnée n'est invent
 4. Les offres enregistrées avant la migration `003` n'ont pas de `document` : elles ne sont pas affichées (incomplètes) mais restent en base.
 
 ## Limites assumées (chantiers suivants)
-- Les **scores fournisseur** (ESG, performance, qualité) restent des nombres obligatoires saisis à la main ; le fournisseur « non évalué » exige un refactor transversal (50 usages, dont le moteur) → chantiers 4-5. L'indicateur « qualité des données » d'un nouveau fournisseur est désormais une **complétude de fiche** (part des champs renseignés), pas une mesure de fiabilité.
+- Les **scores fournisseur** (ESG, performance, qualité) restent des nombres obligatoires saisis à la main ; le fournisseur « non évalué » exige un refactor transversal (50 usages, dont le moteur) → chantiers suivants (Data Confidence Score). L'indicateur « qualité des données » d'un nouveau fournisseur est désormais une **complétude de fiche** (part des champs renseignés), pas une mesure de fiabilité.
 - Les **taux du simulateur d'Incoterms** sont des forfaits indicatifs non sourcés (libellé « indicatif »).
 - Les **données de démonstration** (`seedData.ts`) contiennent des sources et certifications fictives ; elles ne s'affichent qu'en mode démo, sous bandeau.
-- Le moteur TCO/LCC lui-même n'est pas modifié (chantier 4) ; ses tests historiques sont intégrés à la CI mais gardent leurs assertions larges.
+- Le moteur TCO/LCC lui-même n'était pas modifié par ce chantier : il a été refondu au chantier 3 (voir `CHANTIER-3.md`).
 - Pas de circuit de validation (visas, signatures) : à construire sérieusement (chantier 6), pas à simuler.

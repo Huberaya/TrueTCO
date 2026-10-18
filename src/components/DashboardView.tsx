@@ -58,9 +58,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     ? TCOEngine.calculateBreakEven(convOffer.calc, respOffer.calc, project.horizonYears)
     : null;
 
-  // Potential savings (Nominal TCO difference between conventional and responsible winner)
+  // Économie potentielle : écart de coût complet ACTUALISÉ entre l'offre de base et la candidate
   const currentProjectSavings = convOffer && respOffer
-    ? Math.max(0, convOffer.calc.totalComprehensiveTCO - respOffer.calc.totalComprehensiveTCO)
+    ? Math.max(0, convOffer.calc.lifecycleCostLCC - respOffer.calc.lifecycleCostLCC)
     : 0;
 
   // Avoided emissions for current project
@@ -85,7 +85,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const portfolioAvoidedEmissions = 1120 + currentAvoidedEmissions;
 
   // Best choice for active project
-  const sortedByTCO = [...activeResults].sort((a, b) => a.calc.totalComprehensiveTCO - b.calc.totalComprehensiveTCO);
+  const sortedByTCO = [...activeResults].sort((a, b) => a.calc.lifecycleCostLCC - b.calc.lifecycleCostLCC);
   const bestChoice = sortedByTCO[0];
 
   // Cheapest upfront capex
@@ -202,9 +202,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider">TCO Optimal Réel</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider">Coût complet actualisé optimal</span>
             <div className="text-lg font-bold font-mono text-emerald-400 tabular-nums">
-              {bestChoice ? `${bestChoice.calc.totalComprehensiveTCO.toLocaleString('fr-FR')} €` : '-'}
+              {bestChoice ? `${bestChoice.calc.lifecycleCostLCC.toLocaleString('fr-FR')} €` : '-'}
             </div>
             <div className="text-[10px] text-slate-500">{bestChoice?.offer.supplierName}</div>
           </div>
@@ -222,7 +222,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="text-lg font-bold font-mono text-sky-400 tabular-nums">
               {currentAvoidedEmissions} <span className="text-xs font-sans">tCO2e</span>
             </div>
-            <div className="text-[10px] text-slate-500">{project.carbonPricePerTonne} €/t tutélaire</div>
+            <div className="text-[10px] text-slate-500">{project.carbonPricePerTonne} €/t (hypothèse du projet)</div>
           </div>
 
           <div className="p-3 bg-slate-950 border border-indigo-900/60 rounded-xl space-y-1">
@@ -259,7 +259,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <span className="w-3 h-3 rounded-sm bg-slate-600" /> Prix d'achat direct (Devis)
               </span>
               <span className="flex items-center gap-1.5 text-emerald-400">
-                <span className="w-3 h-3 rounded-sm bg-emerald-500" /> Coût Total Réel (TCO Complet)
+                <span className="w-3 h-3 rounded-sm bg-emerald-500" /> Coût complet actualisé
               </span>
             </div>
           </div>
@@ -267,10 +267,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           {/* Comparative Bars */}
           <div className="space-y-4 pt-2">
             {activeResults.map(({ offer, calc }) => {
-              const maxVal = Math.max(...activeResults.map((r) => r.calc.totalComprehensiveTCO)) * 1.05;
+              const maxVal = Math.max(...activeResults.map((r) => r.calc.lifecycleCostLCC)) * 1.05;
               const upfrontPct = (calc.apparentDirectCost / maxVal) * 100;
-              const tcoPct = (calc.totalComprehensiveTCO / maxVal) * 100;
-              const isBest = calc.totalComprehensiveTCO === bestChoice?.calc.totalComprehensiveTCO;
+              const tcoPct = (calc.lifecycleCostLCC / maxVal) * 100;
+              const isBest = calc.lifecycleCostLCC === bestChoice?.calc.lifecycleCostLCC;
 
               return (
                 <div key={offer.id} className="space-y-1.5">
@@ -291,9 +291,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
                     <div className="font-mono text-xs text-slate-300">
                       Facial : <strong className="text-white">{calc.apparentDirectCost.toLocaleString('fr-FR')} €</strong>{' '}
-                      → TCO Réel :{' '}
+                      → Coût complet actualisé :{' '}
                       <strong className={isBest ? 'text-emerald-400 font-extrabold' : 'text-white'}>
-                        {calc.totalComprehensiveTCO.toLocaleString('fr-FR')} €
+                        {calc.lifecycleCostLCC.toLocaleString('fr-FR')} €
                       </strong>
                     </div>
                   </div>

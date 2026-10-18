@@ -22,6 +22,9 @@ const FORBIDDEN: [string, RegExp][] = [
   ['scellement / hachage présenté comme preuve', /\bscell|sceau|sha-?256|infalsifiable|inviolable|valeur probante|opposable/i],
   ['jargon interne de projet visible', /chantier [0-9]|\(?section [0-9]+(\.[0-9]+)?\)?|principe 37/i],
   ['conformité normative / réglementaire affirmée', /conforme (à la )?(section|norme iso|csrd|article)|conformité (iso|csrd)|article l\. ?[0-9]/i],
+  ['source officielle implicite pour une hypothèse saisie', /Quinet|tutélaire|Tutélaire/],
+  ['narratif chiffré écrit en dur', /4[,.]2 mois|\* ?1[,.]15\b|de 120 € à 250 €|confidenceIntervalPercent|confidence_interval/],
+  ['référence ou plage fabriquée aléatoirement', /documentRef:\s*`REF-|valueRange:\s*\[[^\]]*\*\s*0\.85/],
   ['statut décoratif', /\b(Validé|Nouveau|Actif|IA OCR)\b[^a-zé]{0,3}['"`]?\s*(,|\})\s*$/m],
 ];
 

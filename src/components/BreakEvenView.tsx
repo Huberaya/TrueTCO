@@ -17,8 +17,6 @@ export const BreakEvenView: React.FC<BreakEvenViewProps> = ({ project, offers })
   const [energyInflation, setEnergyInflation] = useState((project?.energyInflationRate || 0.04) * 100);
   const [carbonPrice, setCarbonPrice] = useState(project?.carbonPricePerTonne || 120);
   const [failureMultiplier, setFailureMultiplier] = useState(1.0);
-  const [maintenanceSavingsMultiplier, setMaintenanceSavingsMultiplier] = useState(1.0);
-  const [volume, setVolume] = useState(project?.plannedVolume || 1);
 
   // Recalculate with active slider values
   const { convResult, respResult, breakEven, monthlyData } = useMemo(() => {
@@ -31,54 +29,22 @@ export const BreakEvenView: React.FC<BreakEvenViewProps> = ({ project, offers })
       };
     }
 
-    const convUnitPrice = convOffer?.apparentUnitPrice?.value ?? (convOffer?.apparentTotal ? convOffer.apparentTotal / (convOffer.quantity || 1) : 0);
-    const respUnitPrice = respOffer?.apparentUnitPrice?.value ?? (respOffer?.apparentTotal ? respOffer.apparentTotal / (respOffer.quantity || 1) : 0);
+    const overrides = { energyInflationRate: energyInflation / 100, carbonPricePerTonne: carbonPrice, failureRateMultiplier: failureMultiplier };
+    const cRes = TCOEngine.calculateOfferTCO(project, convOffer, overrides);
+    const rRes = TCOEngine.calculateOfferTCO(project, respOffer, overrides);
+    const bEven = TCOEngine.calculateBreakEven(cRes, rRes);
 
-    // Clone offers with adjusted volume
-    const adjustedConv: SupplierOffer = {
-      ...convOffer,
-      quantity: volume,
-      apparentTotal: convUnitPrice * volume,
+    // Courbes : coût complet CUMULÉ ACTUALISÉ de chaque offre (flux annuels du moteur, interpolés linéairement dans l'année).
+    // Ce sont exactement les séries dont le croisement définit le point mort affiché.
+    const totalMonths = (cRes.cashFlowsByYear.length - 1) * 12;
+    const at = (r: typeof cRes, m: number) => {
+      const cf = r.cashFlowsByYear;
+      const t0 = Math.min(Math.floor(m / 12), cf.length - 1);
+      const t1 = Math.min(t0 + 1, cf.length - 1);
+      return cf[t0].cumulativeDiscountedCost + (cf[t1].cumulativeDiscountedCost - cf[t0].cumulativeDiscountedCost) * ((m - 12 * t0) / 12);
     };
-    const adjustedResp: SupplierOffer = {
-      ...respOffer,
-      quantity: volume,
-      apparentTotal: respUnitPrice * volume,
-    };
-
-    const cRes = TCOEngine.calculateOfferTCO(project, adjustedConv, {
-      energyInflationRate: energyInflation / 100,
-      carbonPricePerTonne: carbonPrice,
-      failureRateMultiplier: failureMultiplier,
-    });
-
-    const rRes = TCOEngine.calculateOfferTCO(project, adjustedResp, {
-      energyInflationRate: energyInflation / 100,
-      carbonPricePerTonne: carbonPrice,
-      failureRateMultiplier: failureMultiplier,
-    });
-
-    const bEven = TCOEngine.calculateBreakEven(cRes, rRes, project.horizonYears);
-
-    // Generate monthly cumulative data for chart (from month 0 to horizon * 12)
-    const totalMonths = project.horizonYears * 12;
-    const initialConv = cRes.apparentDirectCost + cRes.installationTotal;
-    const initialResp = rRes.apparentDirectCost + rRes.installationTotal;
-
-    const monthlyConvOperating = 
-      (cRes.energyConsumablesTotal + cRes.maintenanceRepairsTotal + cRes.replacementDefectsTotal + cRes.riskExpositionTotal + cRes.monetizedCarbonTotal) / totalMonths;
-
-    const monthlyRespOperating = 
-      (rRes.energyConsumablesTotal + (rRes.maintenanceRepairsTotal * maintenanceSavingsMultiplier) + rRes.replacementDefectsTotal + rRes.riskExpositionTotal + rRes.monetizedCarbonTotal) / totalMonths;
-
     const points: { month: number; convCumul: number; respCumul: number }[] = [];
-    for (let m = 0; m <= totalMonths; m += 3) {
-      points.push({
-        month: m,
-        convCumul: Math.round(initialConv + monthlyConvOperating * m),
-        respCumul: Math.round(initialResp + monthlyRespOperating * m),
-      });
-    }
+    for (let m = 0; m <= totalMonths; m += 3) points.push({ month: m, convCumul: Math.round(at(cRes, m)), respCumul: Math.round(at(rRes, m)) });
 
     return {
       convResult: cRes,
@@ -93,8 +59,6 @@ export const BreakEvenView: React.FC<BreakEvenViewProps> = ({ project, offers })
     energyInflation,
     carbonPrice,
     failureMultiplier,
-    maintenanceSavingsMultiplier,
-    volume,
   ]);
 
   if (!convOffer || !respOffer || !convResult || !respResult || !breakEven) {
@@ -153,10 +117,11 @@ export const BreakEvenView: React.FC<BreakEvenViewProps> = ({ project, offers })
             Arbitrage d'Amortissement & Point Mort
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            Calculateur de Point Mort (Break-Even Crossover)
+            Point mort économique
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Mesure dynamique du moment où l'alternative responsable devient économiquement plus rentable que l'offre conventionnelle grâce aux économies cumulées d'énergie, de maintenance et d'externalités.
+            Moment où le coût complet <strong>cumulé et actualisé</strong> de l'offre candidate repasse sous celui de l'offre de base (direct + risques + carbone).
+            Le croisement est calculé année par année sur les flux du moteur et interpolé dans l'année ; il n'est jamais extrapolé au-delà de l'horizon.
           </p>
         </div>
 
@@ -186,33 +151,35 @@ export const BreakEvenView: React.FC<BreakEvenViewProps> = ({ project, offers })
           <div className="text-xs text-slate-300 leading-relaxed pl-7">
             Comparaison entre <strong>{convOffer.supplierName}</strong> (Offre de base) et{' '}
             <strong>{respOffer.supplierName}</strong> (Candidate responsable).
-            {breakEven.hasBreakEven && breakEven.breakEvenMonth ? (
-              <>
-                {' '}Le surcoût initial de{' '}
-                <span className="font-mono font-semibold text-white">
-                  {(respResult.apparentDirectCost - convResult.apparentDirectCost).toLocaleString('fr-FR')} €
-                </span>{' '}
-                ({breakEven.initialPriceDeltaPercent > 0 ? `+${breakEven.initialPriceDeltaPercent}%` : `${breakEven.initialPriceDeltaPercent}%`}) est absorbé en{' '}
-                <span className="text-emerald-400 font-bold font-mono">
-                  {breakEven.breakEvenMonth} mois
-                </span>{' '}
-                grâce à une économie d'exploitation de{' '}
-                <span className="text-emerald-400 font-bold font-mono">
-                  {breakEven.monthlyOperatingSavings.toLocaleString('fr-FR')} € / mois
-                </span>.
-              </>
-            ) : null}
+            <div className="mt-1.5 space-y-0.5 font-mono text-[11px] text-slate-400">
+              <div>
+                Surcoût d'acquisition de la candidate :{' '}
+                <span className="text-white">{(respResult.apparentDirectCost - convResult.apparentDirectCost).toLocaleString('fr-FR')} €</span>{' '}
+                ({breakEven.initialPriceDeltaPercent > 0 ? `+${breakEven.initialPriceDeltaPercent}` : breakEven.initialPriceDeltaPercent} %)
+              </div>
+              <div>
+                Point mort — base actualisée : <span className="text-white">{breakEven.breakEvenMonth === null ? 'aucun sur l\'horizon' : `mois ${breakEven.breakEvenMonth}`}</span>
+                {' · '}base nominale : <span className="text-white">{breakEven.breakEvenMonthNominal === null || breakEven.breakEvenMonthNominal === undefined ? 'aucun sur l\'horizon' : `mois ${breakEven.breakEvenMonthNominal}`}</span>
+              </div>
+              <div>
+                Avantage de la candidate au terme de l'horizon (actualisé) :{' '}
+                <span className={(breakEven.finalAdvantageDiscounted ?? 0) >= 0 ? 'text-emerald-400' : 'text-rose-400'}>
+                  {(breakEven.finalAdvantageDiscounted ?? 0) >= 0 ? '+' : '−'}{Math.abs(Math.round(breakEven.finalAdvantageDiscounted ?? 0)).toLocaleString('fr-FR')} €
+                </span>
+              </div>
+              <div>Économie d'exploitation moyenne (nominale, hors investissement) : {breakEven.monthlyOperatingSavings.toLocaleString('fr-FR')} € / mois</div>
+            </div>
           </div>
         </div>
 
-        {breakEven.hasBreakEven && breakEven.breakEvenMonth && (
+        {breakEven.hasBreakEven && breakEven.breakEvenMonth !== null && (
           <div className="text-center p-4 bg-slate-950/70 border border-emerald-800/40 rounded-xl min-w-[170px]">
-            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-0.5">Point Mort Atteint À</div>
+            <div className="text-[11px] uppercase tracking-wider text-slate-400 mb-0.5">Point mort (actualisé)</div>
             <div className="text-3xl font-extrabold font-mono text-emerald-400 tabular-nums">
               {breakEven.breakEvenMonth} <span className="text-sm font-sans font-medium text-slate-300">mois</span>
             </div>
             <div className="text-[11px] text-slate-400 font-mono mt-0.5">
-              soit {breakEven.crossoverYear} ans d'usage
+              soit {breakEven.crossoverYear} an(s)
             </div>
           </div>
         )}
@@ -231,31 +198,12 @@ export const BreakEvenView: React.FC<BreakEvenViewProps> = ({ project, offers })
                 setEnergyInflation(project.energyInflationRate * 100);
                 setCarbonPrice(project.carbonPricePerTonne);
                 setFailureMultiplier(1.0);
-                setMaintenanceSavingsMultiplier(1.0);
-                setVolume(project.plannedVolume);
               }}
               className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 transition-colors"
               title="Réinitialiser aux valeurs de référence"
             >
               <RefreshCw className="w-3 h-3" /> Reset
             </button>
-          </div>
-
-          {/* Slider 1: Volume */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between text-xs">
-              <span className="text-slate-400">Volume commandé ({project.unitName})</span>
-              <span className="font-mono text-white font-semibold">{volume}</span>
-            </div>
-            <input
-              type="range"
-              min="5"
-              max="150"
-              step="5"
-              value={volume}
-              onChange={(e) => setVolume(Number(e.target.value))}
-              className="w-full accent-emerald-500 bg-slate-950 h-1.5 rounded-lg appearance-none cursor-pointer"
-            />
           </div>
 
           {/* Slider 2: Energy Inflation */}

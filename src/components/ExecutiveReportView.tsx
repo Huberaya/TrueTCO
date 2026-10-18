@@ -7,7 +7,7 @@ import {
   AuditLogEntry,
   ExternalityReferenceBenchmark,
 } from '../types/domain';
-import { TCOEngine } from '../engine/tcoEngine';
+import { TCOEngine, type Overrides } from '../engine/tcoEngine';
 import { ExcelExportService } from '../services/excelExportService';
 import {
   Printer,
@@ -71,11 +71,11 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
     return results.find((r) => r.offer.isResponsibleCandidate) || results[1] || results[0];
   }, [results]);
 
-  // Best TCO candidate overall
+  // Meilleure offre : coût complet ACTUALISÉ le plus bas
   const bestTCO = useMemo(() => {
     if (results.length === 0) return null;
     return [...results].sort(
-      (a, b) => a.calc.totalComprehensiveTCO - b.calc.totalComprehensiveTCO
+      (a, b) => a.calc.lifecycleCostLCC - b.calc.lifecycleCostLCC
     )[0];
   }, [results]);
 
@@ -92,10 +92,24 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
     return TCOEngine.calculateSensitivity(project, conv.offer, resp.offer);
   }, [conv, resp, project]);
 
-  // Net lifecycle savings
+  // Stress-tests CALCULÉS par le moteur sur les offres réelles (aucun chiffre écrit en dur).
+  const stress = useMemo(() => {
+    if (!conv || !winningCandidate || conv.offer.id === winningCandidate.offer.id) return null;
+    const adv = (o: Overrides) =>
+      TCOEngine.calculateOfferTCO(project, conv.offer, o).exact.lifecycleCostLCC - TCOEngine.calculateOfferTCO(project, winningCandidate.offer, o).exact.lifecycleCostLCC;
+    const be = (o: Overrides) =>
+      TCOEngine.calculateBreakEven(TCOEngine.calculateOfferTCO(project, conv.offer, o), TCOEngine.calculateOfferTCO(project, winningCandidate.offer, o)).breakEvenMonth;
+    const energy = { energyCostMultiplier: 1.2 };
+    return {
+      base: adv({}), energy: adv(energy), carbon: adv({ carbonPricePerTonne: project.carbonPricePerTonne * 2 }),
+      beBase: be({}), beEnergy: be(energy), rob: TCOEngine.calculateRobustness(project, conv.offer, winningCandidate.offer),
+    };
+  }, [conv, winningCandidate, project]);
+
+  // Économie nette : écart de coût complet actualisé
   const netSavings = useMemo(() => {
     if (!conv || !winningCandidate) return 0;
-    return Math.max(0, conv.calc.totalComprehensiveTCO - winningCandidate.calc.totalComprehensiveTCO);
+    return Math.max(0, conv.calc.lifecycleCostLCC - winningCandidate.calc.lifecycleCostLCC);
   }, [conv, winningCandidate]);
 
   // Net CO2 avoided
@@ -392,7 +406,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
             </div>
 
             <div className="p-3 bg-slate-950/70 print:bg-slate-100 rounded-xl border border-slate-800 print:border-slate-300">
-              <span className="text-slate-400 print:text-slate-600 block text-[11px]">Prix Tutélaire Quinet</span>
+              <span className="text-slate-400 print:text-slate-600 block text-[11px]">Prix du carbone (hypothèse du projet)</span>
               <div className="font-bold text-white print:text-slate-900 font-mono text-sm mt-0.5">
                 {project.carbonPricePerTonne} €/tCO2e
               </div>
@@ -559,7 +573,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
                     ))}
                   </tr>
 
-                  {/* Externalité Carbone Quinet */}
+                  {/* Externalité carbone */}
                   <tr className="hover:bg-slate-900/30 text-[11px] text-slate-400">
                     <td className="py-2 px-3 border-r border-slate-800 print:border-slate-300 text-sky-400 print:text-sky-700">
                       + Monétisation de l'externalité carbone ({project.carbonPricePerTonne} €/t)
@@ -663,22 +677,34 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
             <div className="flex items-start gap-2">
               <Info className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
               <div className="space-y-1">
+                {stress ? (
+                  <>
+                    <div>
+                      <strong>Cas central :</strong> l'offre recommandée est moins chère de{' '}
+                      <span className="font-mono font-bold text-emerald-400 print:text-emerald-700">{Math.round(stress.base).toLocaleString('fr-FR')} €</span>{' '}
+                      en coût complet actualisé.
+                    </div>
+                    <div>
+                      <strong>Énergie +20 % :</strong> l'écart devient{' '}
+                      <span className="font-mono font-bold">{Math.round(stress.energy).toLocaleString('fr-FR')} €</span>
+                      {' '}; point mort actualisé : {stress.beBase === null ? 'aucun' : `mois ${stress.beBase}`} → {stress.beEnergy === null ? 'aucun' : `mois ${stress.beEnergy}`}.
+                    </div>
+                    <div>
+                      <strong>Prix du carbone ×2 ({project.carbonPricePerTonne} → {project.carbonPricePerTonne * 2} €/t) :</strong> l'écart devient{' '}
+                      <span className="font-mono font-bold">{Math.round(stress.carbon).toLocaleString('fr-FR')} €</span>.
+                    </div>
+                    <div>
+                      <strong>Simulation de robustesse :</strong> l'offre recommandée reste la moins chère dans{' '}
+                      <span className="font-mono font-bold">{Math.round(stress.rob.probabilityCandidateCheaper * 100)} %</span> des {stress.rob.draws.toLocaleString('fr-FR')} tirages
+                      (hypothèses de plages et d'indépendance : voir l'écran Sensibilité).
+                    </div>
+                  </>
+                ) : (
+                  <div>Les stress-tests comparent l'offre recommandée à l'offre de base ; ils ne s'appliquent pas lorsque l'offre de base est elle-même la meilleure.</div>
+                )}
                 <div>
-                  <strong>Sensibilité au prix de l'énergie :</strong> Une augmentation imprévue de +20% du coût de
-                  l'énergie accélère l'amortissement de la solution responsable de{' '}
-                  <span className="text-emerald-400 print:text-emerald-700 font-bold">4,2 mois supplémentaires</span>,
-                  portant le gain cumulé à plus de {(netSavings * 1.15).toLocaleString('fr-FR')} €.
-                </div>
-                <div>
-                  <strong>Résilience face au durcissement carbone :</strong> Si le prix de la tonne de CO2 passe de
-                  120 € à 250 € (scénario Quinet 2030), le surcoût de la solution conventionnelle s'alourdit de{' '}
-                  <span className="font-mono font-bold text-rose-400 print:text-rose-700">
-                    +{((avoidedCO2Tonnes * (250 - project.carbonPricePerTonne))).toLocaleString('fr-FR')} €
-                  </span>.
-                </div>
-                <div>
-                  <strong>Sécurisation par les garanties :</strong> L'offre recommandée propose une garantie de{' '}
-                  <strong>{winningCandidate?.offer.warrantyMonths} mois</strong>, réduisant l'exposition aux défaillances durant les phases critiques.
+                  <strong>Garantie :</strong> l'offre recommandée propose une garantie de{' '}
+                  <strong>{winningCandidate?.offer.warrantyMonths} mois</strong> (donnée du devis).
                 </div>
               </div>
             </div>

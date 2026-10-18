@@ -411,7 +411,7 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
                   <div className="p-2.5 bg-amber-950/40 border border-amber-800/80 rounded-lg text-amber-300 text-[11px] flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400" />
                     <span>
-                      Qualité documentaire insuffisante (&lt; 75%) : une pénalité d'incertitude de ±15% sera appliquée sur l'intervalle de confiance du TCO.
+                      Fiche peu documentée (&lt; 75 % de complétude) : les données de ce fournisseur sont à fiabiliser avant de s'y fier.
                     </span>
                   </div>
                 )}

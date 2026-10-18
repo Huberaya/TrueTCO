@@ -69,9 +69,9 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
     return { ...res, offer };
   });
 
-  // Sort by comprehensive TCO ascending
+  // Classement : coût complet ACTUALISÉ croissant (critère de décision unique de l'application)
   const sortedByTCO = [...results].sort(
-    (a, b) => a.totalComprehensiveTCO - b.totalComprehensiveTCO
+    (a, b) => a.lifecycleCostLCC - b.lifecycleCostLCC
   );
   const cheapestTCO = sortedByTCO[0];
 
@@ -195,14 +195,14 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
               {cheapestInitial.offerId !== cheapestTCO.offerId ? (
                 <>
                   Cependant, sur l'horizon de {project.horizonYears} ans,{' '}
-                  <strong className="text-emerald-400">{cheapestTCO.supplierName}</strong> présente le coût total réel le plus avantageux ({cheapestTCO.totalComprehensiveTCO.toLocaleString('fr-FR')} €), soit{' '}
+                  <strong className="text-emerald-400">{cheapestTCO.supplierName}</strong> présente le coût complet actualisé le plus avantageux ({cheapestTCO.lifecycleCostLCC.toLocaleString('fr-FR')} €), soit{' '}
                   <span className="text-emerald-400 font-semibold font-mono">
-                    {(cheapestInitial.totalComprehensiveTCO - cheapestTCO.totalComprehensiveTCO).toLocaleString('fr-FR')} € d'économies nettes
+                    {(cheapestInitial.lifecycleCostLCC - cheapestTCO.lifecycleCostLCC).toLocaleString('fr-FR')} € d'économies nettes (valeur actualisée)
                   </span>.
                 </>
               ) : (
                 <>
-                  Elle s'avère également la plus avantageuse sur le coût global TCO ({cheapestTCO.totalComprehensiveTCO.toLocaleString('fr-FR')} €).
+                  Elle s'avère également la plus avantageuse en coût complet actualisé ({cheapestTCO.lifecycleCostLCC.toLocaleString('fr-FR')} €).
                 </>
               )}
             </div>
@@ -214,7 +214,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
               <div className="font-mono text-xs font-semibold text-white">{(project.discountRate * 100).toFixed(1)}%</div>
             </div>
             <div className="text-right pl-3 border-l border-slate-800">
-              <div className="text-[11px] text-slate-400">Prix Carbone Tutélaire</div>
+              <div className="text-[11px] text-slate-400">Prix du carbone (hypothèse du projet)</div>
               <div className="font-mono text-xs font-semibold text-white">{project.carbonPricePerTonne} €/t</div>
             </div>
           </div>
@@ -594,17 +594,9 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                         handleExplain(
                           'Externalité carbone monétisée',
                           'Comptabilité Extra-Financière',
-                          {
-                            value: `${project.carbonPricePerTonne} € par tonne CO2e`,
-                            unit: '€/tCO2e',
-                            sourceType: 'source_externe',
-                            sourceName: 'Valeur tutélaire Quinet & ADEME Base Carbone',
-                            confidenceLevel: 95,
-                            lastUpdated: '2026-01-10',
-                            updatedBy: 'Resp. RSE',
-                          },
-                          'Coût_Carbone = Émissions_Totales_(tCO2e) × Prix_Tutélaire_(€/t)',
-                          `Monétise le coût social et réglementaire du carbone selon la trajectoire Quinet (${project.carbonPricePerTonne} €/t).`
+                          undefined,
+                          'Coût_Carbone,t = Émissions_t (tCO2e) × Prix_carbone × (1 + croissance)^t',
+                          `Monétise les émissions de chaque année au prix du carbone retenu dans le projet (${project.carbonPricePerTonne} €/t en année 0, évolution annuelle selon les hypothèses du modèle). Ce prix est une hypothèse saisie, à documenter.`
                         )
                       }
                       className="text-slate-500 hover:text-slate-300"
@@ -666,19 +658,19 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                 <td className="py-3 px-4 text-slate-200">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="font-semibold text-xs">LCC Actualisé (Net Present Value - WACC {(project.discountRate * 100).toFixed(1)}%)</span>
+                      <span className="font-semibold text-xs">Coût complet actualisé (VAN, taux {(project.discountRate * 100).toFixed(1)} %)</span>
                       <span className="block text-[11px] text-slate-400">
-                        Flux de trésorerie déflatés dans le temps
+                        Direct + risques + carbone, actualisés : critère de décision
                       </span>
                     </div>
                     <button
                       onClick={() =>
                         handleExplain(
-                          'Lifecycle Costing (LCC) Actualisé',
-                          'Actualisation Financière WACC',
+                          'Coût complet actualisé (LCC)',
+                          'Actualisation au taux du projet',
                           undefined,
-                          'LCC = CAPEX_0 + Σ(t=1..H) [ CashFlow_t / (1 + r)^t ]',
-                          'Calcule la valeur actuelle nette de l\'ensemble des sorties de fonds réelles au fil des années.'
+                          'LCC = Σ(t=0..H) [ (Direct_t + Risque_t + Carbone_t) / (1 + r)^t ]  — fin d\'année, t=0 : investissement initial',
+                          'Valeur actuelle de l\'ensemble des flux : coûts directs, espérance de perte liée aux risques et carbone monétisé, au taux d\'actualisation du projet. Méthodologie : docs/METHODOLOGIE-TCO.md.'
                         )
                       }
                       className="text-slate-500 hover:text-slate-300"
@@ -699,9 +691,9 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                 <td className="py-2.5 px-4 text-slate-300">
                   <div className="flex items-center justify-between">
                     <div>
-                      <span className="text-xs">Indice de Qualité des Données & Fourchette</span>
+                      <span className="text-xs">Qualité des données & fourchette de scénarios</span>
                       <span className="block text-[11px] text-slate-400">
-                        Gestion de l'incertitude (anti-fausse précision)
+                        Fourchette du TCO nominal entre scénarios pessimiste et optimiste (pas un intervalle de confiance)
                       </span>
                     </div>
                   </div>

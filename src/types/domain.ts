@@ -75,6 +75,13 @@ export interface Project {
   carbonPricePerTonne: number; // €/tCO2e (ex: 120€/t)
   inflationRate: number; // e.g. 0.02
   energyInflationRate: number; // e.g. 0.04
+  /** Hypothèses de modélisation propres au projet (surchargent les valeurs par défaut du modèle). */
+  modelAssumptions?: {
+    maintenanceWearRate?: number;
+    failureAgingStartYear?: number;
+    failureAgingRate?: number;
+    carbonPriceGrowthRate?: number;
+  };
 }
 
 export interface Supplier {
@@ -198,12 +205,17 @@ export interface SupplierOffer {
 
 export interface YearCashFlow {
   year: number;
+  /** Coût complet de l'année (direct + risque + carbone), nominal. */
   nominalCost: number;
   discountFactor: number;
+  /** Coût complet de l'année, actualisé. */
   discountedCost: number;
   cumulativeDiscountedCost: number;
   carbonEmissionsTonnes: number;
+  /** Part carbone du coût de l'année (incluse dans nominalCost). */
   carbonCostNominal: number;
+  /** Détail par composante (nominal). La valeur résiduelle est négative (crédit). */
+  components?: Record<'acquisition' | 'logistics' | 'installation' | 'energy' | 'maintenance' | 'replacement' | 'admin' | 'endOfLife' | 'salvage' | 'risk' | 'carbon', number>;
 }
 
 export interface TCOCalculationResult {
@@ -240,14 +252,27 @@ export interface TCOCalculationResult {
   // Lifecycle Costing (LCC) - Discounted Cash Flows
   discountRateUsed: number;
   cashFlowsByYear: YearCashFlow[];
-  lifecycleCostLCC: number; // Net Present Value (NPV) of all life cycle costs
+  /** Coût complet ACTUALISÉ : direct + risques + carbone (mêmes composantes que totalComprehensiveTCO). */
+  lifecycleCostLCC: number;
+  /** Actualisé, hors risques et hors carbone. */
+  lifecycleCostDirect: number;
+  /** Actualisé, risques inclus, carbone exclu. */
+  lifecycleCostLCCExCarbon: number;
+  /** Anomalies de données et conventions appliquées (aucune correction silencieuse). */
+  warnings: { code: string; message: string; itemId?: string }[];
+  /** Valeurs non arrondies, pour les exports et les tests. */
+  exact: { economicTCONominal: number; totalComprehensiveTCO: number; lifecycleCostLCC: number; lifecycleCostDirect: number; lifecycleCostLCCExCarbon: number; monetizedCarbonTotal: number; riskExpositionTotal: number };
 
   // Data Quality and Uncertainty
   dataQualityScore: number; // 0 - 100%
+  /**
+   * Fourchette du TCO complet nominal sur les scénarios pessimiste / central / optimiste.
+   * Ce n'est PAS un intervalle de confiance statistique (voir la simulation de robustesse).
+   */
   uncertaintyRange: {
     minTCO: number;
     maxTCO: number;
-    confidenceIntervalPercent: number; // e.g. 90%
+    basis: 'scenarios';
   };
 
   // Environmental Impact
@@ -258,19 +283,36 @@ export interface BreakEvenAnalysis {
   hasBreakEven: boolean;
   breakEvenMonth: number | null; // e.g. 28 months
   initialPriceDeltaPercent: number; // e.g. +14.2% initial acquisition cost
-  monthlyOperatingSavings: number; // e.g. 1,420 € / month saved during usage
+  monthlyOperatingSavings: number; // économie mensuelle moyenne hors investissement initial (nominal)
   breakEvenDescription: string;
   crossoverYear: number | null;
+  /** Mois de croisement sur les flux cumulés NOMINAUX (breakEvenMonth est sur les flux ACTUALISÉS). */
+  breakEvenMonthNominal?: number | null;
+  /** Écart cumulé actualisé en fin d'horizon : positif = l'offre candidate est moins chère. */
+  finalAdvantageDiscounted?: number;
+  finalAdvantageNominal?: number;
+  /** true si l'avantage s'inverse après le premier croisement. */
+  crossesBackAfterBreakEven?: boolean;
+  /** Écart cumulé (candidate − référence) par année : négatif = candidate moins chère. */
+  cumulativeDifference?: { year: number; nominal: number; discounted: number }[];
 }
 
 export interface SensitivityDriver {
   parameterName: string;
-  category: 'energie' | 'duree_de_vie' | 'taux_panne' | 'prix_carbone' | 'taux_actualisation' | 'cout_maintenance';
+  category: 'energie' | 'duree_de_vie' | 'taux_panne' | 'prix_carbone' | 'taux_actualisation' | 'cout_maintenance' | 'cout_energie' | 'prix_achat' | 'inflation' | 'valeur_residuelle' | 'exposition_risques';
   baseValue: number;
   unit: string;
-  lowValueImpactOnDeltaTCO: number; // Impact in € on difference vs baseline
+  /** Valeurs testées (mêmes unités que baseValue). */
+  lowValue?: number;
+  highValue?: number;
+  /** Variation de l'ÉCART de coût complet actualisé (candidate − référence) par rapport au cas central, en €. */
+  lowValueImpactOnDeltaTCO: number;
   highValueImpactOnDeltaTCO: number;
+  /** 'critique' = la décision change de camp dans la plage testée. */
   sensitivityRank: 'critique' | 'fort' | 'moyen' | 'faible';
+  flipsDecision?: boolean;
+  /** Valeur du paramètre pour laquelle les deux offres coûtent autant (null = aucun basculement dans la plage étendue). */
+  switchingValue?: number | null;
   explanation: string;
 }
 
@@ -283,10 +325,16 @@ export interface ScenarioResult {
     failureRateMultiplier: number;
     discountRate: number;
   };
+  /** 'project' : valeurs du projet ; 'model_default' : hypothèse par défaut du modèle, non sourcée. */
+  parametersSource: 'project' | 'model_default';
+  /** Offre au meilleur coût complet ACTUALISÉ (critère de décision). */
+  bestOfferId: string;
   resultsByOfferId: Record<string, {
     nominalTCO: number;
     discountedLCC: number;
     deltaVsCheapestNominal: number;
+    deltaVsBestLCC: number;
+    /** Meilleure offre selon le coût complet actualisé. */
     isBestChoice: boolean;
   }>;
 }
@@ -317,7 +365,7 @@ export interface ExternalityReferenceBenchmark {
   unit: string;
   source: string;
   sourceUrl?: string;
-  documentRef: string;
+  documentRef?: string;
   lastUpdated: string;
   countryScope: string;
   methodology: string;

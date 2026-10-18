@@ -66,15 +66,15 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
   });
 
   // Determine Minima / Benchmarks for normalization
-  const minTCO = Math.min(...calculatedOffers.map((o) => o.calc.totalComprehensiveTCO));
+  const minTCO = Math.min(...calculatedOffers.map((o) => o.calc.lifecycleCostLCC));
   const minCarbon = Math.min(...calculatedOffers.map((o) => o.calc.totalLifecycleCO2eTonnes));
   const minRisk = Math.min(...calculatedOffers.map((o) => o.calc.riskExpositionTotal));
 
   // Compute 4 individual pillar scores on 0-100 scale
   const scoredOffers = calculatedOffers.map(({ offer, calc, supplier }) => {
     // 1. TCO Score: 100 * (minTCO / offerTCO)
-    const tcoScore = calc.totalComprehensiveTCO > 0
-      ? Math.min(100, Math.max(0, (minTCO / calc.totalComprehensiveTCO) * 100))
+    const tcoScore = calc.lifecycleCostLCC > 0
+      ? Math.min(100, Math.max(0, (minTCO / calc.lifecycleCostLCC) * 100))
       : 100;
 
     // 2. Carbon Score: 100 * (minCarbon / offerCarbon)
@@ -367,11 +367,11 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
             </div>
             <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
               L'offre <strong>{bestOffer.offer.offerReference}</strong> arrive en tête du classement 360°.
-              Elle combine un avantage économique de{' '}
+              Son coût complet actualisé est de{' '}
               <strong className="text-emerald-400 font-mono">
-                {bestOffer.calc.totalComprehensiveTCO.toLocaleString('fr-FR')} €
+                {bestOffer.calc.lifecycleCostLCC.toLocaleString('fr-FR')} €
               </strong>{' '}
-              sur {project.horizonYears} ans et une réduction d'empreinte carbone majeure (
+              sur {project.horizonYears} ans, avec une empreinte carbone de (
               {bestOffer.calc.totalLifecycleCO2eTonnes.toFixed(1)} tCO2e), tout en garantissant une note de fiabilité
               opérationnelle de {bestOffer.riskScore}/100.
             </p>
@@ -449,7 +449,7 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
                     <td className="py-3.5 px-4 text-center font-mono">
                       <div className="font-bold text-white">{item.tcoScore}/100</div>
                       <div className="text-[10px] text-slate-400">
-                        {item.calc.totalComprehensiveTCO.toLocaleString('fr-FR')} €
+                        {item.calc.lifecycleCostLCC.toLocaleString('fr-FR')} €
                       </div>
                     </td>
 

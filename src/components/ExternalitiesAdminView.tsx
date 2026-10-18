@@ -42,11 +42,12 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
   const [newCategory, setNewCategory] = useState<'carbone' | 'energie' | 'dechets' | 'wacc' | 'pollution_locale'>('carbone');
   const [newValue, setNewValue] = useState(150);
   const [newUnit, setNewUnit] = useState('€/tCO2e');
-  const [newSource, setNewSource] = useState('Commission Quinet / France Stratégie');
+  const [newSource, setNewSource] = useState('');
   const [newSourceUrl, setNewSourceUrl] = useState('https://www.strategie.gouv.fr');
   const [newCountryScope, setNewCountryScope] = useState('France / UE');
-  const [newMethodology, setNewMethodology] = useState('Valeur tutélaire de l\'action pour le climat (Trajectoire 2026-2030)');
-  const [newConfidence, setNewConfidence] = useState(95);
+  const [newMethodology, setNewMethodology] = useState('');
+  // Confiance non présumée : 0 tant que l'utilisateur n'a pas évalué la source.
+  const [newConfidence, setNewConfidence] = useState(0);
 
   const filteredBenchmarks = benchmarks.filter((b) => {
     const matchesSearch =
@@ -62,8 +63,8 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
   const openEditModal = (b: ExternalityReferenceBenchmark) => {
     setSelectedBenchmark(b);
     setEditValue(b.value);
-    setEditRangeMin(b.valueRange ? b.valueRange[0] : b.value * 0.9);
-    setEditRangeMax(b.valueRange ? b.valueRange[1] : b.value * 1.1);
+    setEditRangeMin(b.valueRange ? b.valueRange[0] : b.value);
+    setEditRangeMax(b.valueRange ? b.valueRange[1] : b.value);
     setJustification('');
   };
 
@@ -75,7 +76,8 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
       {
         ...selectedBenchmark,
         value: Number(editValue),
-        valueRange: [Number(editRangeMin), Number(editRangeMax)],
+        // Aucune plage inventée : une plage n'est enregistrée que si l'utilisateur l'a réellement renseignée.
+        valueRange: Number(editRangeMin) === Number(editRangeMax) ? undefined : [Number(editRangeMin), Number(editRangeMax)],
         lastUpdated: new Date().toISOString().split('T')[0],
       },
       justification.trim()
@@ -99,9 +101,8 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
       lastUpdated: new Date().toISOString().split('T')[0],
       countryScope: newCountryScope.trim(),
       methodology: newMethodology.trim(),
-      valueRange: [Number(newValue) * 0.85, Number(newValue) * 1.15],
       confidenceLevel: Number(newConfidence),
-      documentRef: `REF-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      // Aucune référence documentaire fabriquée : seule l'URL ou la source saisies par l'utilisateur font foi.
     };
 
     onAddBenchmark(newBench);
@@ -364,7 +365,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
                   rows={3}
                   value={justification}
                   onChange={(e) => setJustification(e.target.value)}
-                  placeholder="ex: Actualisation suite à la publication du rapport Quinet 2026 et projection CRE sur les tarifs régulés."
+                  placeholder="ex: Actualisation suite à la publication du un nouveau document de référence sur les tarifs régulés."
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white focus:outline-none focus:border-emerald-500 text-xs placeholder:text-slate-600"
                 />
                 <span className="text-[10px] text-amber-400/90 flex items-center gap-1 mt-1">

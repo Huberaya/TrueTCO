@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project, SupplierOffer } from '../types/domain';
-import { TCOEngine } from '../engine/tcoEngine';
+import { TCOEngine, DEFAULT_ASSUMPTIONS } from '../engine/tcoEngine';
 import {
   ShieldCheck,
   CheckCircle2,
@@ -166,7 +166,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
             </div>
 
             <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
-              <div className="text-[11px] uppercase tracking-wider text-sky-400">3. Risques + Carbone Tutélaire</div>
+              <div className="text-[11px] uppercase tracking-wider text-sky-400">3. Risques + carbone</div>
               <div className="text-xl font-bold font-mono text-sky-400 tabular-nums">
                 +{(calculation.riskExpositionTotal + calculation.monetizedCarbonTotal).toLocaleString('fr-FR')} €
               </div>
@@ -181,8 +181,39 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
                 {calculation.totalComprehensiveTCO.toLocaleString('fr-FR')} €
               </div>
               <div className="text-[10px] text-slate-300">
-                Fourchette : [{calculation.uncertaintyRange.minTCO.toLocaleString('fr-FR')} € – {calculation.uncertaintyRange.maxTCO.toLocaleString('fr-FR')} €]
+                Fourchette (scénarios) : [{calculation.uncertaintyRange.minTCO.toLocaleString('fr-FR')} € – {calculation.uncertaintyRange.maxTCO.toLocaleString('fr-FR')} €]
               </div>
+            </div>
+          </div>
+
+          {/* Hypothèses du modèle et avertissements : indispensables pour défendre un chiffre */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs space-y-1.5">
+              <div className="font-bold text-white uppercase tracking-wider text-[11px]">Hypothèses du modèle utilisées</div>
+              {(() => {
+                const a = { ...DEFAULT_ASSUMPTIONS, ...(project.modelAssumptions ?? {}) };
+                const flag = (k: keyof typeof DEFAULT_ASSUMPTIONS) => (project.modelAssumptions?.[k] === undefined ? 'défaut du modèle, non sourcé' : 'défini par le projet');
+                return (
+                  <ul className="font-mono text-slate-300 space-y-1">
+                    <li>Vieillissement maintenance : +{(a.maintenanceWearRate * 100).toFixed(1)} %/an <span className="text-slate-500">({flag('maintenanceWearRate')})</span></li>
+                    <li>Vieillissement pannes : +{(a.failureAgingRate * 100).toFixed(1)} %/an après l'année {a.failureAgingStartYear} <span className="text-slate-500">({flag('failureAgingRate')})</span></li>
+                    <li>Évolution du prix du carbone : {(a.carbonPriceGrowthRate * 100).toFixed(1)} %/an <span className="text-slate-500">({flag('carbonPriceGrowthRate')})</span></li>
+                    <li>Taux d'actualisation : {(project.discountRate * 100).toFixed(2)} % · inflation : {(project.inflationRate * 100).toFixed(1)} % · énergie : {(project.energyInflationRate * 100).toFixed(1)} %</li>
+                  </ul>
+                );
+              })()}
+              <div className="text-[10px] text-slate-500 pt-1">Modifiables dans la fiche du projet. Les valeurs « par défaut du modèle » ne reposent sur aucune source : documentez les vôtres.</div>
+            </div>
+            <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl text-xs space-y-1.5">
+              <div className="font-bold text-white uppercase tracking-wider text-[11px]">Avertissements sur les données ({calculation.warnings.length})</div>
+              {calculation.warnings.length === 0 ? (
+                <div className="text-emerald-300">Aucune anomalie détectée par le moteur sur cette offre.</div>
+              ) : (
+                <ul className="space-y-1 text-amber-200/90 list-disc pl-4 max-h-40 overflow-y-auto">
+                  {calculation.warnings.map((w, i) => <li key={i}>{w.message}</li>)}
+                </ul>
+              )}
+              <div className="text-[10px] text-slate-500 pt-1">Le moteur signale les conventions appliquées et les données douteuses ; il ne corrige jamais en silence.</div>
             </div>
           </div>
 
@@ -267,7 +298,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
           {/* LCC Cash Flows Trace */}
           <div className="p-5 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-              Flux d'Actualisation Pluriannuels LCC (WACC {(project.discountRate * 100).toFixed(1)}%)
+              Flux annuels et actualisation (taux {(project.discountRate * 100).toFixed(1)} %)
             </h3>
             <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs font-mono">
               {calculation.cashFlowsByYear.map((cf) => (
@@ -284,9 +315,9 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               ))}
             </div>
             <div className="text-[11px] text-slate-400 pt-2 flex justify-between">
-              <span>Formule du coût global actualisé : LCC = CAPEX_0 + Σ [ CF_t / (1 + r)^t ]</span>
+              <span>Formule : LCC = Σ(t=0..H) [ (Direct_t + Risque_t + Carbone_t) / (1 + r)^t ]</span>
               <span className="font-mono text-white font-bold">
-                Total LCC Actualisé (NPV) : {calculation.lifecycleCostLCC.toLocaleString('fr-FR')} €
+                Coût complet actualisé (direct + risques + carbone) : {calculation.lifecycleCostLCC.toLocaleString('fr-FR')} €
               </span>
             </div>
           </div>
@@ -302,13 +333,13 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               Formules du moteur de calcul (version actuelle)
             </h3>
             <div className="p-3.5 bg-amber-950/40 border border-amber-800/60 rounded-lg text-xs text-amber-100 space-y-1.5">
-              <div className="font-bold">Limites connues de cette version — à prendre en compte avant toute décision</div>
+              <div className="font-bold">Conventions et limites de la méthode — à connaître avant toute décision</div>
               <ul className="list-disc pl-5 space-y-1 text-amber-200/90">
-                <li>Le « LCC actualisé » n'inclut pas le carbone monétisé : celui-ci est ajouté au TCO nominal, non actualisé. Les deux totaux ne sont pas directement comparables.</li>
-                <li>Le point mort est calculé par division linéaire des totaux sur la durée d'analyse (sans actualisation) : il s'agit d'une estimation grossière, pas d'un croisement de flux cumulés.</li>
-                <li>Les coefficients de vieillissement (maintenance, pannes) et les paramètres des scénarios sont fixes dans le code, non paramétrables et non sourcés.</li>
-                <li>L'intervalle d'incertitude est un encadrement indicatif lié au score de qualité des données, et non un intervalle de confiance statistique.</li>
-                <li>Aucune de ces formules n'a fait l'objet d'une certification ou d'un audit externe.</li>
+                <li>Les coefficients de vieillissement (maintenance, pannes), le prix du carbone futur et les chocs des scénarios pessimiste/optimiste sont des <strong>conventions par défaut du modèle, non sourcées</strong> : visibles ci-dessous, modifiables par projet.</li>
+                <li>Les flux sont actualisés en fin d'année (t = 0 pour l'investissement initial) ; l'espérance de perte des risques est répartie uniformément sur l'horizon, sans corrélation entre risques.</li>
+                <li>Aucun rachat n'est modélisé automatiquement si la durée de vie est inférieure à l'horizon (un avertissement le signale : ajoutez un poste de remplacement daté).</li>
+                <li>La simulation de robustesse suppose des variables indépendantes et des plages fixées par convention : ce n'est pas un intervalle de confiance statistique.</li>
+                <li>Aucune de ces formules n'a fait l'objet d'une certification ou d'un audit externe. Spécification : <code>docs/METHODOLOGIE-TCO.md</code>.</li>
               </ul>
             </div>
             <p className="text-xs text-slate-400 leading-relaxed">
@@ -327,19 +358,19 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               </div>
 
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-1">
-                <div className="font-semibold text-white">2. Formule du Lifecycle Costing (LCC) Actualisé (NPV)</div>
+                <div className="font-semibold text-white">2. Coût complet actualisé (LCC)</div>
                 <div className="font-mono text-emerald-300 text-[11px]">
-                  LCC = CAPEX_0 + Σ(t=1..H) [ CashFlow_t / (1 + r)^t ]
+                  LCC = Σ(t=0..H) [ (Direct_t + Risque_t + Carbone_t) / (1 + r)^t ]
                 </div>
                 <div className="text-slate-400 text-[11px] pt-1">
-                  Où <em>r</em> est le coût moyen pondéré du capital (WACC d'entreprise, ex: 4.5%), garantissant une comparabilité en valeur actuelle nette.
+                  Où <em>r</em> est le taux d'actualisation du projet (par exemple le coût moyen pondéré du capital de votre entreprise : à documenter). t = 0 est l'investissement initial ; les autres flux sont pris en fin d'année.
                 </div>
               </div>
 
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-1">
                 <div className="font-semibold text-white">3. Monétisation des Externalités Carbone (Scopes 1, 2, 3)</div>
                 <div className="font-mono text-emerald-300 text-[11px]">
-                  Coût_Carbone = Émissions_Totales_(tCO2e) × Valeur_Tutélaire_(€/t)
+                  Coût_Carbone,t = Émissions_t (tCO2e) × Prix_carbone × (1 + croissance)^t
                 </div>
                 <div className="text-slate-400 text-[11px] pt-1">
                   Le prix du carbone (€/t) est une hypothèse saisie dans le projet ; la valeur proposée par défaut est indicative et doit être documentée par votre organisation. Les facteurs d'émission proviennent des données saisies pour chaque offre.
@@ -357,12 +388,12 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               </div>
 
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-1">
-                <div className="font-semibold text-white">5. Point Mort Économique (Break-Even Crossover)</div>
+                <div className="font-semibold text-white">5. Point mort économique</div>
                 <div className="font-mono text-emerald-300 text-[11px]">
-                  Mois_Point_Mort = Δ_Investissement_Initial / (Δ_Économies_Opérationnelles_Annuelles / 12)
+                  Point mort = premier t où Σ(k≤t) [Coût_candidate − Coût_référence]_k, actualisé, devient ≤ 0 (interpolé dans l'année)
                 </div>
                 <div className="text-slate-400 text-[11px] pt-1">
-                  Calcul précis du croisement des courbes d'amortissement cumulées.
+                  Croisement des coûts complets cumulés ; calculé sur base actualisée et sur base nominale, jamais extrapolé au-delà de l'horizon.
                 </div>
               </div>
             </div>
@@ -409,7 +440,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-1">
                 <div className="font-bold text-emerald-400 font-mono">TCOCalculationResult</div>
                 <div className="text-slate-300">
-                  Sortie du moteur : TCO standard, LCC actualisé, intervalle d'incertitude et cash flows.
+                  Sortie du moteur : TCO nominal, coût complet actualisé, fourchette de scénarios, flux annuels et avertissements de données.
                 </div>
                 <div className="text-[10px] text-slate-500">Prêt pour l'exportation et le reporting de direction</div>
               </div>

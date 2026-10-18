@@ -1,3 +1,4 @@
+import { DEFAULT_ASSUMPTIONS } from '../engine/tcoEngine';
 import React, { useState } from 'react';
 import { Project, ProjectStatus, HorizonYears, SupplierOffer } from '../types/domain';
 import {
@@ -61,6 +62,12 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   const [energyInflationRate, setEnergyInflationRate] = useState(project.energyInflationRate);
   const [inflationRate, setInflationRate] = useState(project.inflationRate);
   const [carbonPrice, setCarbonPrice] = useState(project.carbonPricePerTonne);
+  // Hypothèses de modélisation (affichées en %, stockées en fractions). Seules les valeurs modifiées ou déjà définies sont enregistrées.
+  const MA = project.modelAssumptions ?? {};
+  const [wearPct, setWearPct] = useState(String(Number(((MA.maintenanceWearRate ?? DEFAULT_ASSUMPTIONS.maintenanceWearRate) * 100).toFixed(2))));
+  const [agingPct, setAgingPct] = useState(String(Number(((MA.failureAgingRate ?? DEFAULT_ASSUMPTIONS.failureAgingRate) * 100).toFixed(2))));
+  const [agingStart, setAgingStart] = useState(String(MA.failureAgingStartYear ?? DEFAULT_ASSUMPTIONS.failureAgingStartYear));
+  const [carbonGrowthPct, setCarbonGrowthPct] = useState(String(Number(((MA.carbonPriceGrowthRate ?? DEFAULT_ASSUMPTIONS.carbonPriceGrowthRate) * 100).toFixed(2))));
   const [objective, setObjective] = useState(project.objective);
   const [status, setStatus] = useState<ProjectStatus>(project.status);
 
@@ -84,6 +91,17 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
       energyInflationRate: Number(energyInflationRate),
       inflationRate: Number(inflationRate),
       carbonPricePerTonne: Number(carbonPrice),
+      modelAssumptions: (() => {
+        const next: NonNullable<Project['modelAssumptions']> = { ...(project.modelAssumptions ?? {}) };
+        const set = <K extends keyof typeof DEFAULT_ASSUMPTIONS>(k: K, v: number) => {
+          if (Number.isFinite(v) && (next[k] !== undefined || v !== DEFAULT_ASSUMPTIONS[k])) next[k] = v;
+        };
+        set('maintenanceWearRate', Number(wearPct) / 100);
+        set('failureAgingRate', Number(agingPct) / 100);
+        set('failureAgingStartYear', Math.max(0, Math.round(Number(agingStart))));
+        set('carbonPriceGrowthRate', Number(carbonGrowthPct) / 100);
+        return next;
+      })(),
       objective: objective.trim(),
       status,
       updatedAt: new Date().toISOString(),
@@ -397,7 +415,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="block text-slate-400 mb-1">Prix Carbone Tutélaire (€/tCO2e)</label>
+                  <label className="block text-slate-400 mb-1">Prix du carbone (€/tCO2e)</label>
                   <div className="relative">
                     <input
                       type="number"
@@ -408,6 +426,22 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                     <span className="absolute right-3 top-2 text-slate-500 font-mono">€/t</span>
                   </div>
                 </div>
+
+                <div className="col-span-full pt-2 border-t border-slate-800 text-[11px] text-slate-400">
+                  <strong className="text-slate-200">Hypothèses du modèle</strong> — par défaut : conventions non sourcées, à remplacer par les vôtres (la mention « défaut » disparaît dès qu'une valeur est enregistrée).
+                </div>
+                {[
+                  { label: 'Vieillissement de la maintenance (%/an)', v: wearPct, set: setWearPct },
+                  { label: 'Vieillissement des pannes (%/an)', v: agingPct, set: setAgingPct },
+                  { label: 'Pannes : vieillissement après l\'année', v: agingStart, set: setAgingStart },
+                  { label: 'Évolution annuelle du prix du carbone (%/an)', v: carbonGrowthPct, set: setCarbonGrowthPct },
+                ].map((f) => (
+                  <div key={f.label}>
+                    <label className="block text-slate-400 mb-1">{f.label}</label>
+                    <input type="number" step="any" value={f.v} onChange={(e) => f.set(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white font-mono text-xs focus:outline-none focus:border-emerald-500" />
+                  </div>
+                ))}
               </div>
             </div>
           )}
