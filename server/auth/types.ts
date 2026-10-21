@@ -104,6 +104,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   org_admin: [
     ...READ_ONLY,
+    'ai:extract',
     'project:write',
     'project:delete',
     'project:lock',
@@ -122,6 +123,7 @@ export const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
   ],
   procurement: [
     ...READ_ONLY,
+    'ai:extract',
     'project:write',
     'offer:write',
     'supplier:write',

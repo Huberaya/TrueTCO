@@ -16,10 +16,16 @@ import express, { Express, Request, Response } from 'express';
 import { logger, recordRequest } from './observability';
 import { createApiRouter } from './api/router';
 import { Db } from './db/types';
+import type { IdentityVerifier } from './auth/idp';
+import type { AiExtractor } from './ai/extraction';
 import { errorHandler } from './http';
 
 export interface AppOptions {
   db: Db;
+  /** Fournisseur d'identité optionnel (voir server/auth/idp.ts). */
+  identityVerifier?: IdentityVerifier;
+  /** Fournisseur de modèle IA optionnel (voir server/ai/extraction.ts). */
+  aiExtractor?: AiExtractor;
   isProd: boolean;
   allowDemoAuth: boolean;
   allowedOrigins: string[];
@@ -219,6 +225,8 @@ export function createApp(options: AppOptions): Express {
 
   app.use('/api', createApiRouter({
     db: options.db,
+    identityVerifier: options.identityVerifier,
+    aiExtractor: options.aiExtractor,
     isProd: options.isProd,
     allowDemoAuth: options.allowDemoAuth,
     allowedOrigins: options.allowedOrigins,

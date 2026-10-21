@@ -72,11 +72,19 @@ import {
   updateImportMapping,
   uploadImport,
 } from '../services/imports';
+import { loginWithVerifiedIdentity, IdentityVerifier } from '../auth/idp';
+import { AiExtractor, AiOutputError, MAX_DOC_CHARS, extractFromDocument } from '../ai/extraction';
+import { recordAuditStandalone } from '../audit';
+import { logger } from '../observability';
 import { isPlainObject } from '../http';
 import { asyncHandler, badRequest, forbidden, notFound, parsePagination, requireCurrency, requireEmail, requireEnum, requireNumber, requireString, requireUuid, optionalString, optionalNumber, HttpError } from '../http';
 
 export interface ApiDependencies {
   db: Db;
+  /** Fournisseur de modèle IA. Absent : /ai/extract reste 501 (aucune donnée fictive n'est jamais produite). */
+  aiExtractor?: AiExtractor;
+  /** Vérificateur d'identité (Clerk…). Absent : la connexion réelle reste indisponible (501), comme avant. */
+  identityVerifier?: IdentityVerifier;
   isProd: boolean;
   /** Mode démonstration locale (jamais actif si isProd). */
   allowDemoAuth: boolean;
@@ -186,13 +194,15 @@ export function createApiRouter(deps: ApiDependencies): Router {
     '/auth/config',
     asyncHandler(async (_req, res) => {
       res.json({
-        federatedProviders: [],
+        federatedProviders: deps.identityVerifier ? [deps.identityVerifier.provider] : [],
         demoMode: Boolean(deps.allowDemoAuth),
+        // MFA / SCIM : non gérés par TrueTCO lui-même (le fournisseur d'identité peut imposer le MFA côté connexion).
         mfa: false,
         scim: false,
-        ssoFederation: false,
-        note:
-          "Aucun fournisseur d'identité fédéré n'est déployé sur cette instance. " +
+        ssoFederation: Boolean(deps.identityVerifier),
+        note: deps.identityVerifier
+          ? `Connexion déléguée au fournisseur d'identité « ${deps.identityVerifier.provider} » : le jeton est vérifié côté serveur, aucun compte n'est créé à la volée.`
+          : "Aucun fournisseur d'identité fédéré n'est déployé sur cette instance. " +
           (deps.allowDemoAuth
             ? "Le mode démonstration local est activé : session sans mot de passe et sans second facteur, réservée aux environnements de recette et de démonstration."
             : "Le mode démonstration local est désactivé : sans fournisseur d'identité configuré, aucune connexion n'est possible."),
@@ -241,6 +251,16 @@ export function createApiRouter(deps: ApiDependencies): Router {
   router.post(
     '/auth/sso/login',
     asyncHandler(async (req, res) => {
+      // Voie réelle : jeton du fournisseur d'identité dans `Authorization: Bearer …` (jamais dans le corps ni l'URL).
+      if (deps.identityVerifier) {
+        const m = /^Bearer\s+(\S+)$/i.exec(String(req.headers.authorization ?? ''));
+        if (!m) throw new HttpError(401, 'IDP_TOKEN_MISSING', "Jeton d'identité requis (en-tête Authorization: Bearer …).");
+        const slug = optionalString(req.body?.organizationSlug, 'organizationSlug', 60);
+        const issued = await loginWithVerifiedIdentity(db, deps.identityVerifier, { token: m[1], organizationSlug: slug ? slug.toLowerCase() : null }, requestMeta(req));
+        res.setHeader('Set-Cookie', serializeSessionCookie(issued.token, issued.expiresAt, isProd));
+        res.json({ ok: true, authMethod: `idp_${deps.identityVerifier.provider}`, isDemo: false, expiresAt: issued.expiresAt.toISOString() });
+        return;
+      }
       if (!deps.allowDemoAuth) {
         throw new HttpError(
           501,
@@ -929,15 +949,52 @@ export function createApiRouter(deps: ApiDependencies): Router {
     )
   );
 
+  // Extraction IA — LA PROPOSITION, PAS LA DÉCISION : le résultat n'est JAMAIS persisté ici. Chaque valeur cite le passage du
+  // document qui la porte, vérifié par le serveur (voir server/ai/extraction.ts) ; `requiresHumanValidation` est toujours vrai.
+  const aiHits = new Map<string, { count: number; resetAt: number }>();
   router.post(
     '/ai/extract',
     requireSession({ db }),
     requirePermission('ai:extract'),
-    notImplemented(
-      "L'extraction IA de documents",
-      "Aucun fournisseur de modèle n'est configuré et l'architecture de provenance (documentId/passage/modèle/confiance/validation humaine) n'est pas encore en place.",
-      'AI_EXTRACTION_NOT_IMPLEMENTED'
-    )
+    asyncHandler(async (req, res) => {
+      if (!deps.aiExtractor) {
+        throw new HttpError(501, 'AI_EXTRACTION_NOT_IMPLEMENTED',
+          "L'extraction IA n'est pas configurée sur cette instance (aucun fournisseur de modèle) : aucune donnée n'a été extraite. Saisir l'offre manuellement.");
+      }
+      const ctx = ctxOf(req);
+      // Quota par utilisateur : 30 analyses / heure (le coût d'un appel de modèle est réel).
+      const now = Date.now();
+      const hit = aiHits.get(ctx.user.id);
+      if (!hit || hit.resetAt <= now) aiHits.set(ctx.user.id, { count: 1, resetAt: now + 3_600_000 });
+      else if (++hit.count > 30) throw new HttpError(429, 'RATE_LIMITED', "Quota horaire d'analyses IA atteint.");
+
+      const body = isPlainObject(req.body) ? req.body : {};
+      const text = typeof body.text === 'string' ? body.text : '';
+      if (text.trim().length < 20) throw new HttpError(400, 'VALIDATION_ERROR', 'Le champ « text » (contenu du document) est requis.');
+      if (text.length > MAX_DOC_CHARS) throw new HttpError(400, 'VALIDATION_ERROR', `Document trop long (> ${MAX_DOC_CHARS} caractères) : refusé plutôt que tronqué silencieusement.`);
+      const filename = (optionalString(body.filename, 'filename', 255) ?? 'document').trim() || 'document';
+      const category = optionalString(body.category, 'category', 50) ?? 'devis_fournisseur';
+
+      let extraction;
+      try {
+        extraction = await extractFromDocument(deps.aiExtractor, { filename, category, text });
+      } catch (err) {
+        if (err instanceof AiOutputError) {
+          throw new HttpError(502, 'AI_INVALID_OUTPUT', "Le modèle a renvoyé une réponse inexploitable. Aucune donnée n'a été extraite.");
+        }
+        // Message du fournisseur journalisé tronqué et privé de toute clé d'API éventuelle ; jamais renvoyé au client.
+        logger.error('ai.provider_error', { correlationId: requestMeta(req).correlationId, error: String((err as Error)?.message ?? err).replace(/AIza[0-9A-Za-z_-]+/g, '[clé masquée]').slice(0, 200) });
+        throw new HttpError(502, 'AI_UNAVAILABLE', "Le service d'analyse IA est momentanément indisponible. Aucune donnée n'a été extraite.");
+      }
+
+      // Traçabilité de l'usage de l'IA dans la chaîne d'audit : qui, quand, quel document, quel modèle — SANS le contenu du document.
+      await recordAuditStandalone(db, ctx.organization.id, { id: ctx.user.id, name: ctx.user.fullName, role: ctx.user.role }, {
+        action: 'ai.extract', entityType: 'document', entityId: null,
+        newValue: JSON.stringify({ filename, provider: extraction.engine.provider, model: extraction.engine.model, costItems: extraction.costItems.length, validated: false }),
+        isDemo: ctx.session.isDemo, ...requestMeta(req),
+      });
+      res.json({ ok: true, extraction });
+    })
   );
 
   router.get(

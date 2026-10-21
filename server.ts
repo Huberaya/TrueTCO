@@ -14,6 +14,8 @@
  *   TRUETCO_METHODOLOGY_VERSION   version des conventions de calcul (2026.2 par défaut)
  */
 
+import { ClerkIdentityVerifier } from './server/auth/idp';
+import { GeminiExtractor } from './server/ai/extraction';
 import 'dotenv/config';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -71,8 +73,27 @@ async function main() {
       `rôle applicatif assumé : ${status.appRoleAssumed ? 'oui' : 'non'}.`
   );
 
+  // Connexion réelle (optionnelle) : activée uniquement si Clerk est configuré. Sinon : comportement inchangé (501).
+  const identityVerifier = process.env.CLERK_SECRET_KEY || process.env.CLERK_JWT_KEY
+    ? new ClerkIdentityVerifier({
+        secretKey: process.env.CLERK_SECRET_KEY,
+        jwtKey: process.env.CLERK_JWT_KEY,
+        authorizedParties: (process.env.CLERK_AUTHORIZED_PARTIES ?? '').split(',').map((x) => x.trim()).filter(Boolean),
+      })
+    : undefined;
+  if (isProd && identityVerifier && !process.env.CLERK_AUTHORIZED_PARTIES) {
+    throw new Error('CLERK_AUTHORIZED_PARTIES est obligatoire en production avec Clerk (origines autorisées à émettre des jetons).');
+  }
+
+  // Extraction IA (optionnelle) : sans clé, /ai/extract reste 501. Le nom du modèle est configurable : à vérifier chez Google.
+  const aiExtractor = process.env.GEMINI_API_KEY
+    ? new GeminiExtractor(process.env.GEMINI_API_KEY, process.env.GEMINI_MODEL ?? 'gemini-2.5-flash')
+    : undefined;
+
   const app = createApp({
     db,
+    identityVerifier,
+    aiExtractor,
     isProd,
     allowDemoAuth: !isProd && process.env.TRUETCO_ALLOW_DEMO_AUTH === 'true',
     allowedOrigins,
