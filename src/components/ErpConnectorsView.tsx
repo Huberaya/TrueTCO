@@ -47,7 +47,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
   const [selectedOfferId, setSelectedOfferId] = useState<string>(offers[0]?.id || '');
   const [selectedErpForAward, setSelectedErpForAward] = useState<string>('erp-sap-ariba');
   const [awardRationale, setAwardRationale] = useState<string>(
-    'Adjudication validée en Comité des Engagements : TCO le plus compétitif avec amortissement du surcoût initial atteint sous le seuil contractuel et conformité CSRD.'
+    'Décision à renseigner. Cette démonstration ne confirme aucune validation d’achat ou de conformité.'
   );
   const [isPushingAward, setIsPushingAward] = useState(false);
   const [lastAwardResult, setLastAwardResult] = useState<{ poReference: string; message: string } | null>(null);
@@ -88,8 +88,10 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
           'success',
           `[${connector.name}] ${res.offers.length} offre(s) importée(s) et rattachée(s) au projet "${project.name}".`
         );
+      } else if (!res.success) {
+        showNotification('error', `[${connector.name}] ${res.message}`);
       } else {
-        showNotification('info', `[${connector.name}] Aucune nouvelle offre en attente de synchronisation.`);
+        showNotification('info', `[${connector.name}] Aucune nouvelle offre confirmée.`);
       }
     } finally {
       setSyncingId(null);
@@ -114,6 +116,9 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
       if (res.success) {
         setLastAwardResult({ poReference: res.poReference, message: res.message });
         showNotification('success', res.message);
+      } else {
+        setLastAwardResult(null);
+        showNotification('error', res.message);
       }
     } finally {
       setIsPushingAward(false);
@@ -151,7 +156,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
 
   const totalInbound = connectors.reduce((acc, c) => acc + (c.inboundOffersCount || 0), 0);
   const totalOutbound = connectors.reduce((acc, c) => acc + (c.outboundAwardsCount || 0), 0);
-  const activeCount = connectors.filter((c) => c.status === 'connected' || c.status === 'idle').length;
+  const activeCount = connectors.filter((c) => c.status === 'connected').length;
 
   return (
     <div className="space-y-6">
@@ -163,16 +168,16 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
             Chantier 7 · Connecteurs ERP & e-Procurement d'Entreprise
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            Intégration Amont / Aval (SAP Ariba, Coupa, Ivalua, Jaggaer)
+            Connecteurs ERP — état non connecté
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Passerelle sécurisée mTLS / OAuth2 pour la réception automatisée des dossiers de consultation (Inbound) et l'émission directe des bons de commande PO après arbitrage TCO (Outbound).
+            Modèles d’intégration non configurés. Aucun ERP n’est actuellement relié.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <span className="px-3 py-1 bg-sky-950/80 border border-sky-800/80 text-sky-300 rounded-full text-xs font-mono font-medium">
-            Projet Actif : {project.reference}
+            Projet consulté : {project.reference}
           </span>
           <button
             onClick={() => {
@@ -217,44 +222,42 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1">
           <div className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold flex items-center justify-between">
-            <span>Passerelles Actives</span>
+            <span>Connexions vérifiées</span>
             <Radio className="w-3.5 h-3.5 text-emerald-400" />
           </div>
           <div className="text-2xl font-bold text-white font-mono">
             {activeCount} <span className="text-xs font-normal text-slate-500">/ {connectors.length} ERP</span>
           </div>
-          <div className="text-[10px] text-emerald-400 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" /> Connectivité TLS 1.3 certifiée
+          <div className="text-[10px] text-amber-400 flex items-center gap-1">
+            <AlertTriangle className="w-3 h-3" /> Aucun ERP connecté
           </div>
         </div>
 
         <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1">
           <div className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold flex items-center justify-between">
-            <span>Offres RFQ Inbound</span>
+            <span>Offres importées — confirmées</span>
             <ArrowDownLeft className="w-3.5 h-3.5 text-sky-400" />
           </div>
           <div className="text-2xl font-bold text-sky-400 font-mono">{totalInbound}</div>
-          <div className="text-[10px] text-slate-400">Propositions fournisseurs importées</div>
+          <div className="text-[10px] text-slate-400">Aucune importation confirmée</div>
         </div>
 
         <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1">
           <div className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold flex items-center justify-between">
-            <span>Bons PO Outbound</span>
+            <span>Bons de commande — confirmés</span>
             <ArrowUpRight className="w-3.5 h-3.5 text-indigo-400" />
           </div>
           <div className="text-2xl font-bold text-indigo-400 font-mono">{totalOutbound}</div>
-          <div className="text-[10px] text-slate-400">Adjudications poussées en ERP</div>
+          <div className="text-[10px] text-slate-400">Aucun bon de commande confirmé</div>
         </div>
 
         <div className="p-4 bg-slate-900/90 border border-slate-800 rounded-xl space-y-1">
           <div className="text-[11px] text-slate-400 uppercase tracking-wider font-semibold flex items-center justify-between">
-            <span>Latence Moyenne</span>
+            <span>Test de connexion</span>
             <Sliders className="w-3.5 h-3.5 text-emerald-400" />
           </div>
-          <div className="text-2xl font-bold text-emerald-400 font-mono">
-            310 <span className="text-xs font-normal text-slate-500">ms</span>
-          </div>
-          <div className="text-[10px] text-slate-400">Temps de réponse handshake API</div>
+          <div className="text-lg font-bold text-slate-300">Non mesurée</div>
+          <div className="text-[10px] text-slate-400">Aucun handshake confirmé</div>
         </div>
       </div>
 
@@ -269,7 +272,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
           }`}
         >
           <Network className="w-3.5 h-3.5" />
-          Connecteurs Configurés ({connectors.length})
+          Exemples de connecteurs ({connectors.length})
         </button>
 
         <button
@@ -293,7 +296,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
           }`}
         >
           <Send className="w-3.5 h-3.5" />
-          Émission Bon de Commande (Outbound PO)
+          Demande de transmission — indisponible
         </button>
 
         <button
@@ -305,7 +308,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
           }`}
         >
           <FileCode className="w-3.5 h-3.5" />
-          Architecture & Protocoles cXML / REST
+          État de configuration
         </button>
       </div>
 
@@ -369,8 +372,8 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
                       <span className="text-slate-300">{c.syncFrequency}</span>
                     </div>
                     <div className="flex items-center justify-between text-slate-400 pt-1 border-t border-slate-900">
-                      <span>Dernière synchro :</span>
-                      <span className="text-slate-400">{new Date(c.lastSyncTimestamp).toLocaleTimeString('fr-FR')}</span>
+                      <span>Connexion :</span>
+                      <span className="text-slate-400">Non vérifiée</span>
                     </div>
                   </div>
                 </div>
@@ -627,9 +630,9 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
               <div className="text-[11px] font-mono text-slate-300 space-y-1.5 p-3 bg-slate-900 rounded-lg border border-slate-800">
                 <div>Projet : <span className="text-white">{project.reference}</span></div>
                 <div>Offre retenue : <span className="text-sky-400">{offers.find((o) => o.id === selectedOfferId)?.supplierName || 'N/A'}</span></div>
-                <div>Montant engagé : <span className="text-emerald-400">{offers.find((o) => o.id === selectedOfferId)?.apparentTotal.toLocaleString('fr-FR')} € HT</span></div>
-                <div>Imputation comptable : <span className="text-indigo-400">CC-MOBILITE-604 (Capex Flotte)</span></div>
-                <div>Visas attachés : <span className="text-slate-400">Acheteur, RSE, Contrôle de gestion, DG</span></div>
+                <div>Montant de l’offre (non engagé) : <span className="text-emerald-400">{offers.find((o) => o.id === selectedOfferId)?.apparentTotal.toLocaleString('fr-FR')} € HT</span></div>
+                <div>Imputation comptable : <span className="text-indigo-400">Non configurée</span></div>
+                <div>Visas : <span className="text-slate-400">Aucun visa transmis</span></div>
               </div>
             </div>
           </div>
@@ -641,9 +644,9 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
         <div className="p-6 bg-slate-900/90 border border-slate-800 rounded-xl space-y-4 text-xs text-slate-300">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Architecture d'Intégration & Spécifications Techniques — Chantier 7
+              État de l’intégration ERP
             </h3>
-            <span className="text-sky-400 font-mono font-bold">Protocoles Standardisés</span>
+            <span className="text-sky-400 font-mono font-bold">Non configuré</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -653,7 +656,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
                 1. Intégration SAP Ariba (cXML 1.2)
               </div>
               <p className="text-slate-400 text-[11px]">
-                Support natif du protocole <strong>cXML QuoteMessage</strong> pour aspirer les bordereaux de prix sans ressaisie manuelle. En sortie, émission du <strong>OrderRequest</strong> pour création du bon de commande standard SAP MM.
+                Aucun accès SAP Ariba ni échange cXML n’est configuré ou testé dans cette application.
               </p>
             </div>
 
@@ -663,7 +666,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
                 2. Coupa BSM & Ivalua (API REST & Webhooks)
               </div>
               <p className="text-slate-400 text-[11px]">
-                Appels signés HMAC-SHA256 avec jeton <strong>OAuth2 Bearer</strong> rafraîchi toutes les 60 minutes. Mapping automatique des tables d'articles, imputations analytiques et centres de profits.
+                Aucun accès Coupa ou Ivalua, jeton OAuth2, webhook ou mapping externe n’est configuré.
               </p>
             </div>
 
@@ -673,7 +676,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
                 3. Sécurité mTLS & Chiffrement de Bout-en-Bout
               </div>
               <p className="text-slate-400 text-[11px]">
-                Échanges chiffrés en <strong>TLS 1.3</strong> avec filtrage d'adresses IP dédiées et certificats X.509 d'entreprise. Les clés d'API et secrets clients sont masqués au repos.
+                Les mécanismes mTLS, certificats clients et secrets d’intégration ne sont pas configurés ni validés.
               </p>
             </div>
 
@@ -683,7 +686,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
                 4. Piste d'Audit & Conformité Réversible
               </div>
               <p className="text-slate-400 text-[11px]">
-                Chaque transaction d'import/export est historisée dans le journal immuable du Chantier 5 avec horodatage UTC et identifiant de session de l'auditeur.
+                Aucune transaction externe n’a eu lieu. Aucun journal d’audit ERP immuable n’est disponible.
               </p>
             </div>
           </div>

@@ -67,7 +67,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
     }
 
     setIsParsing(true);
-    setStatusMessage('Extraction OCR & structuration par le modèle Gemini 3.8 Flash...');
+    setStatusMessage('Envoi non effectué tant que le service sécurisé de traitement documentaire n’est pas disponible...');
     setInjectedSuccess(false);
 
     try {
@@ -79,7 +79,8 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
       setParseResult(result);
       setStatusMessage(null);
     } catch (err: any) {
-      setStatusMessage(`Erreur lors de l’analyse : ${err?.message || 'Erreur inconnue'}`);
+      setParseResult(null);
+      setStatusMessage(`Analyse indisponible : ${err?.message || 'Aucune donnée extraite.'}`);
     } finally {
       setIsParsing(false);
     }
@@ -102,10 +103,10 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
             Chantier 8 · Parser IA & OCR Multimodal de Devis & Fiches FDES / EPD
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            Extraction Automatisée de Devis & Empreinte Carbone ACV
+            Prototype documentaire — analyse désactivée
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Numérisation assistée par IA (Gemini 3.8 Flash) : transforme les devis PDF, grilles tarifaires et déclarations environnementales en offres TCO auditables et normalisées en 1 clic.
+            Prototype de saisie documentaire. Le traitement externe est désactivé tant que les contrôles d’accès, de consentement et de protection des documents ne sont pas configurés.
           </p>
         </div>
 
@@ -148,7 +149,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
           {/* Sample Selectors */}
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
-              <span>Échantillons industriels prêts à tester :</span>
+              <span>Échantillons de démonstration (fictifs, non vérifiés) :</span>
               <span className="text-slate-500 text-[11px]">Cliquez sur un document pour le charger</span>
             </div>
 
@@ -264,7 +265,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                   className="w-full py-2.5 px-4 bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-lg shadow-purple-950/50"
                 >
                   <Sparkles className={`w-4 h-4 ${isParsing ? 'animate-spin' : ''}`} />
-                  {isParsing ? 'Extraction & Normalisation en cours...' : 'Lancer l’Extraction IA & Normaliser'}
+                  {isParsing ? 'Demande en cours...' : 'Demander une analyse (service indisponible)'}
                 </button>
 
                 {statusMessage && (
@@ -295,7 +296,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="px-2 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800 rounded text-[10px] font-mono font-bold">
-                          EXTRACTION RÉUSSIE
+                          DONNÉES À VÉRIFIER
                         </span>
                         <span className="text-xs text-slate-400 font-mono">
                           Réf. {parseResult.offerReference}
@@ -313,10 +314,10 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     <div className="text-right space-y-1">
                       <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-950/80 border border-purple-800/80 rounded-lg text-purple-300 font-mono text-xs font-bold">
                         <Sparkles className="w-3.5 h-3.5" />
-                        Confiance IA : {parseResult.confidenceScore}%
+                        Confiance estimée (non vérifiée) : {parseResult.confidenceScore}%
                       </div>
                       <div className="text-[10px] text-slate-500 font-mono">
-                        Normalisé ISO 15686-5
+                        Non vérifié — révision humaine requise
                       </div>
                     </div>
                   </div>
@@ -324,7 +325,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                   {/* Summary Callout */}
                   <div className="p-3 bg-purple-950/30 border border-purple-900/50 rounded-lg space-y-1.5 text-xs">
                     <div className="font-semibold text-purple-300 flex items-center gap-1.5">
-                      <Sparkles className="w-3.5 h-3.5" /> Synthèse d’Analyse Automatique
+                      <Sparkles className="w-3.5 h-3.5" /> Synthèse automatique — à vérifier
                     </div>
                     <p className="text-slate-300 text-[11px] leading-relaxed">
                       {parseResult.summaryAnalysis}
@@ -366,7 +367,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                       <div className="text-base font-bold text-indigo-400">
                         {parseResult.technicalSuitabilityScore} <span className="text-xs text-slate-500">/ 100</span>
                       </div>
-                      <div className="text-[10px] text-slate-500 font-sans">Score conformité</div>
+                      <div className="text-[10px] text-slate-500 font-sans">Évaluation technique non vérifiée</div>
                     </div>
                   </div>
 
@@ -417,7 +418,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     <div className="space-y-2">
                       <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
                         <span>Empreinte Carbone & Facteurs ACV ({parseResult.carbonItems.length})</span>
-                        <span className="text-[10px] text-emerald-400 font-mono">Conforme GHG Protocol / CSRD</span>
+                        <span className="text-[10px] text-emerald-400 font-mono">Donnée extraite — conformité non évaluée</span>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -444,7 +445,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     <div>
                       <div className="font-bold text-white text-xs flex items-center gap-1.5">
                         <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                        Offre prête pour l'analyse d'arbitrage TCO
+                        Données extraites — révision humaine requise
                       </div>
                       <div className="text-[11px] text-slate-300 mt-0.5">
                         Ajoutez cette proposition au projet <strong className="text-white">"{project.name}"</strong> pour lancer le calcul de coût complet et le comparateur.
@@ -455,7 +456,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                       {injectedSuccess ? (
                         <div className="flex items-center gap-2">
                           <span className="px-3 py-1.5 bg-emerald-950 text-emerald-300 border border-emerald-800 rounded-lg text-xs font-semibold flex items-center gap-1.5">
-                            <Check className="w-3.5 h-3.5" /> Offre Injectée avec Succès
+                            <Check className="w-3.5 h-3.5" /> Offre ajoutée localement
                           </span>
                           {onNavigateToComparator && (
                             <button
@@ -473,7 +474,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors shadow-lg shadow-emerald-950/40"
                         >
                           <Zap className="w-3.5 h-3.5" />
-                          <span>Injecter dans la Consultation TrueTCO</span>
+                          <span>Ajouter comme donnée non vérifiée</span>
                         </button>
                       )}
                     </div>
@@ -490,19 +491,19 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
         <div className="p-6 bg-slate-900/90 border border-slate-800 rounded-xl space-y-4 text-xs text-slate-300">
           <div className="flex items-center justify-between border-b border-slate-800 pb-3">
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
-              Méthodologie du Parser IA & Conformité Réglementaire — Chantier 8
+              État du traitement documentaire
             </h3>
-            <span className="text-purple-400 font-mono font-bold">Norme ISO 14025 / EN 15804</span>
+            <span className="text-purple-400 font-mono font-bold">Références réglementaires non vérifiées</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
             <div className="p-4 bg-slate-950 border border-slate-800 rounded-lg space-y-2">
               <div className="font-bold text-white flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-purple-400" />
-                1. Moteur Multimodal Google Gemini 3.8 Flash
+                1. Traitement externe désactivé
               </div>
               <p className="text-slate-400 text-[11px]">
-                Analyse structurelle et sémantique directe des devis et grilles de prix avec contraintes de schéma JSON strictes (JSON Schema Typed Output). Détection automatique des remises de fin d'année, des clauses de garantie et des indexations contractuelles.
+                Aucun document n’est transmis à un modèle externe. L’analyse reste désactivée tant que les protections d’accès et de données ne sont pas disponibles.
               </p>
             </div>
 
@@ -512,7 +513,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                 2. Décomposition ACV Modules A, B, C, D
               </div>
               <p className="text-slate-400 text-[11px]">
-                Pour les fiches FDES et déclarations EPD, le parser isole automatiquement la phase de fabrication (Scope 3 Amont, modules A1-A3), l'utilisation annuelle (Scope 2, modules B1-B7) et les bénéfices de fin de vie (crédit module D de circularité).
+                En production, aucun parseur FDES ou EPD n’est actif. Les exemples préchargés sont fictifs et ne constituent pas des sources de données.
               </p>
             </div>
 
@@ -522,7 +523,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                 3. Auditabilité & Refus de la Fausse Précision
               </div>
               <p className="text-slate-400 text-[11px]">
-                Chaque poste extrait se voit attribuer un indice de confiance (0-100%). Les montants avec incertitude sont identifiés pour permettre à l'acheteur de vérifier la ligne dans le modal "Pourquoi ce montant ?".
+                Aucun score de confiance n’est validé ni aucune conformité réglementaire vérifiée par le système.
               </p>
             </div>
 
@@ -532,7 +533,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                 4. Raccordement direct au Moteur TCO
               </div>
               <p className="text-slate-400 text-[11px]">
-                Aucun re-formatage nécessaire : l'offre extraite alimente directement le modèle mathématique pour calculer le LCC actualisé, la trajectoire carbone Quinet et le point mort économique.
+                Aucun raccordement automatique au moteur TCO n’est activé dans cette version.
               </p>
             </div>
           </div>

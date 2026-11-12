@@ -517,6 +517,6 @@ export interface CsrdExecutiveReport {
   scope3UpstreamAvoidedTCO2e: number;
 
   activities: TaxonomyActivityAlignment[];
-  auditorVerificationStatus: 'certifie_sans_reserve' | 'revue_en_cours' | 'conforme_csrd';
+  auditorVerificationStatus: 'certifie_sans_reserve' | 'revue_en_cours' | 'conforme_csrd' | 'donnees_insuffisantes';
   independentAuditorName: string; // e.g. 'PwC Audit & Sustainability / OTI Agréé'
 }
