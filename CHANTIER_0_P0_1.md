@@ -7,7 +7,9 @@
 - Branche de travail Arena : `arena/ea5046f1-truetco` (branche imposée par la session; aucune autre branche n’a été créée).
 - Branche de base : `main`.
 - SHA de base vérifié avant modifications : `edc44ceb6570f705f4edf591dfd95524838a1160` — identique à `origin/main`.
-- SHA de tête après commit et URL de PR : à compléter après publication.
+- SHA de tête publié : `19323a519bf626db62b386869039903a31d6d210` (sera actualisé si le présent compte-rendu reçoit un commit de suivi).
+- PR : [#1](https://github.com/Huberaya/TrueTCO/pull/1) — ouverte vers `main`, jamais fusionnée.
+- L’audit existant `AUDIT_TECHNIQUE_TRUE_TCO_P0_1.md` est conservé non suivi dans le workspace et n’est volontairement pas inclus dans cette PR.
 
 ## Changements
 
