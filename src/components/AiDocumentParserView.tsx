@@ -68,6 +68,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
 
     setIsParsing(true);
     setStatusMessage('Envoi non effectué tant que le service sécurisé de traitement documentaire n’est pas disponible...');
+    setParseResult(null);
     setInjectedSuccess(false);
 
     try {
@@ -213,7 +214,11 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                   <input
                     type="text"
                     value={filename}
-                    onChange={(e) => setFilename(e.target.value)}
+                    onChange={(e) => {
+                      setFilename(e.target.value);
+                      setParseResult(null);
+                      setInjectedSuccess(false);
+                    }}
                     className="w-full px-3 py-1.5 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-purple-500"
                   />
                 </div>
@@ -223,7 +228,11 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      onClick={() => setSelectedCategory('devis_fournisseur')}
+                      onClick={() => {
+                        setSelectedCategory('devis_fournisseur');
+                        setParseResult(null);
+                        setInjectedSuccess(false);
+                      }}
                       className={`py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-colors ${
                         selectedCategory === 'devis_fournisseur'
                           ? 'bg-purple-950 border-purple-500 text-purple-200'
@@ -234,7 +243,11 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     </button>
                     <button
                       type="button"
-                      onClick={() => setSelectedCategory('fiche_fdes_epd')}
+                      onClick={() => {
+                        setSelectedCategory('fiche_fdes_epd');
+                        setParseResult(null);
+                        setInjectedSuccess(false);
+                      }}
                       className={`py-1.5 px-2 rounded-lg text-xs font-medium border text-center transition-colors ${
                         selectedCategory === 'fiche_fdes_epd'
                           ? 'bg-purple-950 border-purple-500 text-purple-200'
@@ -253,7 +266,11 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                   <textarea
                     rows={12}
                     value={inputContent}
-                    onChange={(e) => setInputContent(e.target.value)}
+                    onChange={(e) => {
+                      setInputContent(e.target.value);
+                      setParseResult(null);
+                      setInjectedSuccess(false);
+                    }}
                     className="w-full p-3 bg-slate-950 border border-slate-800 rounded-lg text-[11px] font-mono text-slate-300 leading-relaxed focus:outline-none focus:border-purple-500 select-text"
                     placeholder="Collez ici le texte brut d’un devis ou d'une déclaration environnementale..."
                   />
