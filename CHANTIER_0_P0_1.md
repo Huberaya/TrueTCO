@@ -1,13 +1,13 @@
 # Chantier 0 — Réduction des faux résultats et des fausses garanties
 
-**État :** corrections ciblées publiées dans une PR ouverte; tests locaux ciblés passés. Les résultats Vercel ci-dessous sont ceux du SHA `c0c8319e88e8449415049b9a6b5b6640b3b87139`, avant ce suivi documentaire. Aucun workflow CI applicatif n’apparaît sur la PR. Ce chantier n’est pas déclaré terminé.
+**État :** corrections ciblées publiées dans une PR ouverte; tests locaux ciblés passés. Au SHA de code `01ad3a4ea0e27eb34f007eb361a87ea7dcddf81f`, les checks Vercel visibles via GitHub passent; aucun workflow CI applicatif n’apparaît sur la PR. Ce chantier n’est pas déclaré terminé.
 
 ## Identité de la modification
 
 - Branche de travail Arena : `arena/ea5046f1-truetco` (branche imposée par la session; aucune autre branche n’a été créée).
 - Branche de base : `main`.
 - SHA de base vérifié avant modifications : `edc44ceb6570f705f4edf591dfd95524838a1160` — identique à `origin/main`.
-- Commit de correction fonctionnelle : `19323a519bf626db62b386869039903a31d6d210`. Le commit suivant `c0c8319e88e8449415049b9a6b5b6640b3b87139` met à jour ce compte-rendu avec le résultat de revue hébergé; aucun code fonctionnel n’y est modifié.
+- Commits fonctionnels : `19323a519bf626db62b386869039903a31d6d210` (corrections P0) et `01ad3a4ea0e27eb34f007eb361a87ea7dcddf81f` (invalidation des résultats IA périmés après modification de la saisie).
 - PR : [#1](https://github.com/Huberaya/TrueTCO/pull/1) — ouverte vers `main`, jamais fusionnée.
 - L’audit existant `AUDIT_TECHNIQUE_TRUE_TCO_P0_1.md` est conservé non suivi dans le workspace et n’est volontairement pas inclus dans cette PR.
 
@@ -53,7 +53,7 @@
 ## Services et CI — limites constatées
 
 - Vercel : `list_teams` a répondu avec une liste vide. `list_projects` a échoué **Access denied**; aucun projet, déploiement, domaine ou paramètre non-secret n’a donc pu être inspecté. Aucune variable d’environnement/secrète n’a été lue.
-- GitHub : PR [#1](https://github.com/Huberaya/TrueTCO/pull/1) ouverte vers `main`. Sur la tête PR `c0c8319e88e8449415049b9a6b5b6640b3b87139`, `gh pr checks 1 --watch --interval 10` a rendu `Vercel pass` et `Vercel Preview Comments pass`; aucun check `CI` n’était présent sur cette PR. Le dernier run CI observable reste un échec antérieur sur une autre branche/SHA (`integration/arena-plus-chantiers`, `a2663a32d57333dce1b9afa492e4743b9d70ac18`, run `39680635232`), sans valeur de verdict sur cette modification. Les checks Vercel passent via GitHub, mais le connecteur Vercel n’a pas pu lister le projet/déploiement (accès refusé), donc aucun contrôle indépendant de l’aperçu n’a été fait.
+- GitHub : PR [#1](https://github.com/Huberaya/TrueTCO/pull/1) ouverte vers `main`. Sur le commit fonctionnel `01ad3a4ea0e27eb34f007eb361a87ea7dcddf81f`, `gh pr checks 1 --watch --interval 10` a rendu `Vercel pass` et `Vercel Preview Comments pass`; aucun check `CI` n’était présent sur cette PR. Le dernier run CI observable reste un échec antérieur sur une autre branche/SHA (`integration/arena-plus-chantiers`, `a2663a32d57333dce1b9afa492e4743b9d70ac18`, run `39680635232`), sans valeur de verdict sur cette modification. Les checks Vercel passent via GitHub, mais le connecteur Vercel n’a pas pu lister le projet/déploiement (accès refusé), donc aucun contrôle indépendant de l’aperçu n’a été fait.
 - Clerk et Neon n’ont pas été consultés. Aucun secret, aucune migration ni aucune opération de données n’a été exécuté.
 
 ## Critères encore bloquants
