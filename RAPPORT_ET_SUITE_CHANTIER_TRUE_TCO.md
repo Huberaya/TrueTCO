@@ -4,7 +4,7 @@
 **Dépôt :** `Huberaya/TrueTCO`
 **Branche :** `arena/ea5046f1-truetco` — PR ouverte (`pr_open`)
 **Base de branche :** `edc44ceb6570f705f4edf591dfd95524838a1160`
-**État :** changements locaux non commités et non déployés. Ce rapport n’est ni une certification ni une validation de production.
+**État :** le commit P0 `44e03d09ca300bb05f5c0c58404d3c0917f238e3` a été poussé sur la branche existante et ajouté à la PR #1 ouverte. La PR n’est pas fusionnée et aucun déploiement production n’a été lancé. Ce rapport n’est ni une certification ni une validation de production.
 
 ## 1. Résumé
 
@@ -67,8 +67,13 @@ Après installation propre (`npm ci`) :
 | `npm run typecheck` | Réussi |
 | `npm run lint` | Réussi — 62 fichiers contrôlés |
 | `npm test` | Réussi — 23 tests sur 23 |
+| Sonde HTTP du serveur local | Réussie — 112 combinaisons route/méthode, variantes et liveness |
 | `npm run build` | Réussi |
 | `npm audit --omit=dev --audit-level=high` | Réussi — 0 vulnérabilité trouvée dans le périmètre production audité |
+
+La CI GitHub Actions `43342522682` est verte sur le commit P0 `44e03d09ca300bb05f5c0c58404d3c0917f238e3` : installation `npm ci`, typecheck, lint, tests, audit production et build réussis. L’actualisation de ce rapport provoque une nouvelle exécution sur le nouveau SHA de tête; vérifier le dernier statut dans la PR avant toute clôture formelle.
+
+Le check Vercel sur le commit P0 a échoué avec une cible indiquant `build-rate-limit`/limite de build du compte. Il s’agit du preview Vercel, distinct du workflow qualité GitHub; aucune tentative de déploiement production n’a été faite.
 
 Avertissements de build : configuration Vite utilisant `__dirname` avec le chargeur natif; chunks volumineux (application autour de 823 kB et chunk ExcelJS autour de 929 kB minifiés, celui-ci étant chargé dynamiquement).
 
@@ -102,10 +107,11 @@ Ces trois documents sont des livrables techniques préparatoires; ils n’attest
 
 ## 4. État Git et déploiement
 
-- Branche de travail toujours `arena/ea5046f1-truetco`.
-- Changements non commités; pas de push effectué dans le cadre de ce point.
-- Aucun déploiement, changement de base distante, migration de production ou vérification d’environnement Vercel/Neon effectué.
-- Les documents d’audit préexistants décrivent le SHA de base et les constats à ce moment-là; ils ne sont pas une preuve que l’environnement actuel a été inspecté.
+- `main` observée : `edc44ceb6570f705f4edf591dfd95524838a1160`; base de la PR inchangée au moment de la vérification.
+- La branche locale et `origin/arena/ea5046f1-truetco` ont été synchronisées avec les cinq commits déjà présents dans la PR, puis le commit P0 `44e03d09ca300bb05f5c0c58404d3c0917f238e3` a été créé et poussé sans force-push. Les cinq commits antérieurs sont préservés.
+- PR #1 reste ouverte vers `main`; aucune fusion effectuée. La CI #43342522682 est verte sur le SHA P0. Après cette actualisation de rapport, il faut recontrôler la nouvelle tête et son workflow.
+- `AUDIT_TECHNIQUE_TRUE_TCO_P0_1.md` a été expressément laissé non suivi et n’a pas été ajouté au commit; il s’agit d’un document d’audit de travail préexistant au commit de livraison, non nécessaire à la PR. Les livrables de transfert demandés sont les fichiers `DOSSIER_CLERK.md`, `DOSSIER_NEON.md` et `P0_API_ROUTE_INVENTORY.md`.
+- Aucun déploiement de production, changement de base distante ou migration de production n’a été effectué. Le statut Vercel indique une limite de build sur le preview; l’état effectif Neon et production reste non vérifié.
 
 ## 5. Ce qui n’est pas fait — ne pas considérer comme terminé
 
