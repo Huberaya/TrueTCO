@@ -275,7 +275,7 @@ export const referenceBenchmarks = pgTable(
 
 /**
  * =========================================================================
- * 10. AUDIT LOGS (Journal d'Audit Immuable Légal / CAC)
+ * 10. AUDIT LOGS (événements applicatifs ; non immuables / non certifiés)
  * =========================================================================
  */
 export const auditLogs = pgTable(

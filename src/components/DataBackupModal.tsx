@@ -33,52 +33,52 @@ interface DataBackupModalProps {
 const SQL_TABLES_INFO = [
   {
     name: 'organizations',
-    role: 'Racine Multi-Tenant (SIRET, devises, isolation clients)',
+    role: 'Organisation de démonstration; aucune isolation n’est prouvée',
     fields: ['id UUID PK', 'name VARCHAR', 'legal_registration_number', 'default_currency', 'created_at', 'updated_at'],
   },
   {
     name: 'users',
-    role: 'Comptes utilisateurs & Contrôle d\'accès RBAC (Acheteur, DAF, RSE)',
+    role: 'Profils de démonstration; RBAC serveur non configuré',
     fields: ['id UUID PK', 'organization_id FK', 'email', 'full_name', 'role CHECK', 'is_active', 'created_at'],
   },
   {
     name: 'projects',
-    role: 'Consultations d\'achats (12 champs normés, horizon, WACC, inflation)',
+    role: 'Projets de démonstration; champs et hypothèses non validés',
     fields: ['id UUID PK', 'reference UNIQUE', 'name', 'budget_cap', 'planned_volume', 'horizon_years', 'discount_rate', 'status'],
   },
   {
     name: 'suppliers',
-    role: 'Référentiel fournisseurs (Incoterms, délais, MOQ, score ESG, pannes)',
+    role: 'Fournisseurs et scores déclaratifs; informations non vérifiées',
     fields: ['id UUID PK', 'name', 'country_code', 'incoterm', 'historical_defect_rate', 'warranty_months', 'data_quality_score'],
   },
   {
     name: 'supplier_offers',
-    role: 'Propositions candidates (Prix facial, LCC NPV, TCO global, carbone)',
+    role: 'Offres de démonstration; résultats TCO/LCC non validés',
     fields: ['id UUID PK', 'project_id FK', 'supplier_id FK', 'apparent_total', 'economic_tco_nominal', 'lifecycle_cost_lcc', 'total_comprehensive_tco'],
   },
   {
     name: 'cost_items',
-    role: 'Ventilation analytique TCO / CBS (15 postes décomposés)',
+    role: 'Postes de coûts déclarés; unités et provenance à vérifier',
     fields: ['id UUID PK', 'offer_id FK', 'category', 'label', 'amount', 'unit', 'source_name', 'source_type', 'confidence_level'],
   },
   {
     name: 'carbon_items',
-    role: 'Bilan d\'émissions ACV Scopes 1, 2, 3 (Monétisation Quinet)',
+    role: 'Émissions déclarées; périmètre et facteurs non vérifiés',
     fields: ['id UUID PK', 'offer_id FK', 'scope CHECK', 'lifecycle_phase', 'emissions_per_unit_tonne_co2e', 'total_lifecycle_emissions'],
   },
   {
     name: 'risk_items',
-    role: 'Événements de risques probabilisés P x I (ZFE, ruptures, pénalités)',
+    role: 'Hypothèses de risques de démonstration; non vérifiées',
     fields: ['id UUID PK', 'offer_id FK', 'description', 'probability NUMERIC', 'financial_impact NUMERIC', 'source_evidence'],
   },
   {
     name: 'reference_benchmarks',
-    role: 'Référentiel institutionnel des facteurs (ADEME, Quinet, WACC, CRE)',
+    role: 'Exemples de facteurs; sources et valeurs non vérifiées',
     fields: ['id UUID PK', 'name', 'category', 'source', 'value NUMERIC', 'unit', 'valid_until', 'confidence_score'],
   },
   {
     name: 'audit_logs',
-    role: 'Journal d\'audit immuable légal (Horodatage, auteur, justification CAC)',
+    role: 'Événements d\'audit applicatifs (non immuables ni certifiés)',
     fields: ['id UUID PK', 'organization_id FK', 'timestamp', 'user_name', 'user_role', 'entity_name', 'field_changed', 'old_value', 'new_value', 'justification'],
   },
 ];
@@ -106,7 +106,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
     StorageService.exportFullBackup(projects, offers, suppliers, benchmarks, auditLogs);
     setFeedback({
       type: 'success',
-      msg: 'Dossier complet exporté avec succès au format JSON auditable.',
+      msg: 'Export JSON téléchargé. L’intégrité et la valeur d’audit ne sont pas garanties.',
     });
   };
 
@@ -114,7 +114,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
     StorageService.downloadSqlMigrationDump(projects, offers, suppliers, benchmarks, auditLogs);
     setFeedback({
       type: 'success',
-      msg: 'Script SQL PostgreSQL généré et téléchargé (truetco_migration_postgresql.sql). Prêt pour injection dans votre SGBD.',
+      msg: 'Modèle SQL téléchargé. Non testé contre votre schéma : ne pas exécuter sans revue et adaptation.',
     });
   };
 
@@ -122,7 +122,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
     const payload = {
       version: '1.2.0',
       exportedAt: new Date().toISOString(),
-      organization: 'Acme Group Europe',
+      organization: 'Organisation de démonstration',
       projects,
       offers,
       suppliers,
@@ -134,8 +134,8 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
       setZodValidationReport({
         valid: true,
         messages: [
-          `Validation réussie : ${projects.length} projet(s), ${offers.length} offre(s), ${suppliers.length} fournisseur(s) et ${auditLogs.length} traces d'audit conformes.`,
-          'Toutes les contraintes financières (WACC, budget, CBS) et ESG sont certifiées pour la migration.',
+          `Structure JSON conforme au schéma : ${projects.length} projet(s), ${offers.length} offre(s), ${suppliers.length} fournisseur(s) et ${auditLogs.length} événement(s) d'application.`,
+          'Cette validation vérifie uniquement la structure, pas l’exactitude métier ni la conformité réglementaire.',
         ],
       });
     } else {
@@ -158,7 +158,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
         onRestoreData(payload);
         setFeedback({
           type: 'success',
-          msg: `Restauration réussie : ${payload.projects.length} projet(s), ${payload.offers.length} offre(s) et ${payload.auditLogs.length} traces d'audit chargées.`,
+          msg: `Import local réussi : ${payload.projects.length} projet(s), ${payload.offers.length} offre(s) et ${payload.auditLogs.length} événement(s) chargés dans le navigateur; aucune base distante n’a été modifiée.`,
         });
       } catch (err: any) {
         setFeedback({
@@ -180,14 +180,14 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
       onResetSeed();
       setFeedback({
         type: 'success',
-        msg: 'Données réinitialisées aux valeurs initiales certifiées.',
+        msg: 'Données réinitialisées aux exemples de démonstration non certifiés.',
       });
     }
   };
 
   const handleCopySqlPath = () => {
     navigator.clipboard.writeText(
-      'Fichiers DDL créés :\n- src/db/schema.ts (Drizzle ORM)\n- src/db/schema.sql (PostgreSQL DDL 10 tables)\n- src/db/seed.sql (Données de démarrage)\n- src/db/drizzle.config.ts'
+      'Fichiers de référence non vérifiés :\n- src/db/schema.ts (Drizzle ORM)\n- src/db/schema.sql (PostgreSQL DDL)\n- src/db/seed.sql (Données de démonstration)\n- src/db/drizzle.config.ts\nLes schémas et handlers ne sont pas garantis synchronisés.'
     );
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
@@ -235,7 +235,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             }`}
           >
             <FileCode2 className="w-3.5 h-3.5 text-sky-400" />
-            Schéma SQL & Drizzle ORM (10 Tables)
+            Schéma SQL & Drizzle — référence de démonstration
           </button>
 
           <button
@@ -274,7 +274,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
             {/* Card 1: Export */}
             <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between gap-3">
               <div>
-                <div className="font-semibold text-white">Exporter l'intégralité du portefeuille</div>
+                <div className="font-semibold text-white">Exporter les données locales affichées</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">
                   Télécharge un fichier JSON (.truetco) avec projets, offres, fournisseurs et journal d'audit.
                 </div>
@@ -317,7 +317,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               <div>
                 <div className="font-semibold text-rose-300">Réinitialiser aux valeurs de référence</div>
                 <div className="text-slate-400 text-[11px] mt-0.5">
-                  Rétablit les jeux d'essais initiaux certifiés (50 VUL électriques vs thermiques).
+                  Rétablit les exemples de démonstration (50 VUL électriques vs thermiques), non vérifiés.
                 </div>
               </div>
               <button
@@ -334,22 +334,19 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
         {/* TAB 2: SCHEMA & DRIZZLE ORM */}
         {activeTab === 'schema' && (
           <div className="space-y-3 text-xs max-h-[360px] overflow-y-auto pr-1">
-            {/* Neon Connection Status Banner */}
-            <div className="p-3 bg-emerald-950/40 border border-emerald-800/80 rounded-xl flex items-center justify-between">
+            {/* Local demo status; external database state is not probed here. */}
+            <div className="p-3 bg-amber-950/40 border border-amber-800/80 rounded-xl flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <span className="relative flex h-2.5 w-2.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                </span>
+                <span className="inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
                 <div>
-                  <div className="font-semibold text-emerald-300 text-xs">Instance Neon PostgreSQL Connectée & Migrée</div>
-                  <div className="text-[10px] text-slate-400 font-mono">
-                    ep-summer-mouse-b2kmuvkr · 10 tables actives & contraintes FK synchronisées
+                  <div className="font-semibold text-amber-300 text-xs">État de la base distante non vérifié</div>
+                  <div className="text-[10px] text-slate-400">
+                    Les données affichées peuvent provenir du stockage local de démonstration.
                   </div>
                 </div>
               </div>
-              <span className="text-[10px] px-2 py-0.5 bg-emerald-900/80 text-emerald-200 border border-emerald-700/60 rounded font-mono font-semibold">
-                NEON LIVE
+              <span className="text-[10px] px-2 py-0.5 bg-amber-900/80 text-amber-200 border border-amber-700/60 rounded font-mono font-semibold">
+                NON VÉRIFIÉ
               </span>
             </div>
 
@@ -416,7 +413,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                     Dump SQL de Migration PostgreSQL (DDL & DML)
                   </div>
                   <div className="text-slate-400 text-[11px] mt-0.5">
-                    Génère un script SQL exécutable contenant toutes les tables et données réelles actuelles (projets, offres, CBS, audit).
+                    Télécharge un export SQL indicatif des données locales; ce n’est pas une migration complète ou testée.
                   </div>
                 </div>
                 <button
@@ -429,7 +426,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
               </div>
 
               <div className="bg-slate-900/80 border border-slate-800 rounded-lg p-2.5 font-mono text-[11px] text-slate-300">
-                <span className="text-slate-500"># Commande d'injection directe sur votre serveur PostgreSQL :</span>
+                <span className="text-slate-500"># Exemple indicatif uniquement — ne pas exécuter sans revue :</span>
                 <div className="text-emerald-300 mt-1 select-all">
                   psql -h $SQL_HOST -U $SQL_USER -d $SQL_DB_NAME -f truetco_migration_postgresql.sql
                 </div>
@@ -442,10 +439,10 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                 <div>
                   <div className="font-semibold text-white flex items-center gap-1.5">
                     <ShieldCheck className="w-4 h-4 text-sky-400" />
-                    Contrôle d'Intégrité Zod Pré-Migration
+                    Validation de structure JSON (locale)
                   </div>
                   <div className="text-slate-400 text-[11px] mt-0.5">
-                    Vérifie la conformité de chaque champ financier (WACC, inflation, offres, risques) avant transfert en base de données.
+                    Vérifie uniquement la structure des données selon un schéma local; aucune exactitude financière, conformité ni migration n’est vérifiée.
                   </div>
                 </div>
                 <button
@@ -453,7 +450,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                   className="px-3 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg font-semibold flex items-center gap-1.5 shrink-0 transition-colors"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
-                  Tester la validité
+                  Vérifier la structure
                 </button>
               </div>
 
@@ -472,7 +469,7 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                       <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                     )}
                     {zodValidationReport.valid
-                      ? 'Toutes les données sont certifiées et conformes aux schémas DTO Zod.'
+                      ? 'Structure conforme au schéma DTO Zod ; contenu métier non vérifié.'
                       : 'Erreurs de validation détectées :'}
                   </div>
                   <ul className="list-disc list-inside space-y-0.5 text-slate-300">
@@ -486,15 +483,15 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
 
             {/* Architecture note */}
             <div className="p-3 bg-slate-950/60 border border-slate-800/60 rounded-xl text-[11px] text-slate-400 space-y-1">
-              <span className="font-semibold text-slate-300 block">Souveraineté des Données & Mode Hors-Ligne (PWA) :</span>
-              En l'absence de base cloud connectée, TrueTCO fonctionne à 100% en local sécurisé dans le navigateur avec réplication IndexedDB/LocalStorage et cache PWA Service Worker. Toutes les données peuvent être injectées ultérieurement sur votre infrastructure sans aucune perte.
+              <span className="font-semibold text-slate-300 block">Persistance locale de démonstration :</span>
+              Les données du navigateur ne sont ni chiffrées par cette interface ni répliquées de façon garantie. Exportez une sauvegarde et vérifiez-la avant toute migration.
             </div>
           </div>
         )}
 
         <div className="pt-3 border-t border-slate-800 flex justify-between items-center text-xs">
           <span className="text-slate-500 text-[11px]">
-            Conforme norme ISO 20400 & Piste d'audit fiable (Article L. 123-14 du Code de Commerce)
+            Démonstration non certifiée — aucune conformité ISO ou piste d’audit légale n’est garantie.
           </span>
           <button
             onClick={onClose}

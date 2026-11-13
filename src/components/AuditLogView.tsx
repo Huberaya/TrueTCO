@@ -3,17 +3,11 @@ import { AuditLogEntry, UserRole } from '../types/domain';
 import {
   History,
   User,
-  Clock,
-  CheckCircle2,
-  Download,
   Search,
-  Filter,
   FileSpreadsheet,
   Stamp,
-  FileText,
   AlertCircle,
   X,
-  Layers,
 } from 'lucide-react';
 
 interface AuditLogViewProps {
@@ -75,7 +69,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
       userId: 'local-unverified',
-      userName: visaAuthor.trim() || 'Auditeur Légal',
+      userName: visaAuthor.trim() || 'Utilisateur non vérifié',
       userRole: visaRole,
       entityName: 'Gouvernance & Conformité',
       fieldChanged: visaSubject.trim() || 'Déclaration utilisateur',

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Project, SupplierOffer } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
-import { CheckCircle2, TrendingUp, AlertTriangle } from 'lucide-react';
+import { CheckCircle2, } from 'lucide-react';
 
 interface ScenarioViewProps {
   project: Project;

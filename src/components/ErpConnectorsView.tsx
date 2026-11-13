@@ -15,7 +15,6 @@ import {
   Search,
   Check,
   Building2,
-  Copy,
 } from 'lucide-react';
 import { ErpConnector, ErpSyncLog, Project, SupplierOffer } from '../types/domain';
 import { ErpService } from '../services/erpService';
@@ -99,11 +98,12 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
   };
 
   const handlePushAward = async () => {
-    if (!selectedOfferId) {
-      showNotification('error', 'Veuillez sélectionner une offre à adjuger.');
-      return;
-    }
-    setIsPushingAward(true);
+		setLastAwardResult(null);
+		if (!selectedOfferId) {
+			showNotification('error', 'Veuillez sélectionner une offre à adjuger.');
+			return;
+		}
+		setIsPushingAward(true);
     try {
       const res = await ErpService.pushAwardDecision(
         selectedErpForAward,
@@ -131,17 +131,17 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
     const updated = ErpService.updateConnector(editingConnector.id, editingConnector);
     if (updated) {
       setConnectors(ErpService.getConnectors());
-      showNotification('success', `Connecteur "${updated.name}" mis à jour avec succès.`);
+      showNotification('info', `Paramètres locaux de « ${updated.name} » modifiés. Aucune connexion ERP réelle n’a été activée.`);
     }
     setEditingConnector(null);
   };
 
   const toggleConnectorStatus = (connector: ErpConnector) => {
-    const nextStatus = connector.status === 'disabled' ? 'connected' : 'disabled';
+    const nextStatus = connector.status === 'disabled' ? 'idle' : 'disabled';
     const updated = ErpService.updateConnector(connector.id, { status: nextStatus });
     if (updated) {
       setConnectors(ErpService.getConnectors());
-      showNotification('info', `Statut du connecteur ${connector.name} basculé vers : ${nextStatus}.`);
+      showNotification('info', `État local du connecteur ${connector.name} : ${nextStatus}. Aucune connexion réelle n’est activée.`);
     }
   };
 
@@ -470,7 +470,7 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
             </div>
 
             <span className="text-xs text-slate-400 font-mono">
-              {filteredLogs.length} transaction(s) auditée(s)
+              {filteredLogs.length} événement(s) affiché(s) — journal non certifié
             </span>
           </div>
 
@@ -560,7 +560,10 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
                 </label>
                 <select
                   value={selectedErpForAward}
-                  onChange={(e) => setSelectedErpForAward(e.target.value)}
+                  onChange={(e) => {
+                    setLastAwardResult(null);
+                    setSelectedErpForAward(e.target.value);
+                  }}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs font-medium focus:outline-none focus:border-sky-500"
                 >
                   {connectors
@@ -579,7 +582,10 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
                 </label>
                 <select
                   value={selectedOfferId}
-                  onChange={(e) => setSelectedOfferId(e.target.value)}
+                  onChange={(e) => {
+                    setLastAwardResult(null);
+                    setSelectedOfferId(e.target.value);
+                  }}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs font-medium focus:outline-none focus:border-sky-500"
                 >
                   {offers.map((o) => (
@@ -597,7 +603,10 @@ export const ErpConnectorsView: React.FC<ErpConnectorsViewProps> = ({
                 <textarea
                   rows={4}
                   value={awardRationale}
-                  onChange={(e) => setAwardRationale(e.target.value)}
+                  onChange={(e) => {
+                    setLastAwardResult(null);
+                    setAwardRationale(e.target.value);
+                  }}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs focus:outline-none focus:border-sky-500"
                 />
               </div>

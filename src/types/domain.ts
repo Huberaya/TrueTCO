@@ -101,10 +101,10 @@ export interface Supplier {
 }
 
 export type DataSourceType = 
-  | 'verifiee'          // 🟢 Donnée vérifiée (contrat, devis ferme, facture)
-  | 'estimee'           // 🟡 Donnée estimée (modèle d'ingénierie)
-  | 'utilisateur'       // 🟠 Fournie par acheteur/utilisateur
-  | 'source_externe'    // 🔵 Source externe certifiée (ADEME, Quinet, WEC, etc.)
+  | 'verifiee'          // Marquée comme vérifiée par la donnée; cette étiquette n'est pas contrôlée par l'application.
+  | 'estimee'           // Marquée comme estimation; provenance et méthode non nécessairement vérifiées.
+  | 'utilisateur'       // Saisie utilisateur; identité et justificatif non nécessairement vérifiés.
+  | 'source_externe'    // Libellé de source externe déclaré; source et valeur non nécessairement vérifiées.
   | 'donnee_sectorielle'// 🟣 Donnée de benchmark sectoriel
   | 'historique'        // 🏛️ Historique interne d'exploitation
   | 'estimation'        // 📊 Estimation probabiliste

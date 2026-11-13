@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Supplier } from '../types/domain';
-import { X, Building2, ShieldCheck, Award } from 'lucide-react';
+import { X, Building2, } from 'lucide-react';
 
 interface AddSupplierModalProps {
   isOpen: boolean;
@@ -27,8 +27,8 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
   const [warrantyMonths, setWarrantyMonths] = useState(36);
   const [historicalDefectRate, setHistoricalDefectRate] = useState(1.5);
   const [esgScore, setEsgScore] = useState(85);
-  const [certificationsText, setCertificationsText] = useState('ISO 9001, ISO 14001, EcoVadis Gold');
-  const [envDataText, setEnvDataText] = useState('Bilan Carbone certifié, Fiche ACV ISO 14044');
+  const [certificationsText, setCertificationsText] = useState('');
+  const [envDataText, setEnvDataText] = useState('');
 
   if (!isOpen) return null;
 
@@ -62,7 +62,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
       contactName: contactName.trim() || undefined,
       contactEmail: contactEmail.trim(),
       contactPhone: contactPhone.trim() || undefined,
-      certifications: certList.length ? certList : ['En cours d\'audit'],
+      certifications: certList,
       defaultIncoterm,
       currency,
       paymentTerms,
@@ -226,7 +226,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-slate-400 mb-1">Certifications reconnues (séparées par des virgules)</label>
+            <label className="block text-slate-400 mb-1">Certifications déclarées par le fournisseur — non vérifiées</label>
             <input
               type="text"
               value={certificationsText}
@@ -236,7 +236,7 @@ export const AddSupplierModal: React.FC<AddSupplierModalProps> = ({
           </div>
 
           <div>
-            <label className="block text-slate-400 mb-1">Données environnementales vérifiées (séparées par des virgules)</label>
+            <label className="block text-slate-400 mb-1">Données environnementales déclarées — non vérifiées</label>
             <input
               type="text"
               value={envDataText}

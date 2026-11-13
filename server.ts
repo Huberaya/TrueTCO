@@ -6,6 +6,8 @@ import { neon } from '@neondatabase/serverless';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createDisabledIntegrationRouter } from './src/server/safetyRoutes';
+import { createFailClosedApiGate } from './src/server/apiGate';
 
 dotenv.config();
 
@@ -20,6 +22,9 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
+
+// Fail closed until real identity, RBAC and tenant isolation are in place.
+app.use('/api', createFailClosedApiGate());
 
 // Initialize Neon SQL client
 const dbUrl = process.env.DATABASE_URL;
@@ -153,7 +158,7 @@ app.post('/api/tenants', async (req: Request, res: Response) => {
       INSERT INTO organizations (
         id, name, slug, domain, subscription_tier, data_residency, country_code, default_currency, legal_registration_number, is_active
       ) VALUES (
-        ${id}, ${name}, ${slug}, ${domain || slug + '.com'}, ${subscriptionTier}, 'EU-FRANCE-PARIS (SecNumCloud)', ${countryCode}, ${defaultCurrency}, ${legalRegistrationNumber || null}, true
+        ${id}, ${name}, ${slug}, ${domain || slug + '.invalid'}, ${subscriptionTier}, 'Non vérifiée', ${countryCode}, ${defaultCurrency}, ${legalRegistrationNumber || null}, true
       )
       RETURNING *;
     `;
@@ -164,18 +169,9 @@ app.post('/api/tenants', async (req: Request, res: Response) => {
   }
 });
 
-// 1. Healthcheck & DB status
-app.get('/api/health', async (_req: Request, res: Response) => {
-  if (!sql) {
-    return res.json({ status: 'ok', neon: false, message: 'DATABASE_URL not configured' });
-  }
-  try {
-    const result = await sql`SELECT NOW(), current_database(), current_user`;
-    return res.json({ status: 'ok', neon: true, details: result[0] });
-  } catch (err: any) {
-    console.error('Neon healthcheck error:', err);
-    return res.status(500).json({ status: 'error', error: err.message });
-  }
+// Liveness only: do not expose database identity, connectivity or SQL errors.
+app.get('/api/health', (_req: Request, res: Response) => {
+  return res.json({ status: 'ok' });
 });
 
 // 2. Clerk User Synchronization -> Neon `users` table
@@ -219,109 +215,12 @@ app.post('/api/users/sync', async (req: Request, res: Response) => {
 
 // 2b. Enterprise SSO Authentication Endpoints
 
-// Login or Initiate Enterprise SSO session
-app.post('/api/auth/sso/login', async (req: Request, res: Response) => {
-  if (!sql) return res.status(503).json({ error: 'Neon database not connected' });
-
-  const { email, ssoProvider = 'azure_ad', fullName, role, department } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email professionnel requis' });
-  }
-
-  // Smart tenant resolution: explicit body, header, or email domain detection
-  let orgId = req.body.organizationId || (req.headers['x-tenant-id'] as string);
-  if (!orgId || !isUuid(orgId)) {
-    const domainPart = email.split('@')[1]?.toLowerCase();
-    if (domainPart) {
-      try {
-        const found = await sql`SELECT id FROM organizations WHERE domain = ${domainPart} OR slug = ${domainPart.split('.')[0]} LIMIT 1`;
-        if (found && found.length > 0) orgId = found[0].id;
-      } catch {}
-    }
-  }
-  if (!orgId) {
-    orgId = await resolveTenantId(req);
-  }
-
-  const userName = fullName || email.split('@')[0].replace('.', ' ');
-  const userRole = role || 'acheteur';
-  const userDept = department || 'Direction des Achats';
-
-  try {
-    // Upsert user in Neon users table
-    const rows = await sql`
-      INSERT INTO users (organization_id, email, full_name, role, sso_provider, department, is_active, last_login_at)
-      VALUES (${orgId}, ${email.toLowerCase().trim()}, ${userName}, ${userRole}, ${ssoProvider}, ${userDept}, true, CURRENT_TIMESTAMP)
-      ON CONFLICT (organization_id, email)
-      DO UPDATE SET
-        full_name = COALESCE(EXCLUDED.full_name, users.full_name),
-        sso_provider = EXCLUDED.sso_provider,
-        department = COALESCE(EXCLUDED.department, users.department),
-        is_active = true,
-        last_login_at = CURRENT_TIMESTAMP,
-        updated_at = CURRENT_TIMESTAMP
-      RETURNING id, organization_id, email, full_name, role, sso_provider, department, is_active, created_at, last_login_at;
-    `;
-
-    const user = rows[0];
-
-    // Fetch organization info for tenant context
-    const orgInfo = await sql`SELECT name, slug, data_residency as "dataResidency" FROM organizations WHERE id = ${orgId} LIMIT 1`;
-    const org = orgInfo[0] || { name: 'Entreprise Partenaire', slug: 'enterprise', dataResidency: 'EU-FRANCE-PARIS' };
-
-    // Generate cryptographic session token
-    const token = 'sso_' + crypto.randomBytes(32).toString('hex');
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(); // 24h session
-
-    // Save session in user_sessions table
-    await sql`
-      INSERT INTO user_sessions (organization_id, user_id, token, sso_provider, expires_at)
-      VALUES (${orgId}, ${user.id}, ${token}, ${ssoProvider}, ${expiresAt});
-    `;
-
-    // Log the enterprise authentication in audit_logs
-    try {
-      await sql`
-        INSERT INTO audit_logs (organization_id, user_id, user_name, user_role, entity_name, field_changed, old_value, new_value, justification)
-        VALUES (
-          ${orgId},
-          ${user.id},
-          ${user.full_name},
-          ${user.role},
-          'Contrôle d Accès & Sécurité',
-          'Connexion SSO Entreprise',
-          'Non authentifié',
-          ${'Session active (' + ssoProvider.toUpperCase() + ') - Tenant: ' + org.name},
-          ${'Authentification SSO d entreprise certifiée via ' + ssoProvider + ' pour le compte ' + email + ' (Workspace: ' + org.name + ')'}
-        );
-      `;
-    } catch (auditErr) {
-      console.warn('Could not log SSO auth to audit_logs:', auditErr);
-    }
-
-    return res.json({
-      success: true,
-      token,
-      expiresAt,
-      organizationId: orgId,
-      organizationName: org.name,
-      organizationSlug: org.slug,
-      dataResidency: org.dataResidency,
-      user: {
-        id: user.id,
-        organizationId: orgId,
-        email: user.email,
-        fullName: user.full_name,
-        role: user.role,
-        ssoProvider: user.sso_provider,
-        department: user.department,
-        lastLoginAt: user.last_login_at,
-      },
-    });
-  } catch (err: any) {
-    console.error('SSO login error:', err);
-    return res.status(500).json({ error: err.message });
-  }
+// SSO is intentionally unavailable until a real identity provider is integrated.
+app.post('/api/auth/sso/login', (_req: Request, res: Response) => {
+  return res.status(503).json({
+    success: false,
+    error: 'Connexion indisponible : aucun fournisseur d’identité réel n’est configuré.',
+  });
 });
 
 // Get current authenticated user profile
@@ -718,26 +617,8 @@ app.post('/api/benchmarks', async (req: Request, res: Response) => {
   }
 });
 
-// =============================================================================
-// CHANTIER 7 : CONNECTEURS ERP & e-PROCUREMENT API
-// =============================================================================
-const unavailableIntegration = (integration: string) => (_req: Request, res: Response) =>
-  res.status(503).json({
-    success: false,
-    error: `${integration} non configuré : aucun service réel n'est relié. Aucune opération n'a été exécutée.`,
-    message: `${integration} non configuré. Aucune opération n'a été exécutée.`,
-  });
-
-app.post('/api/erp/connectors/:id/test', unavailableIntegration('Test ERP'));
-app.post('/api/erp/connectors/:id/sync-inbound', unavailableIntegration('Import ERP'));
-app.post('/api/erp/connectors/:id/push-award', unavailableIntegration('Transmission ERP'));
-app.post('/api/ai/parse-document', (_req: Request, res: Response) =>
-  res.status(503).json({
-    success: false,
-    error: 'Analyse documentaire désactivée : authentification, consentement explicite et protections de traitement externe ne sont pas configurés. Le document n’a pas été transmis.',
-    message: 'Analyse documentaire désactivée. Le document n’a pas été transmis.',
-  })
-);
+// P0: operations remain disabled until real, authenticated integrations exist.
+app.use(createDisabledIntegrationRouter());
 
 // -----------------------------------------------------------------------------
 // Vite Middleware / Static Serving
@@ -764,7 +645,7 @@ async function startServer() {
 
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`✓ TrueTCO Full-Stack Server running on port ${PORT}`);
-    console.log(`✓ Neon DB Integration: ${sql ? 'Active' : 'Missing DATABASE_URL'}`);
+    console.log(`Database configuration present: ${Boolean(sql)}; business API routes remain disabled pending verified auth.`);
   });
 }
 

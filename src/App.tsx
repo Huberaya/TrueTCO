@@ -3,7 +3,7 @@
  * Application SaaS B2B d'Aide à la Décision Achats
  */
 
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import {
   SEED_PROJECTS,
   SEED_OFFERS,
@@ -107,7 +107,7 @@ export default function App() {
     });
   }, []);
 
-  // Hermetic Multi-Tenancy: Reload tenant-scoped projects, suppliers, and audit logs on tenant switch
+  // Demo behavior only: the API is disabled and tenant changes do not establish server isolation.
   useEffect(() => {
     let isMounted = true;
 
@@ -187,8 +187,8 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'u-acheteur',
-      userName: user?.fullName || 'Sophie Valéry',
+      userId: user?.id || 'local-unverified',
+      userName: user?.fullName || 'Utilisateur non vérifié',
       userRole: activeRole,
       projectId: newProject.id,
       entityName: 'Projet d\'Achat',
@@ -211,8 +211,8 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'u-acheteur',
-      userName: user?.fullName || 'Sophie Valéry',
+      userId: user?.id || 'local-unverified',
+      userName: user?.fullName || 'Utilisateur non vérifié',
       userRole: activeRole,
       projectId: currentProject.id,
       offerId: newOffer.id,
@@ -253,8 +253,8 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'u-acheteur',
-      userName: user?.fullName || 'Sophie Valéry',
+      userId: user?.id || 'local-unverified',
+      userName: user?.fullName || 'Utilisateur non vérifié',
       userRole: activeRole,
       entityName: `Fournisseur ${newSupplier.name}`,
       fieldChanged: 'Référencement & Qualification Tiers',
@@ -281,15 +281,15 @@ export default function App() {
       const log: AuditLogEntry = {
         id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`,
         timestamp: new Date().toISOString(),
-        userId: 'u-rse',
-        userName: 'Éléonore Chen',
+        userId: 'local-unverified',
+        userName: 'Utilisateur non vérifié',
         userRole: activeRole,
         projectId: currentProject.id,
         entityName: updated.name,
         fieldChanged: 'Valeur de référence pivot',
         oldValue: `${old.value} ${old.unit}`,
         newValue: `${updated.value} ${updated.unit}`,
-        justification: justification || 'Mise à jour périodique du référentiel institutionnel.',
+        justification: justification || 'Note locale; source et validation non vérifiées.',
       };
       setAuditLogs((prev) => [log, ...prev]);
       NeonService.saveAuditLog(log);
@@ -303,14 +303,14 @@ export default function App() {
     const log: AuditLogEntry = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`,
       timestamp: new Date().toISOString(),
-      userId: 'u-rse',
-      userName: 'Éléonore Chen',
+      userId: 'local-unverified',
+      userName: 'Utilisateur non vérifié',
       userRole: activeRole,
       entityName: newBench.name,
       fieldChanged: 'Création facteur référentiel',
       oldValue: 'N/A',
       newValue: `${newBench.value} ${newBench.unit}`,
-      justification: `Intégration d'un nouveau facteur institutionnel (${newBench.source}).`,
+      justification: `Note locale sur le facteur (${newBench.source}); source non vérifiée.`,
     };
     setAuditLogs((prev) => [log, ...prev]);
     NeonService.saveAuditLog(log);
@@ -362,7 +362,7 @@ export default function App() {
         <Sidebar
           currentView={currentView}
           onNavigate={setCurrentView}
-          pendingApprovalsCount={1}
+          pendingApprovalsCount={0}
         />
 
         {/* Main Content Area */}

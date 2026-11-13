@@ -1,20 +1,19 @@
-import * as XLSX from 'xlsx';
 import { Project, SupplierOffer, Supplier, AuditLogEntry, ExternalityReferenceBenchmark } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
 
 export class ExcelExportService {
   /**
-   * Generates and downloads a multi-tab financial workbook (XLSX)
-   * designed for Financial Controllers (DAF) and Statutory Auditors (CAC).
+   * Downloads a local, indicative XLSX export; it is not audited evidence or a decision record.
    */
-  public static exportFinancialWorkbook(
+  public static async exportFinancialWorkbook(
     project: Project,
     offers: SupplierOffer[],
     suppliers: Supplier[],
     auditLogs: AuditLogEntry[],
     benchmarks: ExternalityReferenceBenchmark[]
-  ): void {
-    const workbook = XLSX.utils.book_new();
+  ): Promise<void> {
+    const { default: ExcelJS } = await import('exceljs');
+    const workbook = new ExcelJS.Workbook();
 
     // 1. Calculate detailed TCO for all offers in this project
     const calculated = offers.map((offer) => {
@@ -29,8 +28,8 @@ export class ExcelExportService {
     // TAB 1: SYNTHÈSE & DÉCISION FINANCIÈRE
     // ==========================================
     const tab1Data: any[][] = [
-      ['TRUETCO - RAPPORT FINANCIER D\'ARBITRAGE ÉCONOMIQUE & COÛT COMPLET (LCC)'],
-      ['Document officiel certifié pour Comité d\'Investissement & Contrôle de Gestion'],
+      ['TRUETCO — EXPORT INDICATIF TCO / LCC (NON VÉRIFIÉ)'],
+      ['Simulation financière indicative — non certifiée'],
       [''],
       ['1. PARAMÈTRES GÉNÉRAUX DE LA CONSULTATION'],
       ['Nom du Projet', project.name],
@@ -56,7 +55,7 @@ export class ExcelExportService {
         'Monétisation Carbone Quinet',
         'Exposition Risques & Pannes',
         'TCO GLOBAL COMPLET',
-        'Qualité Données (%)',
+        'Score déclaré — non vérifié',
         'Écart vs Offre Conventionnelle',
       ],
     ];
@@ -81,8 +80,8 @@ export class ExcelExportService {
       ]);
     });
 
-    const ws1 = XLSX.utils.aoa_to_sheet(tab1Data);
-    XLSX.utils.book_append_sheet(workbook, ws1, 'Synthèse Décision');
+    const ws1 = workbook.addWorksheet('Synthèse Décision');
+    ws1.addRows(tab1Data);
 
     // ==========================================
     // TAB 2 : ÉCHÉANCIER CASH-FLOWS ACTUALISÉS (LCC)
@@ -134,8 +133,8 @@ export class ExcelExportService {
       tab2Data.push(['']);
     });
 
-    const ws2 = XLSX.utils.aoa_to_sheet(tab2Data);
-    XLSX.utils.book_append_sheet(workbook, ws2, 'CashFlows LCC (WACC)');
+    const ws2 = workbook.addWorksheet('CashFlows LCC (WACC)');
+    ws2.addRows(tab2Data);
 
     // ==========================================
     // TAB 3 : DÉCOMPOSITION DÉTAILLÉE DU TCO (CBS)
@@ -171,8 +170,8 @@ export class ExcelExportService {
       });
     });
 
-    const ws3 = XLSX.utils.aoa_to_sheet(tab3Data);
-    XLSX.utils.book_append_sheet(workbook, ws3, 'Décomposition TCO (CBS)');
+    const ws3 = workbook.addWorksheet('Décomposition TCO (CBS)');
+    ws3.addRows(tab3Data);
 
     // ==========================================
     // TAB 4 : BILAN CARBONE & VALEUR TUTÉLAIRE
@@ -202,7 +201,7 @@ export class ExcelExportService {
           c.emissionsPerUnitTonneCO2e?.value ?? (c.emissionsTCO2e?.value ? c.emissionsTCO2e.value / (offer.quantity || 1) : 0),
           c.totalLifecycleEmissions,
           monetized,
-          c.emissionFactorSource || 'Base Carbone ADEME',
+          c.emissionFactorSource || 'Source non renseignée',
         ]);
       });
 
@@ -218,26 +217,26 @@ export class ExcelExportService {
       tab4Data.push(['']);
     });
 
-    const ws4 = XLSX.utils.aoa_to_sheet(tab4Data);
-    XLSX.utils.book_append_sheet(workbook, ws4, 'Carbone & Externalités');
+    const ws4 = workbook.addWorksheet('Carbone & Externalités');
+    ws4.addRows(tab4Data);
 
     // ==========================================
-    // TAB 5 : REGISTRE D'AUDIT IMMUABLE (CAC)
+    // TAB 5 : ÉVÉNEMENTS D'AUDIT (NON CERTIFIÉS)
     // ==========================================
     const tab5Data: any[][] = [
-      ['JOURNAL D\'AUDIT LÉGAL & TRAÇABILITÉ DES HYPOTHÈSES (SECTION 26)'],
-      ['Piste d\'audit fiable certifiée pour Commissaires aux Comptes & Contrôle Interne'],
+      ['ÉVÉNEMENTS D\'APPLICATION — EXPORT NON CERTIFIÉ'],
+      ['Export informatif : intégrité, identité, horodatage et conservation non garantis.'],
       [''],
       [
         'ID Audit',
-        'Horodatage Certifié',
+        'Horodatage (non certifié)',
         'Auteur de la Modification',
         'Rôle / Profil Système',
         'Élément Révisé',
         'Champ Modifié',
         'Ancienne Valeur',
         'Nouvelle Valeur',
-        'Justification Formelle Auditée',
+        'Justification saisie (non vérifiée)',
       ],
     ];
 
@@ -255,27 +254,28 @@ export class ExcelExportService {
       ]);
     });
 
-    const ws5 = XLSX.utils.aoa_to_sheet(tab5Data);
-    XLSX.utils.book_append_sheet(workbook, ws5, 'Journal d\'Audit CAC');
+    const ws5 = workbook.addWorksheet('Événements d\'audit');
+    ws5.addRows(tab5Data);
 
-    // Auto-size columns for readability across all sheets
+    // Fixed widths keep exports readable without presenting them as audited evidence.
     [ws1, ws2, ws3, ws4, ws5].forEach((sheet) => {
-      sheet['!cols'] = [
-        { wch: 25 },
-        { wch: 30 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 25 },
-        { wch: 35 },
-      ];
+      for (let index = 1; index <= 9; index += 1) {
+        sheet.getColumn(index).width = index === 9 ? 35 : index === 2 ? 30 : 25;
+      }
     });
 
     // Write and trigger download
     const cleanProjectRef = project.reference.replace(/[^a-zA-Z0-9-_]/g, '_');
     const fileName = `TrueTCO_Modele_Financier_${cleanProjectRef}_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(workbook, fileName);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer as BlobPart], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.click();
+    URL.revokeObjectURL(objectUrl);
   }
 }

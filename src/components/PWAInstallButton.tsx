@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { usePWAInstall } from '../hooks/usePWAInstall';
-import { Download, Smartphone, X, CheckCircle2, ShieldCheck, WifiOff } from 'lucide-react';
+import { Download, Smartphone, X, ShieldCheck, } from 'lucide-react';
 
 export const PWAInstallButton: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
@@ -24,7 +24,7 @@ export const PWAInstallButton: React.FC = () => {
       <button
         onClick={handleAction}
         className="flex items-center gap-1.5 px-2.5 py-1.5 bg-emerald-950/70 hover:bg-emerald-900/80 border border-emerald-700/60 text-emerald-300 hover:text-white rounded-lg text-xs font-semibold transition-all shadow-sm group"
-        title="Installer TrueTCO sur votre poste ou smartphone pour un fonctionnement 100% hors-ligne"
+        title="Installer TrueTCO comme application web progressive (PWA)"
       >
         <Download className="w-3.5 h-3.5 text-emerald-400 group-hover:translate-y-0.5 transition-transform" />
         <span className="hidden sm:inline">Installer l'App</span>
@@ -49,19 +49,19 @@ export const PWAInstallButton: React.FC = () => {
 
             <div className="space-y-3">
               <p className="text-slate-300 leading-relaxed">
-                TrueTCO est certifiée <strong>PWA (Progressive Web App)</strong> avec mise en cache Workbox et Service Worker. Vous pouvez l'utiliser directement comme une application de bureau ou mobile native, <strong>même en déplacement sans aucune connexion Internet</strong>.
+                Cette application propose une installation PWA et un cache local limité. La disponibilité hors ligne, la synchronisation et la protection des données ne sont pas garanties.
               </p>
 
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
                 <div className="font-semibold text-white flex items-center gap-1.5">
                   <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  Avantages du mode PWA Hors-Ligne :
+                  À propos de l’installation PWA :
                 </div>
                 <ul className="space-y-1 text-slate-400 text-[11px] list-disc list-inside">
-                  <li>Calculs LCC, WACC et actualisations 100% locaux dans le navigateur.</li>
-                  <li>Fonctionnement sur site industriel, entrepôt ou en vol sans réseau.</li>
-                  <li>Persistance automatique des dossiers et journal d'audit chiffré.</li>
-                  <li>Lancement instantané depuis le bureau ou l'écran d'accueil.</li>
+                  <li>Certains calculs peuvent être effectués dans le navigateur lorsqu’ils sont disponibles.</li>
+                  <li>Le fonctionnement sans réseau dépend des ressources mises en cache et n’est pas garanti.</li>
+                  <li>Persistance locale possible ; ni chiffrement applicatif ni journal d’audit probant ne sont garantis.</li>
+                  <li>L’application peut être lancée depuis le bureau ou l’écran d’accueil après installation.</li>
                 </ul>
               </div>
 

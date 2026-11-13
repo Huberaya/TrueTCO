@@ -268,7 +268,7 @@ BEFORE UPDATE ON reference_benchmarks
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- -----------------------------------------------------------------------------
--- 10. AUDIT LOGS (Journal d'Audit Immuable Légal / CAC)
+-- 10. AUDIT LOGS (événements applicatifs ; non immuables / non certifiés)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

@@ -5,12 +5,10 @@ import {
   ExternalLink,
   ShieldCheck,
   Edit3,
-  Check,
   Plus,
   Search,
   Filter,
   X,
-  History,
   AlertCircle,
   FileCheck2,
 } from 'lucide-react';
@@ -121,7 +119,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
             Base de Données des Externalités (ADEME / Quinet / WACC)
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Conforme à la Section 12 : gestion des 10 attributs normatifs (nom, valeur, unité, source, URL, date, pays, méthode, intervalle, confiance). Toute révision exige une justification formelle inscrite au journal d'audit.
+            Référentiel de démonstration avec champs descriptifs (nom, valeur, unité, source, URL, date, pays, méthode, intervalle, confiance). La présence de ces champs ne garantit ni conformité normative ni vérification des sources ; les modifications locales ne constituent pas une piste d’audit certifiée.
           </p>
         </div>
 
@@ -147,7 +145,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
           <div className="text-xl font-bold font-mono text-sky-400 mt-0.5">
             {benchmarks.find((b) => b.id === 'bench-carbone-quinet')?.value || 120} €/t
           </div>
-          <div className="text-[10px] text-slate-500">Trajectoire officielle France</div>
+          <div className="text-[10px] text-slate-500">Référence indicative — source à vérifier</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
@@ -155,13 +153,13 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
           <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">
             {Math.round(benchmarks.reduce((acc, b) => acc + b.confidenceLevel, 0) / (benchmarks.length || 1))}%
           </div>
-          <div className="text-[10px] text-slate-500">Données certifiées de rang A</div>
+          <div className="text-[10px] text-slate-500">Données non vérifiées, provenant des entrées disponibles</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
           <div className="text-slate-400 text-[11px]">Traçabilité Audit</div>
-          <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">100% Immuable</div>
-          <div className="text-[10px] text-slate-500">Justification CAC obligatoire</div>
+          <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">Non certifié</div>
+          <div className="text-[10px] text-slate-500">Justification (non vérifiée)</div>
         </div>
       </div>
 
@@ -321,7 +319,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
                   </span>
                 </div>
                 <div className="flex justify-between text-slate-400 text-[11px]">
-                  <span>Source officielle :</span>
+                  <span>Source déclarée :</span>
                   <span className="text-slate-300">{selectedBenchmark.source}</span>
                 </div>
               </div>
@@ -362,7 +360,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
 
               <div>
                 <label className="block text-slate-400 mb-1">
-                  Justification d'audit obligatoire * (Section 26)
+                  Justification de la modification *
                 </label>
                 <textarea
                   required
@@ -374,7 +372,7 @@ export const ExternalitiesAdminView: React.FC<ExternalitiesAdminViewProps> = ({
                 />
                 <span className="text-[10px] text-amber-400/90 flex items-center gap-1 mt-1">
                   <AlertCircle className="w-3 h-3" />
-                  Cette justification sera inscrite de manière irréversible dans le journal d'audit.
+                  Cette note descriptive peut apparaître dans le journal applicatif ; elle n’est ni immuable ni certifiée.
                 </span>
               </div>
 

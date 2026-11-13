@@ -7,16 +7,12 @@ import {
   Clock,
   Save,
   Copy,
-  ChevronRight,
   AlertCircle,
   TrendingUp,
   Scale,
   Calendar,
   Building,
   ShieldCheck,
-  Zap,
-  ArrowRight,
-  Database,
 } from 'lucide-react';
 
 interface ProjectDetailModalProps {
@@ -34,11 +30,11 @@ const LIFECYCLE_STEPS: { id: ProjectStatus; label: string; desc: string }[] = [
   { id: 'brouillon', label: '1. Brouillon', desc: 'Définition du besoin et cadrage budgétaire' },
   { id: 'collecte_offres', label: '2. Collecte Offres', desc: 'RFP envoyé aux fournisseurs qualifiés' },
   { id: 'analyse', label: '3. Analyse TCO', desc: 'Calcul des coûts complets, LCC et CO2' },
-  { id: 'validation_finance', label: '4. Visa Finance', desc: 'Revue du WACC et respect du budget cap' },
-  { id: 'validation_achats', label: '5. Visa Achats', desc: 'Audit des incoterms et risques tiers' },
-  { id: 'decision', label: '6. Comité Décision', desc: 'Arbitrage DG / COPIL sur matrice 360°' },
-  { id: 'termine', label: '7. Arbitré / Signé', desc: 'Attribution du marché et contractualisation' },
-  { id: 'archive', label: '8. Archivé', desc: 'Clôture et capitalisation des REX' },
+  { id: 'validation_finance', label: '4. Revue finance (démo)', desc: 'État d’exemple, sans visa ni approbation.' },
+  { id: 'validation_achats', label: '5. Revue achats (démo)', desc: 'État d’exemple, sans audit ni approbation.' },
+  { id: 'decision', label: '6. Décision (hors système)', desc: 'Aucun comité ni arbitrage n’est exécuté ici.' },
+  { id: 'termine', label: '7. Terminé (non contractuel)', desc: 'N’émet ni attribution, ni signature, ni contrat.' },
+  { id: 'archive', label: '8. Archive locale (démo)', desc: 'Aucune archive serveur n’est créée.' },
 ];
 
 export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
@@ -62,7 +58,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
   const [inflationRate, setInflationRate] = useState(project.inflationRate);
   const [carbonPrice, setCarbonPrice] = useState(project.carbonPricePerTonne);
   const [objective, setObjective] = useState(project.objective);
-  const [status, setStatus] = useState<ProjectStatus>(project.status);
+  const status = project.status;
 
   const [activeTab, setActiveTab] = useState<'lifecycle' | 'hypotheses' | 'offers'>('lifecycle');
   const [isSavedNotice, setIsSavedNotice] = useState(false);
@@ -94,20 +90,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
     setTimeout(() => setIsSavedNotice(false), 3000);
   };
 
-  const handleAdvanceStep = () => {
-    if (currentStepIdx < LIFECYCLE_STEPS.length - 1) {
-      const nextStatus = LIFECYCLE_STEPS[currentStepIdx + 1].id;
-      setStatus(nextStatus);
-      const updated: Project = {
-        ...project,
-        status: nextStatus,
-        updatedAt: new Date().toISOString(),
-      };
-      onUpdateProject(updated);
-      setIsSavedNotice(true);
-      setTimeout(() => setIsSavedNotice(false), 3000);
-    }
-  };
+
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
@@ -212,50 +195,36 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
                     <ShieldCheck className="w-4 h-4 text-emerald-400" />
                     Progression du Projet : Étape {currentStepIdx + 1} / {LIFECYCLE_STEPS.length}
                   </div>
-                  {currentStepIdx < LIFECYCLE_STEPS.length - 1 && (
-                    <button
-                      onClick={handleAdvanceStep}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-                    >
-                      <span>Passer à l'étape suivante</span>
-                      <ArrowRight className="w-3.5 h-3.5" />
-                    </button>
-                  )}
+                  <span className="text-[10px] text-amber-300 border border-amber-800 bg-amber-950/40 rounded px-2 py-1">
+                    Workflow de démonstration — progression et approbations désactivées
+                  </span>
                 </div>
 
                 {/* Stepper bar */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 pt-2">
                   {LIFECYCLE_STEPS.map((s, idx) => {
-                    const isDone = idx < currentStepIdx;
                     const isCurrent = idx === currentStepIdx;
 
                     return (
                       <button
                         key={s.id}
-                        onClick={() => setStatus(s.id)}
-                        className={`p-3 rounded-xl border text-left transition-all ${
+                        type="button"
+                        disabled
+                        className={`p-3 rounded-xl border text-left opacity-80 cursor-not-allowed ${
                           isCurrent
-                            ? 'bg-emerald-950/70 border-emerald-600 ring-1 ring-emerald-500/40'
-                            : isDone
-                            ? 'bg-slate-900 border-emerald-900/60 text-slate-300'
-                            : 'bg-slate-950/60 border-slate-800 text-slate-500 hover:border-slate-700'
+                            ? 'bg-slate-900 border-amber-700/70'
+                            : 'bg-slate-950/60 border-slate-800 text-slate-500'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span
                             className={`font-bold ${
-                              isCurrent ? 'text-emerald-400' : isDone ? 'text-emerald-300' : 'text-slate-400'
+                              isCurrent ? 'text-amber-300' : 'text-slate-400'
                             }`}
                           >
                             {s.label}
                           </span>
-                          {isDone ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          ) : isCurrent ? (
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                          ) : (
-                            <Clock className="w-3.5 h-3.5 text-slate-600 shrink-0" />
-                          )}
+                          <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
                         </div>
                         <p className="text-[10px] text-slate-400 leading-tight">{s.desc}</p>
                       </button>
@@ -486,7 +455,7 @@ export const ProjectDetailModal: React.FC<ProjectDetailModalProps> = ({
             {isSavedNotice && (
               <span className="text-emerald-400 font-mono flex items-center gap-1.5 animate-fadeIn">
                 <CheckCircle2 className="w-4 h-4" />
-                Modifications enregistrées dans Neon DB avec succès !
+                Modifications appliquées localement. La sauvegarde distante n’est pas confirmée.
               </span>
             )}
           </div>

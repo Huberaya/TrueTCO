@@ -1,24 +1,17 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Sparkles,
   FileText,
   UploadCloud,
   CheckCircle2,
-  AlertCircle,
   FileCheck2,
   ArrowRight,
-  TrendingDown,
   Layers,
-  Building2,
   Scale,
-  Calendar,
-  Clock,
   ShieldAlert,
   Zap,
   Info,
   Check,
-  Eye,
-  FileSpreadsheet,
 } from 'lucide-react';
 import { Project, SupplierOffer, DocumentParseResult, DocumentCategory } from '../types/domain';
 import { AiParserService, SAMPLE_DOCUMENTS, SampleDocumentItem } from '../services/aiParserService';
@@ -37,20 +30,30 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
   onNavigateToComparator,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<DocumentCategory>('devis_fournisseur');
-  const [inputContent, setInputContent] = useState<string>(SAMPLE_DOCUMENTS[0].contentRaw);
-  const [filename, setFilename] = useState<string>(SAMPLE_DOCUMENTS[0].title);
-  const [activeSampleId, setActiveSampleId] = useState<string>(SAMPLE_DOCUMENTS[0].id);
+  const [inputContent, setInputContent] = useState<string>('');
+  const [filename, setFilename] = useState<string>('');
+  const [activeSampleId, setActiveSampleId] = useState<string>('');
 
   // Parsing execution state
   const [isParsing, setIsParsing] = useState<boolean>(false);
   const [parseResult, setParseResult] = useState<DocumentParseResult | null>(null);
   const [injectedSuccess, setInjectedSuccess] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const parseRequestId = useRef(0);
+
+  const invalidateCurrentParse = () => {
+    parseRequestId.current += 1;
+    setStatusMessage(null);
+    setIsParsing(false);
+    setParseResult(null);
+    setInjectedSuccess(false);
+  };
 
   // Active sub-tab
   const [activeSubTab, setActiveSubTab] = useState<'parser' | 'comparison' | 'spec'>('parser');
 
   const handleSelectSample = (sample: SampleDocumentItem) => {
+    invalidateCurrentParse();
     setActiveSampleId(sample.id);
     setSelectedCategory(sample.category);
     setFilename(sample.title);
@@ -66,6 +69,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
       return;
     }
 
+    const requestId = ++parseRequestId.current;
     setIsParsing(true);
     setStatusMessage('Envoi non effectué tant que le service sécurisé de traitement documentaire n’est pas disponible...');
     setParseResult(null);
@@ -77,13 +81,15 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
         content: inputContent,
         category: selectedCategory,
       });
+      if (requestId !== parseRequestId.current) return;
       setParseResult(result);
       setStatusMessage(null);
     } catch (err: any) {
+      if (requestId !== parseRequestId.current) return;
       setParseResult(null);
       setStatusMessage(`Analyse indisponible : ${err?.message || 'Aucune donnée extraite.'}`);
     } finally {
-      setIsParsing(false);
+      if (requestId === parseRequestId.current) setIsParsing(false);
     }
   };
 
@@ -151,7 +157,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
           <div className="space-y-2">
             <div className="text-xs font-semibold text-slate-300 flex items-center justify-between">
               <span>Échantillons de démonstration (fictifs, non vérifiés) :</span>
-              <span className="text-slate-500 text-[11px]">Cliquez sur un document pour le charger</span>
+              <span className="text-slate-500 text-[11px]">Exemples fictifs uniquement; aucune analyse ni extraction métier n’est disponible</span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -202,7 +208,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                 <div className="flex items-center justify-between">
                   <div className="font-bold text-white text-xs flex items-center gap-1.5">
                     <FileText className="w-4 h-4 text-purple-400" />
-                    Document Source à Analyser
+                    Texte de démonstration — analyse indisponible
                   </div>
                   <div className="text-[10px] font-mono text-slate-400">
                     {inputContent.length} caractères
@@ -229,6 +235,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        invalidateCurrentParse();
                         setSelectedCategory('devis_fournisseur');
                         setParseResult(null);
                         setInjectedSuccess(false);
@@ -244,6 +251,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     <button
                       type="button"
                       onClick={() => {
+                        invalidateCurrentParse();
                         setSelectedCategory('fiche_fdes_epd');
                         setParseResult(null);
                         setInjectedSuccess(false);
@@ -267,6 +275,7 @@ export const AiDocumentParserView: React.FC<AiDocumentParserViewProps> = ({
                     rows={12}
                     value={inputContent}
                     onChange={(e) => {
+                      invalidateCurrentParse();
                       setInputContent(e.target.value);
                       setParseResult(null);
                       setInjectedSuccess(false);
