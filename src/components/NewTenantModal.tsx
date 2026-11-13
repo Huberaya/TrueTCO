@@ -1,13 +1,8 @@
 import React, { useState } from 'react';
-import { useTenant } from '../context/TenantContext';
 import {
   Building2,
   X,
-  ShieldCheck,
-  CheckCircle2,
-  Layers,
   Lock,
-  Globe2,
   AlertCircle,
 } from 'lucide-react';
 
@@ -17,42 +12,19 @@ interface NewTenantModalProps {
 }
 
 export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose }) => {
-  const { createTenant } = useTenant();
   const [name, setName] = useState('');
   const [domain, setDomain] = useState('');
   const [legalNumber, setLegalNumber] = useState('');
   const [tier, setTier] = useState('enterprise');
   const [currency, setCurrency] = useState('EUR');
   const [countryCode, setCountryCode] = useState('FR');
-  const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) {
-      setErrorMsg('Veuillez renseigner le nom de l’entreprise ou de la filiale.');
-      return;
-    }
-
-    setIsLoading(true);
-    setErrorMsg(null);
-    try {
-      await createTenant({
-        name: name.trim(),
-        domain: domain.trim() || undefined,
-        subscriptionTier: tier,
-        defaultCurrency: currency,
-        countryCode: countryCode,
-        legalRegistrationNumber: legalNumber.trim() || undefined,
-      });
-      onClose();
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Erreur lors du déploiement du nouvel espace');
-    } finally {
-      setIsLoading(false);
-    }
+    setErrorMsg('Création indisponible : aucune identité vérifiée, autorisation serveur ni isolation tenant n’est configurée.');
   };
 
   return (
@@ -64,13 +36,13 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
           <div className="space-y-1">
             <div className="flex items-center gap-1.5 text-xs uppercase tracking-wider font-semibold text-emerald-400">
               <Building2 className="w-4 h-4 text-emerald-400" />
-              Multi-Tenancy Hermétique
+              Création d’organisation — démo
             </div>
             <h2 className="text-lg font-bold text-white tracking-tight">
-              Provisionner un Nouvel Espace Entreprise / Filiale
+              Organisation de démonstration — création indisponible
             </h2>
             <p className="text-xs text-slate-400">
-              Crée un environnement isolé avec sa propre base de consultations, fournisseurs et pistes d'audit.
+              Aucun environnement ou stockage d’organisation réel n’est créé par cette interface.
             </p>
           </div>
 
@@ -99,7 +71,7 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="ex: TotalEnergies Renewables SAS"
+              placeholder="ex: Société Exemple SAS"
               required
               className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
             />
@@ -114,7 +86,7 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
                 type="text"
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
-                placeholder="ex: totalenergies.com"
+                placeholder="ex: exemple.invalid"
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -127,7 +99,7 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
                 type="text"
                 value={legalNumber}
                 onChange={(e) => setLegalNumber(e.target.value)}
-                placeholder="ex: 542 051 149 00010"
+                placeholder="ex: 000 000 000 00000"
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
               />
             </div>
@@ -144,7 +116,7 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
                 className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
               >
                 <option value="enterprise">Entreprise Dédié</option>
-                <option value="sovereign">Souverain (SecNumCloud)</option>
+                <option value="sovereign">Option dite souveraine — non vérifiée</option>
                 <option value="starter">Standard</option>
               </select>
             </div>
@@ -186,10 +158,10 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
           <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 space-y-1 text-[11px] text-slate-400">
             <div className="flex items-center gap-1.5 text-slate-200 font-semibold">
               <Lock className="w-3 h-3 text-emerald-400" />
-              Sécurité du Cloisonnement
+              Isolation non configurée
             </div>
             <p>
-              Toutes les données créées dans cet espace porteront un identifiant d'organisation étanche (`organization_id`). Les requêtes sont filtrées au niveau de la couche SQL.
+              La création d’organisation est désactivée tant que l’authentification et l’isolation côté serveur ne sont pas en place. Les champs ci-dessus ne créent pas un tenant réel.
             </p>
           </div>
 
@@ -203,11 +175,11 @@ export const NewTenantModal: React.FC<NewTenantModalProps> = ({ isOpen, onClose 
             </button>
             <button
               type="submit"
-              disabled={isLoading}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs flex items-center gap-1.5 transition-colors shadow-lg shadow-emerald-950/40"
+              disabled
+              className="px-4 py-2 bg-slate-700 text-slate-300 rounded-lg font-bold text-xs flex items-center gap-1.5 cursor-not-allowed"
             >
               <Building2 className="w-3.5 h-3.5" />
-              <span>{isLoading ? 'Déploiement en cours...' : 'Provisionner l’Espace'}</span>
+              <span>Création indisponible — sécurité non configurée</span>
             </button>
           </div>
         </form>

@@ -1,22 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import { AuditLogEntry, UserRole } from '../types/domain';
 import {
   History,
   User,
-  Clock,
-  CheckCircle2,
-  Download,
   Search,
-  Filter,
-  ShieldCheck,
   FileSpreadsheet,
-  Plus,
   Stamp,
-  Lock,
-  FileText,
   AlertCircle,
   X,
-  Layers,
 } from 'lucide-react';
 
 interface AuditLogViewProps {
@@ -32,22 +23,11 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
   // Visa Modal state
   const [isVisaModalOpen, setIsVisaModalOpen] = useState(false);
   const [visaRole, setVisaRole] = useState<UserRole>('finance_controleur');
-  const [visaAuthor, setVisaAuthor] = useState('Lucas Bernard');
-  const [visaSubject, setVisaSubject] = useState('Visa Approbation Cadrage Financier & WACC');
+  const [visaAuthor, setVisaAuthor] = useState('');
+  const [visaSubject, setVisaSubject] = useState('');
   const [visaJustification, setVisaJustification] = useState(
-    'Vérification formelle conforme : hypothèses de taux WACC 4.5% et trajectoire prix tutélaire Quinet 120€ validées pour la consultation.'
+    ''
   );
-
-  // Compute a simulated SHA-256 cryptographic chain hash for CAC verification
-  const auditChainHash = useMemo(() => {
-    let hash = 0x811c9dc5;
-    const str = logs.map((l) => `${l.id}:${l.timestamp}:${l.fieldChanged}:${l.newValue}`).join('|');
-    for (let i = 0; i < str.length; i++) {
-      hash ^= str.charCodeAt(i);
-      hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-    }
-    return `sha256-e3b0c442${(hash >>> 0).toString(16).padStart(8, '0')}7f1d4a89`;
-  }, [logs]);
 
   const filteredLogs = logs.filter((log) => {
     const matchesSearch =
@@ -88,13 +68,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
     const newLog: AuditLogEntry = {
       id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: 'u-audit-cac',
-      userName: visaAuthor.trim() || 'Auditeur Légal',
+      userId: 'local-unverified',
+      userName: visaAuthor.trim() || 'Utilisateur non vérifié',
       userRole: visaRole,
       entityName: 'Gouvernance & Conformité',
-      fieldChanged: visaSubject.trim() || 'Visa Formel',
+      fieldChanged: visaSubject.trim() || 'Déclaration utilisateur',
       oldValue: 'En attente de visa',
-      newValue: 'Visa Certifié Conforme',
+      newValue: 'Déclaration enregistrée — non vérifiée',
       justification: visaJustification.trim(),
     };
 
@@ -112,8 +92,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
       'Champ_Modifie',
       'Valeur_Precedente',
       'Nouvelle_Valeur',
-      'Justification_Formelle',
-      'Sceau_Integrite_Registre',
+      'Commentaire',
     ];
     const rows = logs.map((l) => [
       `"${l.id}"`,
@@ -125,7 +104,6 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
       `"${l.oldValue}"`,
       `"${l.newValue}"`,
       `"${l.justification.replace(/"/g, '""')}"`,
-      `"${auditChainHash}"`,
     ]);
 
     const csvContent =
@@ -136,7 +114,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
     link.setAttribute('href', encodedUri);
     link.setAttribute(
       'download',
-      `journal_audit_certifie_truetco_${new Date().toISOString().split('T')[0]}.csv`
+      `journal_evenements_truetco_${new Date().toISOString().split('T')[0]}.csv`
     );
     document.body.appendChild(link);
     link.click();
@@ -153,11 +131,10 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
             Chantier 5 · Module « Traçabilité & Contrôle Interne »
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            Journal d'Audit Immuable (Conformité Légale & Commissaires aux Comptes)
+            Journal d’événements — non certifié
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Conforme à la Section 26 : chaque révision d'hypothèse (prix, WACC, inflation, facteurs ADEME/Quinet)
-            est enregistrée de manière infalsifiable avec horodatage strict, auteur, rôle, ancienne valeur, nouvelle valeur et justification probante.
+            Cette vue présente des événements de l’application. Elle ne garantit ni l’immutabilité, ni l’identité de l’auteur, ni un horodatage de confiance, ni la conformité à une exigence d’audit.
           </p>
         </div>
 
@@ -166,46 +143,26 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
             <button
               onClick={() => setIsVisaModalOpen(true)}
               className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-              title="Apposer un visa formel de contrôle interne"
+              title="Ajouter une déclaration non vérifiée"
             >
               <Stamp className="w-3.5 h-3.5" />
-              <span>Apposer un Visa Formel</span>
+              <span>Ajouter une déclaration</span>
             </button>
           )}
 
           <button
             onClick={exportCSV}
             className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
-            title="Télécharger l'extrait officiel certifié pour CAC et DAF"
+            title="Télécharger un export des événements affichés"
           >
             <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Export Légal CAC (CSV)</span>
+            <span>Exporter les événements (CSV)</span>
           </button>
         </div>
       </div>
 
-      {/* Sceau Cryptographique & Intégrité */}
-      <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-3 text-xs">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-emerald-950/70 border border-emerald-800 text-emerald-400 rounded-lg">
-            <Lock className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="font-bold text-white flex items-center gap-2">
-              <span>Sceau d'Intégrité Immuable du Journal d'Audit</span>
-              <span className="text-[10px] bg-emerald-950 text-emerald-400 border border-emerald-800 px-2 py-0.5 rounded font-mono">
-                CONFORME ARTICLE L. 823-10
-              </span>
-            </div>
-            <div className="text-[11px] font-mono text-slate-400 mt-0.5">
-              Chaîne de vérification : <span className="text-emerald-400 select-all">{auditChainHash}</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="text-right text-[11px] text-slate-400">
-          <span className="text-slate-300 font-semibold">{logs.length} enregistrements</span> chaînés dans Neon PostgreSQL
-        </div>
+      <div role="note" className="rounded-xl border border-amber-800 bg-amber-950/30 p-3.5 text-xs text-amber-100">
+        Les événements affichés/exportés ne sont pas scellés cryptographiquement ni stockés dans un registre immuable vérifié.
       </div>
 
       {/* Top Quick Metrics */}
@@ -213,7 +170,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
           <div className="text-slate-400 text-[11px]">Événements Tracés</div>
           <div className="text-xl font-bold font-mono text-white mt-0.5">{logs.length}</div>
-          <div className="text-[10px] text-slate-500">Piste d'audit active</div>
+          <div className="text-[10px] text-slate-500">Événements affichés</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
@@ -225,20 +182,19 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Rôles Engagés</div>
+          <div className="text-slate-400 text-[11px]">Rôles déclarés</div>
           <div className="text-xl font-bold font-mono text-sky-400 mt-0.5">
             {new Set(logs.map((l) => l.userRole)).size} rôles
           </div>
-          <div className="text-[10px] text-slate-500">Acheteur, DAF, RSE, CAC</div>
+          <div className="text-[10px] text-slate-500">Valeurs saisies dans l’application</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Conformité Probante</div>
+          <div className="text-slate-400 text-[11px]">Vérification probante</div>
           <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5 flex items-center gap-1">
-            <ShieldCheck className="w-4 h-4" />
-            100%
+            Non établie
           </div>
-          <div className="text-[10px] text-slate-500">Toutes justifications renseignées</div>
+          <div className="text-[10px] text-slate-500">Aucun contrôle de conformité</div>
         </div>
       </div>
 
@@ -288,7 +244,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
                 typeFilter === 'visas' ? 'bg-slate-800 text-purple-400 font-semibold' : 'text-slate-400 hover:text-white'
               }`}
             >
-              Visas & Statuts
+              Déclarations & Statuts
             </button>
           </div>
 
@@ -376,7 +332,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
         </div>
       </div>
 
-      {/* Modal: Apposer un Visa Formel */}
+      {/* Modal: Ajouter une déclaration */}
       {isVisaModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
           <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl p-6 overflow-hidden">
@@ -386,8 +342,8 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
                   <Stamp className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">Apposer un Visa Formel</h3>
-                  <p className="text-xs text-slate-400">Enregistrement immuable au registre de contrôle interne</p>
+                  <h3 className="text-lg font-bold text-white">Ajouter une déclaration</h3>
+                  <p className="text-xs text-slate-400">Déclaration non vérifiée, enregistrée dans l’état local de l’application</p>
                 </div>
               </div>
               <button
@@ -401,7 +357,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
             <form onSubmit={handleAddVisa} className="py-4 space-y-4 text-xs text-slate-300">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-400 mb-1">Signataire / Auteur *</label>
+                  <label className="block text-slate-400 mb-1">Nom déclaré *</label>
                   <input
                     type="text"
                     required
@@ -422,13 +378,13 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
                     <option value="acheteur">Acheteur Référent</option>
                     <option value="rse_esg">Responsable RSE</option>
                     <option value="direction_generale">Direction Générale</option>
-                    <option value="admin">Commissaire aux Comptes (CAC)</option>
+                    <option value="admin">Administrateur</option>
                   </select>
                 </div>
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Intitulé du Visa *</label>
+                <label className="block text-slate-400 mb-1">Intitulé de la déclaration *</label>
                 <input
                   type="text"
                   required
@@ -440,7 +396,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
 
               <div>
                 <label className="block text-slate-400 mb-1">
-                  Justification Probante & Conclusions du Contrôle *
+                  Commentaire *
                 </label>
                 <textarea
                   rows={4}
@@ -448,14 +404,14 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
                   value={visaJustification}
                   onChange={(e) => setVisaJustification(e.target.value)}
                   className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-white text-xs leading-relaxed focus:outline-none focus:border-emerald-500"
-                  placeholder="Saisissez les constats, les vérifications opérées et la conclusion du visa..."
+                  placeholder="Ajoutez un commentaire non vérifié..."
                 />
               </div>
 
               <div className="p-3 bg-sky-950/30 border border-sky-900/60 rounded-xl flex items-start gap-2 text-sky-300 text-[11px]">
                 <AlertCircle className="w-4 h-4 text-sky-400 shrink-0 mt-0.5" />
                 <span>
-                  Cet enregistrement est irréversible et sera scellé dans la table `audit_logs` de Neon PostgreSQL.
+                  Cette déclaration ne vérifie pas l’identité de son auteur et n’est pas envoyée dans un registre Neon par cette action.
                 </span>
               </div>
 
@@ -472,7 +428,7 @@ export const AuditLogView: React.FC<AuditLogViewProps> = ({ logs, onAddLog }) =>
                   className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg text-xs transition-colors shadow-sm flex items-center gap-1.5"
                 >
                   <Stamp className="w-3.5 h-3.5" />
-                  <span>Signer et Sceller le Visa</span>
+                  <span>Enregistrer la déclaration</span>
                 </button>
               </div>
             </form>

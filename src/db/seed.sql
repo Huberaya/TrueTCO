@@ -1,5 +1,5 @@
 -- =============================================================================
--- TRUETCO - JEU D'ESSAIS INITIAL & RÉFÉRENTIELS CERTIFIÉS (SEED SQL)
+-- TRUETCO - DONNÉES DE DÉMONSTRATION NON VÉRIFIÉES (SEED SQL)
 -- Cas d'école : Renouvellement de 50 Véhicules Utilitaires Légers (VUL)
 -- =============================================================================
 
@@ -7,8 +7,8 @@
 INSERT INTO organizations (id, name, legal_registration_number, country_code, default_currency)
 VALUES (
     'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-    'Acme Logistics Europe SAS',
-    '849 203 910 00024',
+    'Organisation de démonstration',
+    NULL,
     'FR',
     'EUR'
 ) ON CONFLICT DO NOTHING;
@@ -16,9 +16,9 @@ VALUES (
 -- 2. Utilisateurs
 INSERT INTO users (id, organization_id, email, full_name, role)
 VALUES
-    ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'sophie.valery@acme.com', 'Sophie Valéry', 'directeur_achats'),
-    ('b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'lucas.bernard@acme.com', 'Lucas Bernard', 'finance_controleur'),
-    ('b2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'eleonore.chen@acme.com', 'Éléonore Chen', 'rse_esg')
+    ('b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'demo-achats@example.invalid', 'Utilisateur de démonstration', 'directeur_achats'),
+    ('b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'demo-finance@example.invalid', 'Utilisateur de démonstration', 'finance_controleur'),
+    ('b2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'demo-rse@example.invalid', 'Utilisateur de démonstration', 'rse_esg')
 ON CONFLICT DO NOTHING;
 
 -- 3. Référentiels Institutionnels Externes
@@ -34,8 +34,8 @@ ON CONFLICT DO NOTHING;
 -- 4. Fournisseurs
 INSERT INTO suppliers (id, organization_id, name, country_code, incoterm, payment_terms_days, standard_lead_time_days, minimum_order_quantity, warranty_months, historical_defect_rate, esg_score, has_verified_environmental_data, environmental_data_source, certifications, data_quality_score)
 VALUES
-    ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'EcoMobility France', 'FR', 'DDP', 45, 60, 5, 60, 0.0080, 94, true, 'ACV certifiée TÜV Rheinland ISO 14040/44', ARRAY['ISO 14001', 'EcoVadis Platinum', 'B-Corp'], 95),
-    ('c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'AutoFleet Solutions', 'FR', 'DDP', 30, 30, 1, 24, 0.0240, 68, false, 'Déclaration unilatérale constructeur', ARRAY['ISO 9001'], 78)
+    ('c0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'EcoMobility France', 'FR', 'DDP', 45, 60, 5, 60, 0.0080, 94, true, 'Exemple de déclaration — non vérifiée', ARRAY['Exemple — certifications déclarées, non vérifiées'], 95),
+    ('c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'AutoFleet Solutions', 'FR', 'DDP', 30, 30, 1, 24, 0.0240, 68, false, 'Déclaration unilatérale constructeur', ARRAY['Exemple — certification déclarée, non vérifiée'], 78)
 ON CONFLICT DO NOTHING;
 
 -- 5. Projet d'Achat
@@ -71,6 +71,6 @@ ON CONFLICT DO NOTHING;
 -- 7. Journal d'Audit Initial
 INSERT INTO audit_logs (organization_id, user_id, user_name, user_role, project_id, entity_name, field_changed, old_value, new_value, justification)
 VALUES
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Sophie Valéry', 'directeur_achats', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Projet Flotte 50 VUL', 'Création consultation', 'N/A', 'AO-2026-FLOTTE-01', 'Ouverture de consultation pour arbitrage TCO pluriannuel ZFE.'),
-    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Lucas Bernard', 'finance_controleur', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Taux WACC & Inflation', 'Actualisation WACC', '0.0400', '0.0450', 'Alignement avec la directive trésorerie groupe et réévaluation des spreads bancaires.')
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Utilisateur non vérifié', 'directeur_achats', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Projet Flotte 50 VUL', 'Création consultation', 'N/A', 'AO-2026-FLOTTE-01', 'Ouverture de consultation pour arbitrage TCO pluriannuel ZFE.'),
+    ('a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Utilisateur non vérifié', 'finance_controleur', 'd0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11', 'Taux WACC & Inflation', 'Actualisation WACC', '0.0400', '0.0450', 'Alignement avec la directive trésorerie groupe et réévaluation des spreads bancaires.')
 ON CONFLICT DO NOTHING;

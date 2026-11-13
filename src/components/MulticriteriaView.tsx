@@ -10,8 +10,6 @@ import {
   Building2,
   CheckCircle2,
   Sparkles,
-  Info,
-  RotateCcw,
   FileCheck2,
   TrendingUp,
 } from 'lucide-react';
@@ -143,19 +141,19 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: 'u-dir-achats',
-      userName: 'Sophie Valéry',
+      userId: 'local-unverified',
+      userName: 'Utilisateur non vérifié',
       userRole: activeRole,
       projectId: project.id,
       entityName: 'Grille Multicritères 360°',
-      fieldChanged: 'Pondérations officielles d\'attribution',
+      fieldChanged: 'Pondérations configurées (non officielles)',
       oldValue: 'Grille standard 45/25/15/15',
       newValue: `TCO: ${weights.tcoWeight}% | Climat: ${weights.carbonWeight}% | Risque: ${weights.riskWeight}% | RSE: ${weights.esgWeight}%`,
       justification: justificationNote.trim() || `Validation de la grille multicritères (${activePreset}) pour arbitrage en commission d'appels d'offres.`,
     };
 
     onLogAudit(log);
-    setAuditFeedback('Pondération multicritères consignée avec succès dans le Journal d\'Audit.');
+    setAuditFeedback('Déclaration locale ajoutée au journal non certifié ; aucune approbation n’a été effectuée.');
     setTimeout(() => setAuditFeedback(null), 5000);
   };
 
@@ -568,14 +566,14 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
         </div>
       </div>
 
-      {/* Official Sign-off & Audit Log Box */}
+      {/* Local non-certified note */}
       <div className="p-5 bg-slate-900 border border-slate-800 rounded-xl space-y-4">
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center gap-2">
             <FileCheck2 className="w-4 h-4 text-emerald-400" />
-            <span className="font-bold text-white text-xs">Consignation de la Grille d'Arbitrage Officielle</span>
+            <span className="font-bold text-white text-xs">Déclaration locale de pondérations — non officielle</span>
           </div>
-          <span className="text-[11px] text-slate-400">Rôle actif : <strong className="text-white uppercase font-mono">{activeRole}</strong></span>
+          <span className="text-[11px] text-slate-400">Rôle déclaré (non vérifié) : <strong className="text-white uppercase font-mono">{activeRole}</strong></span>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs">
@@ -584,7 +582,7 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
               type="text"
               value={justificationNote}
               onChange={(e) => setJustificationNote(e.target.value)}
-              placeholder="Motivation formelle pour la commission (ex: Validation de la grille 360° pour arbitrage conforme CSRD)"
+              placeholder="Note descriptive sur ces pondérations (ne constitue ni validation, ni conformité CSRD)"
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-white text-xs placeholder:text-slate-600 focus:outline-none focus:border-emerald-500"
             />
           </div>
@@ -593,7 +591,7 @@ export const MulticriteriaView: React.FC<MulticriteriaViewProps> = ({
             className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
           >
             <CheckCircle2 className="w-3.5 h-3.5" />
-            Consigner au Journal d'Audit
+            Ajouter déclaration non vérifiée
           </button>
         </div>
 

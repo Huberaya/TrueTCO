@@ -106,8 +106,9 @@ export const AuthService = {
       }
       return null;
     } catch (err) {
-      console.warn('Network error while checking SSO session, fallback to cached user:', err);
-      return this.getCachedUser();
+      console.warn('Session verification unavailable; treating the user as unauthenticated:', err);
+      this.clearSession();
+      return null;
     }
   },
 

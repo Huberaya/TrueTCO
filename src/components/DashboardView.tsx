@@ -1,21 +1,17 @@
 import React, { useState } from 'react';
-import { Project, SupplierOffer, UserRole, ProjectStatus } from '../types/domain';
+import { Project, SupplierOffer, UserRole } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
 import {
   TrendingUp,
-  ShieldCheck,
   Leaf,
   FileCheck2,
-  AlertTriangle,
   ArrowRight,
   FolderKanban,
-  Building2,
   Sparkles,
   CheckCircle2,
   Clock,
   Eye,
   BarChart3,
-  SlidersHorizontal,
 } from 'lucide-react';
 import { NavView } from './Sidebar';
 
@@ -36,13 +32,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   activeRole,
   onNavigate,
   onSelectProject,
-  onUpdateProject,
 }) => {
   // Executive Mode Toggle (Vue Dirigeant Synthétique vs Vue Contrôle de Gestion)
   const [executiveMode, setExecutiveMode] = useState<boolean>(true);
 
   // Approval notification state
-  const [approvalFeedback, setApprovalFeedback] = useState<string | null>(null);
 
   // Calculate results for the active project
   const currentOffers = offers.filter((o) => o.projectId === project.id);
@@ -80,9 +74,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     (p) => p.status === 'validation_finance' || p.status === 'validation_achats' || p.status === 'decision'
   );
 
-  // Portfolio-wide savings estimation
-  const portfolioSavings = 412500 + currentProjectSavings;
-  const portfolioAvoidedEmissions = 1120 + currentAvoidedEmissions;
+  // Indicative savings for the active project only; not a validated portfolio total.
+  const portfolioSavings = currentProjectSavings;
+  const portfolioAvoidedEmissions = currentAvoidedEmissions;
 
   // Best choice for active project
   const sortedByTCO = [...activeResults].sort((a, b) => a.calc.totalComprehensiveTCO - b.calc.totalComprehensiveTCO);
@@ -92,17 +86,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
   const sortedByInitial = [...activeResults].sort((a, b) => a.calc.apparentDirectCost - b.calc.apparentDirectCost);
   const cheapestInitial = sortedByInitial[0];
 
-  const handleApproveStatus = (newStatus: ProjectStatus, stepLabel: string) => {
-    if (onUpdateProject) {
-      onUpdateProject({
-        ...project,
-        status: newStatus,
-        updatedAt: new Date().toISOString(),
-      });
-      setApprovalFeedback(`✓ Étape « ${stepLabel} » validée avec succès pour le projet ${project.reference}.`);
-      setTimeout(() => setApprovalFeedback(null), 4000);
-    }
-  };
+
 
   return (
     <div className="space-y-6">
@@ -114,10 +98,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             Chantier 2 · Dashboard Direction & Pilotage Stratégique
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">
-            Tableau de Bord Exécutif & Arbitrages Achats
+            Tableau de bord de démonstration — analyses indicatives
           </h2>
           <p className="text-xs text-slate-400 mt-1">
-            Vision consolidée pour la Direction Générale, la DAF et la Direction des Achats. Analyse objective du TCO global, des risques et des externalités.
+            Vue de démonstration fondée sur les données affichées localement. Les hypothèses, sources, calculs et résultats ne sont pas vérifiés.
           </p>
         </div>
 
@@ -159,19 +143,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       </div>
 
       {/* Approval Feedback Flash Banner */}
-      {approvalFeedback && (
-        <div className="p-3 bg-emerald-950/60 border border-emerald-800/80 rounded-xl text-xs text-emerald-300 flex items-center gap-2 animate-fadeIn">
-          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-          <span>{approvalFeedback}</span>
-        </div>
-      )}
+
 
       {/* EXECUTIVE SYNTHESIS SECTION (SECTION 22) */}
       <div className="p-6 bg-slate-900 border border-slate-800 rounded-2xl space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-4">
           <div>
             <span className="text-xs uppercase tracking-wider text-slate-400 font-semibold">
-              Décision en cours d'arbitrage
+              Simulation indicative — aucune décision enregistrée
             </span>
             <h3 className="text-lg font-bold text-white mt-0.5">
               {project.name}
@@ -185,7 +164,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             <div className="text-right">
               <span className="text-[11px] text-slate-400">Statut consultation</span>
               <div className="font-mono text-xs font-semibold text-emerald-400 uppercase">
-                {project.status.replace(/_/g, ' ')}
+                {project.status.replace(/_/g, ' ')} — démo
               </div>
             </div>
           </div>
@@ -194,15 +173,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* 6 Key Macro Metrics Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
           <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider">Budget Analysé</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider">Budget saisi</span>
             <div className="text-lg font-bold font-mono text-white tabular-nums">
               {project.budgetCap.toLocaleString('fr-FR')} €
             </div>
-            <div className="text-[10px] text-slate-500">Plafond engagé</div>
+            <div className="text-[10px] text-slate-500">Plafond budgétaire saisi</div>
           </div>
 
           <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <span className="text-[10px] text-slate-400 uppercase tracking-wider">TCO Optimal Réel</span>
+            <span className="text-[10px] text-slate-400 uppercase tracking-wider">TCO modélisé — non vérifié</span>
             <div className="text-lg font-bold font-mono text-emerald-400 tabular-nums">
               {bestChoice ? `${bestChoice.calc.totalComprehensiveTCO.toLocaleString('fr-FR')} €` : '-'}
             </div>
@@ -210,15 +189,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="p-3 bg-slate-950 border border-emerald-900/60 rounded-xl space-y-1 bg-gradient-to-br from-slate-950 to-emerald-950/20">
-            <span className="text-[10px] text-emerald-400 uppercase tracking-wider">Économie Nette</span>
+            <span className="text-[10px] text-emerald-400 uppercase tracking-wider">Écart TCO modélisé</span>
             <div className="text-lg font-bold font-mono text-emerald-400 tabular-nums">
               +{currentProjectSavings.toLocaleString('fr-FR')} €
             </div>
-            <div className="text-[10px] text-slate-400">vs offre thermique</div>
+            <div className="text-[10px] text-slate-400">écart entre offres de démonstration</div>
           </div>
 
           <div className="p-3 bg-slate-950 border border-sky-900/60 rounded-xl space-y-1">
-            <span className="text-[10px] text-sky-400 uppercase tracking-wider">Émissions Évitées</span>
+            <span className="text-[10px] text-sky-400 uppercase tracking-wider">Différence carbone calculée</span>
             <div className="text-lg font-bold font-mono text-sky-400 tabular-nums">
               {currentAvoidedEmissions} <span className="text-xs font-sans">tCO2e</span>
             </div>
@@ -226,7 +205,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="p-3 bg-slate-950 border border-indigo-900/60 rounded-xl space-y-1">
-            <span className="text-[10px] text-indigo-400 uppercase tracking-wider">Point Mort</span>
+            <span className="text-[10px] text-indigo-400 uppercase tracking-wider">Point mort indicatif</span>
             <div className="text-lg font-bold font-mono text-white tabular-nums">
               {breakEven?.breakEvenMonth ? `${breakEven.breakEvenMonth} mois` : 'Immédiat'}
             </div>
@@ -234,11 +213,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
 
           <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-            <span className="text-[10px] text-amber-400 uppercase tracking-wider">Risques Évités</span>
+            <span className="text-[10px] text-amber-400 uppercase tracking-wider">Écart d’exposition au risque</span>
             <div className="text-lg font-bold font-mono text-amber-400 tabular-nums">
               +{currentAvoidedRisks.toLocaleString('fr-FR')} €
             </div>
-            <div className="text-[10px] text-slate-500">ZFE & fiscalité CO2</div>
+            <div className="text-[10px] text-slate-500">Différence calculée sur les hypothèses saisies</div>
           </div>
         </div>
 
@@ -247,19 +226,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                Comparaison Visuelle Immédiate : Prix Facial vs Coût Total Réel (TCO 5 ans)
+                Comparaison indicative : prix facial et TCO calculé
               </h4>
               <p className="text-[11px] text-slate-400">
-                Visualisez pourquoi l'option apparemment la plus chère à l'achat devient l'option la plus économique sur la durée.
+                Comparaison calculée à partir des valeurs saisies; elle ne vérifie ni les prix, ni les unités, ni les hypothèses.
               </p>
             </div>
 
             <div className="flex items-center gap-4 text-xs">
               <span className="flex items-center gap-1.5 text-slate-400">
-                <span className="w-3 h-3 rounded-sm bg-slate-600" /> Prix d'achat direct (Devis)
+                <span className="w-3 h-3 rounded-sm bg-slate-600" /> Prix facial saisi
               </span>
               <span className="flex items-center gap-1.5 text-emerald-400">
-                <span className="w-3 h-3 rounded-sm bg-emerald-500" /> Coût Total Réel (TCO Complet)
+                <span className="w-3 h-3 rounded-sm bg-emerald-500" /> TCO calculé — indicatif
               </span>
             </div>
           </div>
@@ -279,19 +258,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <span className="font-bold text-white">{offer.supplierName}</span>
                       {offer.isResponsibleCandidate && (
                         <span className="text-[10px] text-emerald-400 bg-emerald-950/60 border border-emerald-800/60 px-1.5 py-0.5 rounded font-medium">
-                          Option Responsable
+                          Candidate déclarée
                         </span>
                       )}
                       {isBest && (
                         <span className="text-[10px] text-emerald-300 bg-emerald-600/30 border border-emerald-500/50 px-2 py-0.5 rounded font-semibold flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-400" /> Recommandation Financière
+                          <CheckCircle2 className="w-3 h-3 text-emerald-400" /> TCO calculé le plus bas — non validé
                         </span>
                       )}
                     </div>
 
                     <div className="font-mono text-xs text-slate-300">
                       Facial : <strong className="text-white">{calc.apparentDirectCost.toLocaleString('fr-FR')} €</strong>{' '}
-                      → TCO Réel :{' '}
+                      → TCO calculé (indicatif) :{' '}
                       <strong className={isBest ? 'text-emerald-400 font-extrabold' : 'text-white'}>
                         {calc.totalComprehensiveTCO.toLocaleString('fr-FR')} €
                       </strong>
@@ -325,48 +304,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* Executive Action Banner */}
         <div className="p-4 bg-slate-950/60 border border-slate-800 rounded-xl flex flex-wrap items-center justify-between gap-4">
           <div className="text-xs text-slate-300 space-y-0.5">
-            <strong className="text-white">Avis du Contrôle de Gestion :</strong> L'arbitrage en faveur d'EcoMobility dégage un gain net de{' '}
+            <strong className="text-white">Simulation du projet actif :</strong> selon les données et hypothèses saisies, l’offre {respOffer?.offer.supplierName || 'responsable'} présente un écart TCO indicatif de{' '}
             <span className="font-mono text-emerald-400 font-bold">
               {currentProjectSavings.toLocaleString('fr-FR')} €
             </span>{' '}
-            sur 5 ans, avec un risque opérationnel maîtrisé et un point mort à{' '}
+            sur l’horizon configuré ({project.horizonYears} ans). Ce résultat n’est ni vérifié, ni une validation d’achat ; le point mort indicatif est{' '}
             <span className="font-mono text-white font-bold">{breakEven?.breakEvenMonth} mois</span>.
           </div>
 
           <div className="flex items-center gap-2">
-            {project.status === 'analyse' && (
-              <button
-                onClick={() => handleApproveStatus('validation_finance', 'Validation Finance DAF')}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-colors"
-              >
-                Valider les Hypothèses (DAF)
-              </button>
-            )}
-
-            {project.status === 'validation_finance' && (
-              <button
-                onClick={() => handleApproveStatus('validation_achats', 'Validation Direction Achats')}
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition-colors"
-              >
-                Approuver l'Arbitrage (Achats)
-              </button>
-            )}
-
-            {project.status === 'validation_achats' && (
-              <button
-                onClick={() => handleApproveStatus('decision', 'Signature Comité de Décision')}
-                className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition-colors"
-              >
-                Clôturer en Comité Décision
-              </button>
-            )}
+            <div role="note" className="max-w-md rounded-lg border border-amber-700/70 bg-amber-950/40 px-3 py-2 text-[11px] text-amber-200">
+              Les validations DAF/Achats et la décision du comité sont désactivées : aucune identité vérifiée ni piste d’approbation probante n’est configurée.
+            </div>
 
             <button
               onClick={() => onNavigate('report')}
               className="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-white rounded-lg text-xs font-semibold transition-colors flex items-center gap-1.5"
             >
               <FileCheck2 className="w-3.5 h-3.5 text-emerald-400" />
-              Générer Rapport Décisionnel (PDF)
+              Ouvrir le rapport indicatif (PDF)
             </button>
           </div>
         </div>
@@ -375,7 +331,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       {/* PORTFOLIO-WIDE KPI CONSOLIDATION (SECTION 4.1) */}
       <div className="space-y-4">
         <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-          Indicateurs Consolidés de l'Organisation ({projects.length} Appels d'Offres Actifs)
+          Indicateurs indicatifs · Projet actif · {projects.length} dossier(s) dans l’espace de travail
         </h3>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -394,40 +350,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
             <span className="text-xs text-emerald-400 flex items-center justify-between">
-              <span>Économies Nettes Détectées</span>
+              <span>Écart TCO modélisé — non vérifié</span>
               <TrendingUp className="w-4 h-4 text-emerald-400" />
             </span>
             <div className="text-2xl font-bold font-mono text-emerald-400 tabular-nums">
               +{portfolioSavings.toLocaleString('fr-FR')} €
             </div>
             <div className="text-[11px] text-slate-400">
-              Gains TCO cumulés sur les horizons pluriannuels
+              Estimation calculée uniquement pour le projet actif
             </div>
           </div>
 
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
             <span className="text-xs text-sky-400 flex items-center justify-between">
-              <span>Bilan Carbone Évité</span>
+              <span>Écart carbone estimé — non vérifié</span>
               <Leaf className="w-4 h-4 text-sky-400" />
             </span>
             <div className="text-2xl font-bold font-mono text-sky-400 tabular-nums">
               {portfolioAvoidedEmissions.toLocaleString('fr-FR')} tCO2e
             </div>
             <div className="text-[11px] text-slate-400">
-              Trajectoire conforme aux engagements RSE
+              Scénario RSE indicatif — non vérifié
             </div>
           </div>
 
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl space-y-1">
             <span className="text-xs text-amber-400 flex items-center justify-between">
-              <span>Jalons en Attente de Visa</span>
+              <span>Statuts de démonstration</span>
               <Clock className="w-4 h-4 text-amber-400" />
             </span>
             <div className="text-2xl font-bold font-mono text-amber-400 tabular-nums">
-              {pendingValidationProjects.length} Projets
+              {pendingValidationProjects.length} exemples
             </div>
             <div className="text-[11px] text-slate-400">
-              Nécessitent un arbitrage Finance ou Achats
+              États locaux non vérifiés — aucune approbation n’est requise ici
             </div>
           </div>
         </div>
@@ -438,10 +394,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
             <FileCheck2 className="w-4 h-4 text-emerald-400" />
-            Projets Nécessitant une Validation de Gouvernance
+            Projets avec un statut de démonstration
           </h4>
           <span className="text-[11px] text-slate-400">
-            {pendingValidationProjects.length} action(s) requise(s)
+            {pendingValidationProjects.length} état(s) affiché(s) — sans effet décisionnel
           </span>
         </div>
 
@@ -461,7 +417,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="font-bold text-white text-xs">{p.name}</span>
                   <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-900 border border-slate-700 text-amber-400">
-                    {p.status.replace(/_/g, ' ')}
+                    {p.status.replace(/_/g, ' ')} — démo
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-400 mb-2 truncate">

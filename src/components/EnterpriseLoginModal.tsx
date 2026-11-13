@@ -7,13 +7,7 @@ import {
   Building,
   Key,
   Lock,
-  CheckCircle2,
   X,
-  User,
-  ExternalLink,
-  Sparkles,
-  ArrowRight,
-  Briefcase,
   AlertCircle,
 } from 'lucide-react';
 
@@ -163,15 +157,15 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 bg-emerald-950 text-emerald-400 border border-emerald-800/80 rounded-full text-[10px] font-mono font-bold uppercase tracking-wider flex items-center gap-1">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                SSO Fédéré Sécurisé
+                Démo — identité non vérifiée
               </span>
-              <span className="text-[11px] text-slate-400 font-mono">ISO 27001 · SOC 2 Type II</span>
+              <span className="text-[11px] text-slate-400 font-mono">Aucune certification vérifiée</span>
             </div>
             <h2 className="text-xl font-bold text-white tracking-tight">
-              Portail d'Authentification Entreprise & SSO
+              Identité — démonstration non connectée
             </h2>
             <p className="text-xs text-slate-400">
-              Connexion certifiée pour les comités d'investissement, directions financières et acheteurs.
+              Écran de démonstration : aucun fournisseur d’identité externe n’est vérifié ni connecté.
             </p>
           </div>
 
@@ -194,7 +188,7 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
             }`}
           >
             <Building className="w-4 h-4 text-emerald-400" />
-            <span>Annuaire Entreprise (SSO 1-Clic)</span>
+            <span>Profils de démonstration — non connectés</span>
           </button>
 
           <button
@@ -206,7 +200,7 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
             }`}
           >
             <Key className="w-4 h-4 text-sky-400" />
-            <span>Fédération IdP Dédiée (Azure / Google / Auth0 / Okta)</span>
+            <span>Connexion IdP indisponible</span>
           </button>
         </div>
 
@@ -222,8 +216,8 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
           {tab === 'directory' ? (
             <div className="space-y-4">
               <div className="text-xs text-slate-300 flex items-center justify-between">
-                <span>Comptes certifiés de l'organisation <strong>ACME Corporation</strong> :</span>
-                <span className="text-[11px] text-emerald-400 font-mono">Bdd Neon PostgreSQL active</span>
+                <span>Comptes de démonstration non vérifiés de l'organisation <strong>ACME Corporation</strong> :</span>
+                <span className="text-[11px] text-emerald-400 font-mono">Annuaire non vérifié</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -235,8 +229,8 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
                     <button
                       key={u.email}
                       onClick={() => handleSelectPreconfigured(u)}
-                      disabled={isLoading}
-                      className={`p-4 rounded-xl border text-left transition-all flex flex-col justify-between gap-3 ${
+                      disabled
+                      className={`p-4 rounded-xl border text-left opacity-60 cursor-not-allowed transition-all flex flex-col justify-between gap-3 ${
                         isCurrent
                           ? 'bg-emerald-950/40 border-emerald-600/80 shadow-md'
                           : 'bg-slate-950/70 border-slate-800 hover:border-slate-700 hover:bg-slate-900'
@@ -261,7 +255,7 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
                       <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[10px] font-mono text-slate-400">
                         <span>{u.email}</span>
                         <span className="flex items-center gap-1 text-slate-300">
-                          {isLoading ? 'Authentification...' : 'Se connecter →'}
+                          Démo — connexion désactivée
                         </span>
                       </div>
                     </button>
@@ -272,8 +266,7 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
           ) : (
             <form onSubmit={handleCustomLogin} className="space-y-4 text-xs">
               <div className="p-3 bg-slate-950/80 rounded-xl border border-slate-800 text-slate-300 leading-relaxed">
-                Connectez-vous via la passerelle d'identité fédérée de votre organisation.
-                Les jetons de session sont signés par le serveur d'authentification et tracés dans le journal d'audit.
+                Ce formulaire de démonstration ne vérifie pas l’identité auprès d’un IdP. Ne l’utilisez pas comme authentification de production ; les comptes et rôles affichés ne sont pas vérifiés.
               </div>
 
               <div className="space-y-1.5">
@@ -325,7 +318,7 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <label className="text-slate-300 font-semibold block">
-                    Rôle Métier Attribué par l'Annuaire
+                    Rôle proposé (non vérifié)
                   </label>
                   <select
                     value={customRole}
@@ -357,11 +350,11 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
 
               <button
                 type="submit"
-                disabled={loadingEmail !== null}
-                className="w-full mt-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-2 transition-colors shadow-lg shadow-emerald-950/40"
+                disabled
+                className="w-full mt-4 py-2.5 bg-slate-700 text-slate-300 rounded-lg font-bold text-xs flex items-center justify-center gap-2 cursor-not-allowed"
               >
                 <Key className="w-4 h-4" />
-                <span>{loadingEmail ? 'Fédération SSO en cours...' : 'Initier la Session SSO Fédérée'}</span>
+                <span>Connexion indisponible — fournisseur d’identité non configuré</span>
               </button>
             </form>
           )}
@@ -373,9 +366,9 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
               Politique de Sécurité & Traçabilité Légale
             </div>
             <ul className="list-disc pl-4 space-y-1 text-slate-400">
-              <li>Sessions protégées par des jetons cryptographiques de 256 bits valides 24h.</li>
-              <li>Chaque connexion, délégation de rôle et signature de visa est enregistrée de manière immuable dans le registre d'audit légal (Conformité CAC & Article L. 823-10).</li>
-              <li>Conforme aux exigences d'isolation d'entreprise et au chiffrement des flux de bout en bout.</li>
+              <li>Aucune garantie cryptographique ou durée de session ne doit être revendiquée par cette interface.</li>
+              <li>Les connexions et rôles de cette démonstration ne constituent pas une preuve d’identité ou une piste d’audit légale.</li>
+              <li>L’isolation des organisations et le chiffrement applicatif de bout en bout ne sont pas certifiés par cette interface.</li>
             </ul>
           </div>
         </div>
@@ -384,7 +377,7 @@ export const EnterpriseLoginModal: React.FC<EnterpriseLoginModalProps> = ({ isOp
         <div className="p-4 bg-slate-950 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-            <span>Serveur d'Identité Connecté (Neon PostgreSQL)</span>
+            <span>Identité non vérifiée — mode démonstration</span>
           </div>
 
           <button

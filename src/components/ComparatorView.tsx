@@ -3,7 +3,6 @@ import {
   Project,
   SupplierOffer,
   TCOCalculationResult,
-  CostBreakdownItem,
   Supplier,
   AuditLogEntry,
   ExternalityReferenceBenchmark,
@@ -11,11 +10,7 @@ import {
 import { TCOEngine } from '../engine/tcoEngine';
 import {
   HelpCircle,
-  TrendingDown,
-  TrendingUp,
   Plus,
-  Sliders,
-  ShieldCheck,
   CheckCircle,
   FileSpreadsheet,
   Award,
@@ -141,7 +136,11 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => ExcelExportService.exportFinancialWorkbook(project, offers, suppliers, auditLogs, benchmarks)}
+            onClick={() =>
+              void ExcelExportService.exportFinancialWorkbook(project, offers, suppliers, auditLogs, benchmarks).catch(() => {
+                window.alert('Impossible de générer le classeur Excel. Aucune donnée n’a été modifiée.');
+              })
+            }
             className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 hover:text-white rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-sm"
             title="Exporter le modèle financier complet en classeur Excel multi-onglets (.xlsx)"
           >
@@ -401,7 +400,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                             value: 'Forfait contractuel pièces & main d\'œuvre',
                             unit: '€',
                             sourceType: 'verifiee',
-                            sourceName: 'Barème constructeur certifié',
+                            sourceName: 'Valeur saisie — source non vérifiée',
                             confidenceLevel: 92,
                             lastUpdated: '2026-03-10',
                             updatedBy: 'Acheteur Lead',
@@ -477,7 +476,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                           'Fiscalité écologique & Malus annuel',
                           'Conformité Fiscale',
                           {
-                            value: 'Barème officiel Loi de Finances',
+                            value: 'Exemple de barème fiscal — source non vérifiée',
                             unit: '€',
                             sourceType: 'source_externe',
                             sourceName: 'Code Général des Impôts 2026',
@@ -554,7 +553,7 @@ export const ComparatorView: React.FC<ComparatorViewProps> = ({
                             value: 'Somme arithmétique des flux CAPEX et OPEX',
                             unit: '€',
                             sourceType: 'verifiee',
-                            sourceName: 'Moteur de calcul certifié TrueTCO',
+                            sourceName: 'Calcul indicatif du moteur — non certifié',
                             confidenceLevel: 94,
                             lastUpdated: '2026-03-20',
                             updatedBy: 'Moteur TCO',

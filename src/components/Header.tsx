@@ -6,14 +6,11 @@ import {
   Plus,
   CheckCircle2,
   Database,
-  LogIn,
-  Check,
   Lock,
   ChevronDown,
   Building,
   LogOut,
   UserCheck,
-  Key,
   Shield,
 } from 'lucide-react';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -97,8 +94,8 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="hidden sm:block">
             <span className="font-extrabold tracking-tight text-white flex items-center gap-1.5 text-base">
               TrueTCO
-              <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 font-bold">
-                SSO
+              <span title="Données de démonstration locales; API métier et connexion externe désactivées." className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/90 text-emerald-400 border border-emerald-800/80 font-bold">
+                DÉMO
               </span>
             </span>
           </div>
@@ -132,10 +129,10 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           onClick={onOpenTestsModal}
           className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-colors"
-          title="Ouvrir le banc de tests automatisés (7 tests unitaires conformité ISO/WACC)"
+          title="Ouvrir les tests locaux du moteur (ils ne constituent pas une certification)"
         >
           <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="hidden xl:inline">Tests TCO (7/7)</span>
+          <span className="hidden xl:inline">Tests locaux</span>
         </button>
 
         {/* Neon Database indicator & Backup Modal Trigger */}
@@ -143,10 +140,10 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             onClick={onOpenBackupModal}
             className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white rounded-lg text-xs font-medium transition-colors"
-            title="Base Neon PostgreSQL connectée. Cliquez pour ouvrir le gestionnaire de sauvegarde."
+            title="Ouvrir la gestion des données locales; aucune connexion Neon n’est vérifiée ici."
           >
             <Database className="w-3.5 h-3.5 text-emerald-400" />
-            <span className="hidden lg:inline text-emerald-300 font-mono text-[11px]">Neon DB</span>
+            <span className="hidden lg:inline text-slate-300 font-mono text-[11px]">Données</span>
           </button>
         )}
 
@@ -176,7 +173,7 @@ export const Header: React.FC<HeaderProps> = ({
             value={activeRole}
             onChange={(e) => handleRoleChange(e.target.value as UserRole)}
             className="bg-slate-900 border border-slate-700/80 rounded px-2 py-1 text-slate-200 text-xs font-medium focus:outline-none focus:border-emerald-500"
-            title="Basculer de rôle utilisateur pour tester les perspectives métiers"
+            title="Changer le profil de démonstration local; ne modifie aucun rôle serveur."
           >
             {Object.entries(roleLabels).map(([roleKey, label]) => (
               <option key={roleKey} value={roleKey}>
@@ -255,7 +252,7 @@ export const Header: React.FC<HeaderProps> = ({
                       </span>
                     </div>
                     <div className="text-[10px] text-slate-500 font-mono">
-                      Jeton chiffré synchronisé avec Neon DB
+                      État de session vérifié par le serveur uniquement
                     </div>
                   </div>
 

@@ -22,54 +22,21 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Default Corporate user (Sophie Valéry - Azure AD SSO)
-const DEFAULT_ENTERPRISE_USER: EnterpriseUser = {
-  id: 'b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-  email: 'sophie.valery@acme.com',
-  fullName: 'Sophie Valéry',
-  role: 'directeur_achats',
-  ssoProvider: 'azure_ad',
-  department: 'Direction des Achats Groupe',
-  isActive: true,
-  lastLoginAt: new Date().toISOString(),
-};
-
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<EnterpriseUser | null>(() => {
-    return AuthService.getCachedUser() || DEFAULT_ENTERPRISE_USER;
-  });
+  const [user, setUser] = useState<EnterpriseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
 
-    // Verify session with Neon backend on startup
+    // Cached user data is not proof of identity. Only a server-verified session may authenticate.
     AuthService.getCurrentUser()
       .then((remoteUser) => {
-        if (!isMounted) return;
-        if (remoteUser) {
-          setUser(remoteUser);
-        } else {
-          // If no remote session token, auto-provision default enterprise session with Azure AD
-          AuthService.loginWithSSO({
-            email: DEFAULT_ENTERPRISE_USER.email,
-            ssoProvider: DEFAULT_ENTERPRISE_USER.ssoProvider,
-            fullName: DEFAULT_ENTERPRISE_USER.fullName,
-            role: DEFAULT_ENTERPRISE_USER.role,
-            department: DEFAULT_ENTERPRISE_USER.department,
-          })
-            .then((res) => {
-              if (isMounted) setUser(res.user);
-            })
-            .catch((err) => {
-              console.warn('Auto-login fallback error:', err);
-              if (isMounted) setUser(DEFAULT_ENTERPRISE_USER);
-            });
-        }
+        if (isMounted) setUser(remoteUser);
       })
       .catch(() => {
-        if (isMounted) setUser(DEFAULT_ENTERPRISE_USER);
+        if (isMounted) setUser(null);
       })
       .finally(() => {
         if (isMounted) setIsLoading(false);

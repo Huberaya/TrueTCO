@@ -3,16 +3,14 @@ import { useTenant } from '../context/TenantContext';
 import {
   Building2,
   ChevronDown,
-  ShieldCheck,
   Check,
   Plus,
   Layers,
   Lock,
-  Globe2,
 } from 'lucide-react';
 
 export const TenantSwitcher: React.FC = () => {
-  const { tenants, currentTenant, switchTenant, openNewTenantModal } = useTenant();
+  const { tenants, currentTenant, switchTenant } = useTenant();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -30,9 +28,9 @@ export const TenantSwitcher: React.FC = () => {
   const getTierBadge = (tier: string) => {
     switch (tier) {
       case 'sovereign':
-        return { label: 'Souverain SecNumCloud', color: 'bg-purple-950 text-purple-300 border-purple-800' };
+        return { label: 'Option — non vérifiée', color: 'bg-purple-950 text-purple-300 border-purple-800' };
       case 'enterprise':
-        return { label: 'Entreprise Dédié', color: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
+        return { label: 'Démo', color: 'bg-emerald-950 text-emerald-300 border-emerald-800' };
       default:
         return { label: 'Standard', color: 'bg-slate-800 text-slate-300 border-slate-700' };
     }
@@ -46,7 +44,7 @@ export const TenantSwitcher: React.FC = () => {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="flex items-center gap-2 px-2.5 py-1.5 bg-slate-900/90 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-lg transition-all text-xs group"
-        title="Changer d'espace entreprise (Partitionnement étanche Neon PostgreSQL)"
+        title="Changer l’espace de démonstration local; aucune isolation serveur n’est configurée."
       >
         <div className="w-5 h-5 rounded bg-emerald-950 border border-emerald-800/80 flex items-center justify-center text-emerald-400">
           <Building2 className="w-3 h-3" />
@@ -74,10 +72,10 @@ export const TenantSwitcher: React.FC = () => {
             <div>
               <div className="font-bold text-white flex items-center gap-1.5 text-xs">
                 <Layers className="w-3.5 h-3.5 text-emerald-400" />
-                Espaces Entreprises & Filiales
+                Espaces de démonstration
               </div>
               <div className="text-[10px] text-slate-400">
-                Partitionnement étanche (Row-Level Security)
+                Sélection locale uniquement — RLS non configurée
               </div>
             </div>
             <span className={`text-[9px] px-1.5 py-0.5 rounded font-mono font-bold border ${currentBadge.color}`}>
@@ -89,8 +87,6 @@ export const TenantSwitcher: React.FC = () => {
           <div className="space-y-1 max-h-64 overflow-y-auto pr-1">
             {tenants.map((t) => {
               const isSelected = t.id === currentTenant.id;
-              const badge = getTierBadge(t.subscriptionTier);
-
               return (
                 <button
                   key={t.id}
@@ -126,28 +122,27 @@ export const TenantSwitcher: React.FC = () => {
             })}
           </div>
 
-          {/* Security Guarantee Box */}
-          <div className="p-2.5 bg-slate-950/90 rounded-xl border border-slate-800/80 space-y-1 text-[10px] text-slate-400">
-            <div className="flex items-center gap-1.5 text-slate-300 font-semibold text-[11px]">
-              <Lock className="w-3 h-3 text-emerald-400" />
-              Garantie d'Étanchéité Multi-Tenants
+          {/* No isolation claim: tenant selection is currently local demo state. */}
+          <div className="p-2.5 bg-amber-950/40 rounded-xl border border-amber-800/80 space-y-1 text-[10px] text-amber-200">
+            <div className="flex items-center gap-1.5 font-semibold text-[11px]">
+              <Lock className="w-3 h-3" />
+              Isolation des données non configurée
             </div>
-            <p className="text-[10px] leading-relaxed text-slate-400">
-              Les consultations, offres financières et métadonnées carbone sont hermétiquement cloisonnées. Aucun croisement de données n'est possible entre entités.
+            <p className="text-[10px] leading-relaxed">
+              Ce sélecteur ne prouve pas l’identité de l’organisation et ne cloisonne pas les données côté serveur. N’utilisez pas de données client.
             </p>
           </div>
 
           {/* Create New Tenant CTA */}
           <div className="pt-1">
             <button
-              onClick={() => {
-                setIsOpen(false);
-                openNewTenantModal();
-              }}
-              className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 transition-colors"
+              type="button"
+              disabled
+              title="Création d’organisation désactivée jusqu’à la mise en place de l’authentification et de l’isolation tenant."
+              className="w-full py-2 bg-slate-800 text-slate-400 rounded-lg font-semibold text-xs flex items-center justify-center gap-1.5 cursor-not-allowed"
             >
-              <Plus className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Déployer une Nouvelle Entité / Filiale</span>
+              <Plus className="w-3.5 h-3.5" />
+              <span>Création d’organisation indisponible</span>
             </button>
           </div>
 

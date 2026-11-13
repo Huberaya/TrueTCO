@@ -29,31 +29,31 @@ export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
     switch (type) {
       case 'verifiee':
         return {
-          label: 'Donnée vérifiée contractuelle',
+          label: 'Marquée vérifiée dans les données — non vérifiée par TrueTCO',
           badgeClass: 'text-emerald-400 bg-emerald-950/50 border-emerald-800/60',
           icon: <CheckCircle className="w-3.5 h-3.5 text-emerald-400" />,
         };
       case 'source_externe':
         return {
-          label: 'Référentiel externe certifié',
+          label: 'Référence externe déclarée — non vérifiée',
           badgeClass: 'text-sky-400 bg-sky-950/50 border-sky-800/60',
           icon: <ShieldCheck className="w-3.5 h-3.5 text-sky-400" />,
         };
       case 'estimee':
         return {
-          label: 'Donnée modélisée / estimée',
+          label: 'Marquée estimée — valeur non vérifiée',
           badgeClass: 'text-amber-400 bg-amber-950/50 border-amber-800/60',
           icon: <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />,
         };
       case 'utilisateur':
         return {
-          label: 'Hypothèse fournie par l\'acheteur',
+          label: 'Saisie utilisateur — identité non vérifiée',
           badgeClass: 'text-indigo-400 bg-indigo-950/50 border-indigo-800/60',
           icon: <User className="w-3.5 h-3.5 text-indigo-400" />,
         };
       default:
         return {
-          label: 'Hypothèse standard par défaut',
+          label: 'Origine non renseignée — donnée non vérifiée',
           badgeClass: 'text-slate-400 bg-slate-800 border-slate-700',
           icon: <AlertTriangle className="w-3.5 h-3.5 text-slate-400" />,
         };
@@ -99,16 +99,16 @@ export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
             </div>
 
             <div className="flex flex-col items-end">
-              <div className="text-xs text-slate-400 mb-1">Niveau de confiance des données</div>
+              <div className="text-xs text-slate-400 mb-1">Score indicatif fourni (non calibré)</div>
               <div className="flex items-center gap-2">
                 <div className="w-24 h-2 bg-slate-800 rounded-full overflow-hidden">
                   <div
                     className="h-full bg-emerald-500 rounded-full transition-all"
-                    style={{ width: `${auditedValue?.confidenceLevel ?? 85}%` }}
+                    style={{ width: `${auditedValue?.confidenceLevel ?? 0}%` }}
                   />
                 </div>
                 <span className="text-sm font-semibold font-mono text-emerald-400 tabular-nums">
-                  {auditedValue?.confidenceLevel ?? 85}%
+                  {auditedValue?.confidenceLevel == null ? 'Non établi' : `${auditedValue.confidenceLevel}%`}
                 </span>
               </div>
             </div>
@@ -117,7 +117,7 @@ export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
           {/* Source and Provenance */}
           <div className="space-y-3">
             <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Traçabilité & Source Primaire
+              Source déclarée — non vérifiée
             </h4>
             <div className="p-3.5 bg-slate-800/40 border border-slate-800 rounded-lg space-y-2">
               <div className="flex items-center justify-between">
@@ -129,9 +129,9 @@ export const WhyThisAmountModal: React.FC<WhyThisAmountModalProps> = ({
               </div>
 
               <div className="flex items-start justify-between gap-4 pt-1">
-                <span className="text-slate-400 text-xs">Source documentaire :</span>
+                <span className="text-slate-400 text-xs">Libellé de source saisi :</span>
                 <span className="text-right text-xs font-medium text-slate-200">
-                  {auditedValue?.sourceName || 'Formule algorithmique certifiée du moteur TrueTCO'}
+                  {auditedValue?.sourceName || 'Formule du moteur TrueTCO — calcul indicatif, non certifié'}
                   {auditedValue?.sourceUrl && (
                     <a
                       href={auditedValue.sourceUrl}

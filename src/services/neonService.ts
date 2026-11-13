@@ -66,7 +66,7 @@ export class NeonService {
   }
 
   /**
-   * Persist a project to Neon PostgreSQL (Hermetically partitioned by tenant)
+   * Attempt to persist a project through the demo API; tenant isolation is not established
    */
   public static async saveProject(project: Project, tenantId?: string): Promise<boolean> {
     try {
@@ -100,7 +100,7 @@ export class NeonService {
   }
 
   /**
-   * Persist an audit log to Neon PostgreSQL (Hermetically partitioned by tenant)
+   * Attempt to persist an application event; no certified audit storage is configured
    */
   public static async saveAuditLog(log: AuditLogEntry, tenantId?: string): Promise<boolean> {
     try {
@@ -117,7 +117,7 @@ export class NeonService {
   }
 
   /**
-   * Persist a supplier to Neon PostgreSQL (Hermetically partitioned by tenant)
+   * Attempt to persist a supplier through the demo API; tenant isolation is not established
    */
   public static async saveSupplier(supplier: any, tenantId?: string): Promise<boolean> {
     try {

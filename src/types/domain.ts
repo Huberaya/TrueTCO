@@ -101,10 +101,10 @@ export interface Supplier {
 }
 
 export type DataSourceType = 
-  | 'verifiee'          // 🟢 Donnée vérifiée (contrat, devis ferme, facture)
-  | 'estimee'           // 🟡 Donnée estimée (modèle d'ingénierie)
-  | 'utilisateur'       // 🟠 Fournie par acheteur/utilisateur
-  | 'source_externe'    // 🔵 Source externe certifiée (ADEME, Quinet, WEC, etc.)
+  | 'verifiee'          // Marquée comme vérifiée par la donnée; cette étiquette n'est pas contrôlée par l'application.
+  | 'estimee'           // Marquée comme estimation; provenance et méthode non nécessairement vérifiées.
+  | 'utilisateur'       // Saisie utilisateur; identité et justificatif non nécessairement vérifiés.
+  | 'source_externe'    // Libellé de source externe déclaré; source et valeur non nécessairement vérifiées.
   | 'donnee_sectorielle'// 🟣 Donnée de benchmark sectoriel
   | 'historique'        // 🏛️ Historique interne d'exploitation
   | 'estimation'        // 📊 Estimation probabiliste
@@ -517,6 +517,6 @@ export interface CsrdExecutiveReport {
   scope3UpstreamAvoidedTCO2e: number;
 
   activities: TaxonomyActivityAlignment[];
-  auditorVerificationStatus: 'certifie_sans_reserve' | 'revue_en_cours' | 'conforme_csrd';
+  auditorVerificationStatus: 'certifie_sans_reserve' | 'revue_en_cours' | 'conforme_csrd' | 'donnees_insuffisantes';
   independentAuditorName: string; // e.g. 'PwC Audit & Sustainability / OTI Agréé'
 }
