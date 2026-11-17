@@ -1,6 +1,6 @@
 # TrueTCO — dossier Neon/PostgreSQL P0.2
 
-**État :** architecture et candidats de migration préparés; aucune connexion Neon effectuée pendant P0.2, aucune migration exécutée, aucune donnée ou configuration distante modifiée. Les observations distantes ci-dessous sont celles préalablement vérifiées et communiquées par le propriétaire du projet; elles n’ont pas été re-mesurées dans ce checkout.
+**État P0.3/P0.4 :** aucune connexion Neon, migration, seed ou modification distante. Les observations distantes ci-dessous sont celles antérieurement vérifiées et communiquées par le propriétaire; elles ne sont pas re-mesurées dans ce checkout. Les handlers métier et le client Neon serveur ont été retirés en P0.3; le modèle local et les fichiers de migration restent non canoniques.
 
 ## 1. Faits de départ rapportés par le propriétaire
 
@@ -33,7 +33,7 @@ Le code suivi déclare dix tables (organisations, utilisateurs, projets, fournis
 | `reference_benchmarks`, `audit_logs` | `organization_id` local | Cela ne prouve pas que les handlers filtrent l’organisation ou que des policies distantes existent. |
 | `user_sessions` | Absente des schémas locaux | Présente selon les faits fournis; ne pas la recréer ni la migrer par défaut. Clerk peut gérer les sessions sans table opaque maison. |
 
-`server.ts` contient encore des handlers latents qui lisent les tenants depuis headers/query/body, retombent sur un tenant arbitraire, acceptent des rôles de body, ou effectuent des requêtes sans scope d’organisation. Ils demeurent bloqués en amont par `createFailClosedApiGate()`; cette protection doit rester jusqu’à suppression des chemins non sûrs.
+Depuis P0.3, `server.ts` n’instancie plus de client Neon, ne déclare aucun handler métier/session et ne contient plus de résolveur tenant. Les routes historiques tombent dans la garde globale et reçoivent 503 avant le fallback; le gate doit rester tant que les étapes d’identité, membership, RBAC et DB ne sont pas prouvées.
 
 ## 3. Dossiers de migrations livrés
 
@@ -79,3 +79,19 @@ Le script existant `scripts/migrate-neon.mjs` applique directement `src/db/schem
 - Exécuter migrations à partir d’une base vide et de l’état existant, mesurer lock time, vérifier restore/rollback sur staging.
 
 **Statut tests PostgreSQL P0.2 : non exécutés et non revendiqués** — aucune base PostgreSQL test/staging n’a été connectée ni préparée durant cette session.
+
+## 8. Comparaison structurelle P0.4 du dépôt (inspection locale uniquement)
+
+- Il n’existe **aucun dossier `drizzle/` ni historique de migrations générées** dans le checkout. `src/db/drizzle.config.ts` cible `./drizzle/migrations`, chemin seulement configuré, pas une preuve d’exécution.
+- `src/db/schema.ts` et `src/db/schema.sql` déclarent chacun dix tables. `user_sessions` n’est dans aucun des deux; sa présence distante vient uniquement des constats rapportés par le propriétaire.
+- Écart certain : Drizzle `users.clerk_id`/index `user_clerk_id_idx` n’existe pas dans le DDL SQL local; le DDL SQL contient une contrainte de rôle `CHECK`, Drizzle ne la représente pas. Noms d’indexes/uniques différents, dont `(organization_id,email)` et références uniques benchmark/offer; les noms ne permettent pas de conclure qu’une migration distante a eu lieu.
+- Contrats divergents visibles : `projects.status` a un défaut/casse différents (`Brouillon` vs `brouillon`); le SQL contient des `CHECK` métier (valeurs, plages, montants/volumes) non décrits dans Drizzle; plusieurs `DEFAULT` SQL sont absents de Drizzle. À décider avant canonisation, pas à corriger en choisissant arbitrairement l’une des deux sources.
+- `schema.sql` déclare dix tables et déclencheurs; la migration legacy exécute ce DDL sur connexion WebSocket puis seed quand `organizations` est vide. Les `CREATE TABLE IF NOT EXISTS` **ne mettent pas à niveau une table déjà existante**. Son message a été corrigé pour ne plus qualifier cela de migration versionnée/réconciliation; le script n’a pas été exécuté.
+- Suppression d’un `DROP TRIGGER IF EXISTS trigger_update_organizations_updated_at` dupliqué dans le DDL local. Aucun autre changement de schéma structurel risqué n’a été fait.
+- Les drafts P0.2 ajoutent `organization_id` aux quatre tables enfants absentes du modèle local : cohérent avec le manque constaté à distance, mais non suffisant pour conclure aux types/contraintes exacts de Neon. Ils restent suffixés `.sql.draft`, et rien ne les découvre dans le répertoire Drizzle.
+
+### Décisions non résolues
+
+Choix d’une source de vérité Drizzle/SQL; mapping des colonnes distantes additionnelles `users`/`organizations`; intégration ou abandon de `clerk_id`; réconciliation des `CHECK`, defaults, indexes et noms de contraintes; existence et rôle métier de `user_sessions`; politique et contraintes tenant enfants; historique existant. Ces choix nécessitent l’introspection autorisée et approbation du propriétaire, non disponibles/permises dans P0.3/P0.4.
+
+Aucun test PostgreSQL jetable n’a été exécuté : aucun serveur PostgreSQL/`psql` n’était disponible et l’interdiction d’accès Neon reste appliquée. Les tests P0.3 sont des tests Express/Node et de source, pas des preuves DB/RLS.

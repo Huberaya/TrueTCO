@@ -27,9 +27,9 @@ async function runMigration() {
   const schemaPath = path.resolve(__dirname, '../src/db/schema.sql');
   const schemaSql = fs.readFileSync(schemaPath, 'utf8');
 
-  console.log('Applying relational schema (10 tables, triggers, indexes)...');
+  console.warn('Executing legacy bootstrap DDL only; CREATE TABLE IF NOT EXISTS does not reconcile existing table schemas. This is not a versioned migration.');
   await client.query(schemaSql);
-  console.log('✓ Schema applied successfully to Neon!');
+  console.log('✓ Bootstrap DDL executed; existing table definitions were not reconciled.');
 
   // Verify created tables
   const tablesRes = await client.query(`

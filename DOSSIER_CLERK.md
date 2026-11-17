@@ -30,7 +30,7 @@ La vérification Clerk n’implique pas :
 5. accès DB limité au tenant ni prévention IDOR;
 6. webhook signé, synchronisation, révocation ou idempotence.
 
-Aucune de ces fonctions n’est déclarée implémentée. N’ajoutez pas un fallback sur le premier tenant, un ID body/header, une session locale héritée ou un `admin` implicite. `POST /api/users/sync` et les routes historiques restent derrière la garde.
+Aucune de ces fonctions n’est déclarée implémentée. N’ajoutez pas un fallback sur le premier tenant, un ID body/header, une session locale héritée ou un `admin` implicite. Depuis P0.3, `POST /api/users/sync` et les handlers `/api/auth/*` ont été supprimés de `server.ts`; les routes restantes ne sont pas enregistrées et la garde renvoie 503.
 
 ## 4. Étapes avant l’ouverture future de la moindre route
 

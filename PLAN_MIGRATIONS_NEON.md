@@ -72,3 +72,16 @@ Le `db:migrate` présent lance `scripts/migrate-neon.mjs`, qui applique directem
 6. RLS vérifiée sur role runtime `NOBYPASSRLS`, y compris absence de contexte, lecture, insertion, update, tenant forgé et pool reuse; comparer séparément le comportement owner/bypass.
 
 Aucun PostgreSQL test n’a été installé ou connecté dans cette session; aucune exécution de ces scénarios n’est revendiquée.
+
+## État P0.4 — comparaison dépôt effectuée, sans opérations DB
+
+Inspection locale de `src/db/schema.ts`, `src/db/schema.sql`, `src/db/drizzle.config.ts`, `scripts/migrate-neon.mjs` et `db/migrations/proposed/*.sql.draft` :
+
+- Aucun `drizzle/` ni migration générée n’existe dans le checkout, bien que Drizzle soit configuré pour `./drizzle/migrations`.
+- Les deux schémas locaux déclarent dix tables; le `user_sessions` distant rapporté n’est pas décrit localement.
+- Divergences avérées : Drizzle déclare `users.clerk_id` et son index, absents du DDL SQL; le SQL contient des `CHECK` role/plages/valeurs non reproduits par Drizzle; noms de contraintes/indexes et defaults ne sont pas homogènes. Exemple : statut projet `Brouillon` côté Drizzle vs `brouillon` côté SQL.
+- `migrate-neon.mjs` exécute le DDL bootstrap `CREATE TABLE IF NOT EXISTS` puis seed si l’organisation est absente; `CREATE TABLE IF NOT EXISTS` ne réconcilie pas une table existante et ce script n’est pas un mécanisme de migration versionnée. Son avertissement console a été corrigé en P0.4; le script n’a pas été exécuté.
+- Un `DROP TRIGGER IF EXISTS` dupliqué pour le trigger organizations a été retiré de `src/db/schema.sql`.
+- Les drafts 0001/0002 restent `.sql.draft`, non exécutables et hors de toute migration générée. Ils ne sont pas alignés automatiquement au modèle local, et aucune contrainte distante n’est vérifiée.
+
+Décisions restantes : source de vérité Drizzle/SQL, exact mapping des colonnes distantes additionnelles, statut des colonnes Clerk et sessions, alignement `CHECK`/defaults/indexes/contraintes et stratégie multi-tenant. Aucune base PostgreSQL/Neon jetable n’était disponible; aucun test SQL, migration ou backfill n’a été exécuté.

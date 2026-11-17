@@ -55,10 +55,10 @@ test('signature draft has no fabricated signatures/hash and local signing is dis
   assert.throws(() => SignatureService.signRole('project-1', 'acheteur', 'A', 'B', 'a@example.invalid', 'test'), /désactivée/);
 });
 
-test('server mounts the fail-closed integration router and contains no Gemini forwarding implementation', async () => {
+test('business integration handlers are not mounted and no Gemini forwarding exists', async () => {
   const server = await readFile(new URL('../../server.ts', import.meta.url), 'utf8');
   const router = await readFile(new URL('../server/safetyRoutes.ts', import.meta.url), 'utf8');
-  assert.match(server, /createDisabledIntegrationRouter/);
+  assert.doesNotMatch(server, /createDisabledIntegrationRouter|app\.use\(.*safetyRoutes/);
   assert.match(router, /\/api\/erp\/connectors\/:id\/test/);
   assert.match(router, /\/api\/erp\/connectors\/:id\/sync-inbound/);
   assert.match(router, /\/api\/erp\/connectors\/:id\/push-award/);
@@ -98,11 +98,11 @@ test('ERP UI clears a prior positive award result when the request or payload ch
   assert.match(source, /Aucune connexion réelle n’est activée/);
 });
 
-test('enterprise login screen does not imply a verified SSO identity or certified audit trail', async () => {
+test('enterprise login explicitly remains unavailable and exposes no simulated identity choices', async () => {
   const source = await readFile(new URL('../components/EnterpriseLoginModal.tsx', import.meta.url), 'utf8');
-  assert.match(source, /identité non vérifiée/);
-  assert.match(source, /aucun fournisseur d’identité externe n’est vérifié ni connecté/);
-  assert.doesNotMatch(source, /Sessions protégées par des jetons cryptographiques de 256 bits|registre d'audit légal|Conforme aux exigences d'isolation/);
+  assert.match(source, /Connexion indisponible/);
+  assert.match(source, /Aucun fournisseur d’identité n’est configuré/);
+  assert.doesNotMatch(source, /PRECONFIGURED_USERS|loginWithSSO|secops\.admin|role:\s*'admin'/);
 });
 
 test('CSRD screen explicitly distinguishes unavailable data from zero emissions or compliance', async () => {
@@ -132,44 +132,53 @@ test('document samples start empty, are labeled fictional, and cannot imply acti
   assert.doesNotMatch(service, /return Promise\.resolve|confidenceScore:\s*9[0-9]/);
 });
 
-test('tenant demo does not claim real residency, legal registration or isolation', async () => {
-  const [tenantService, switcher, newTenant] = await Promise.all([
+test('tenant service and organization UI have no default, cache, selection or creation path', async () => {
+  const [tenantService, context, switcher, newTenant] = await Promise.all([
     readFile(new URL('./tenantService.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../context/TenantContext.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/TenantSwitcher.tsx', import.meta.url), 'utf8'),
     readFile(new URL('../components/NewTenantModal.tsx', import.meta.url), 'utf8'),
   ]);
-  assert.match(tenantService, /Organisation de démonstration/);
-  assert.match(tenantService, /demo\.invalid/);
-  assert.match(tenantService, /Non vérifiée/);
-  assert.doesNotMatch(tenantService, /SecNumCloud|849 203 910/);
-  assert.match(switcher, /aucune isolation serveur n’est configurée/);
-  assert.match(newTenant, /création d’organisation est désactivée/);
-  assert.match(newTenant, /Création indisponible : aucune identité vérifiée/);
+  assert.match(tenantService, /getActiveTenantId\(\): null/);
+  assert.match(tenantService, /return \[\]/);
+  assert.match(tenantService, /TENANT_UNAVAILABLE_MESSAGE/);
+  assert.doesNotMatch(tenantService + context, /DEFAULT_TENANT|localStorage|list\[0\]|tenantId\s*\|\|/);
+  assert.match(context, /currentTenant:\s*null/);
+  assert.match(switcher, /Organisation indisponible/);
+  assert.match(newTenant, /création.*désactivées/);
   assert.doesNotMatch(newTenant, /createTenant\(/);
 });
 
-test('server blocks every business API until authentication, RBAC, and tenant isolation are configured', async () => {
+test('server only registers health after Clerk verification and the global fail-closed gate', async () => {
   const [server, gate] = await Promise.all([
     readFile(new URL('../../server.ts', import.meta.url), 'utf8'),
     readFile(new URL('../server/apiGate.ts', import.meta.url), 'utf8'),
   ]);
+  const clerkMount = server.indexOf("app.use('/api', createClerkSessionMiddleware())");
   const gateMount = server.indexOf("app.use('/api', createFailClosedApiGate())");
-  const firstBusinessRoute = server.indexOf("app.get('/api/tenants'");
-  assert.ok(gateMount >= 0 && firstBusinessRoute > gateMount);
+  const healthRoute = server.indexOf("app.get('/api/health'");
+  assert.ok(clerkMount >= 0 && gateMount > clerkMount && healthRoute > gateMount);
+  assert.doesNotMatch(server, /app\.(?:get|post|put|patch|delete|all)\('\/api\/(?!health)/);
   assert.match(gate, /req\.path === '\/health'/);
   assert.match(gate, /status\(503\)/);
   assert.match(gate, /authentification et autorisations serveur non configurées/);
-  assert.doesNotMatch(server, /Authentification SSO d entreprise certifiée|success:\s*true,[\s\S]{0,80}token,/);
 });
 
-test('client never authenticates a default or cached identity without server verification', async () => {
-  const [context, auth] = await Promise.all([
+test('client auth state is always disconnected and contains no token or identity cache', async () => {
+  const [context, auth, app, hook] = await Promise.all([
     readFile(new URL('../context/AuthContext.tsx', import.meta.url), 'utf8'),
     readFile(new URL('./authService.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../App.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../hooks/useClerkNeonSync.ts', import.meta.url), 'utf8'),
   ]);
-  assert.doesNotMatch(context, /DEFAULT_ENTERPRISE_USER|auto-provision|setUser\(AuthService\.getCachedUser/);
-  assert.doesNotMatch(auth, /fallback to cached user|return this\.getCachedUser\(\)/);
-  assert.match(auth, /treating the user as unauthenticated/);
+  assert.match(context, /user:\s*null/);
+  assert.match(context, /isAuthenticated:\s*false/);
+  assert.match(auth, /getToken\(\): null/);
+  assert.match(auth, /getCachedUser\(\): null/);
+  assert.doesNotMatch(context + auth + app + hook, /localStorage|sessionStorage|truetco_enterprise_sso_token|truetco_enterprise_sso_user|Authorization:\s*`Bearer/);
+  assert.doesNotMatch(context + app + hook, /PRECONFIGURED_USERS|syncClerkUser\(|setCachedUser\(/);
+  assert.doesNotMatch(auth, /fetch\(|localStorage|sessionStorage/);
+  assert.doesNotMatch(app, /setActiveRole|user\?\.role/);
 });
 
 test('dashboard no longer presents a live Neon instance or real local demo identity', async () => {

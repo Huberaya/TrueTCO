@@ -43,8 +43,8 @@ import { DigitalSignatureView } from './components/DigitalSignatureView';
 import { CsrdTaxonomyView } from './components/CsrdTaxonomyView';
 
 export default function App() {
-  const { user, isLoginModalOpen, closeLoginModal } = useAuth();
-  const { currentTenant, isNewTenantModalOpen, closeNewTenantModal } = useTenant();
+  const { isLoginModalOpen, closeLoginModal } = useAuth();
+  const { isNewTenantModalOpen, closeNewTenantModal } = useTenant();
   const [projects, setProjects] = useState<Project[]>(() => StorageService.getProjects());
   const [currentProjectId, setCurrentProjectId] = useState<string>(() => {
     return StorageService.getCurrentProjectId() || StorageService.getProjects()[0]?.id || SEED_PROJECTS[0].id;
@@ -54,15 +54,9 @@ export default function App() {
   const [benchmarks, setBenchmarks] = useState<ExternalityReferenceBenchmark[]>(() => StorageService.getBenchmarks());
   const [auditLogs, setAuditLogs] = useState<AuditLogEntry[]>(() => StorageService.getAuditLogs());
 
-  const [activeRole, setActiveRole] = useState<UserRole>(() => user?.role || 'directeur_achats');
+  // Local-only display profile; never sourced from a login, cache or server claim.
+  const activeRole: UserRole = 'acheteur';
   const [currentView, setCurrentView] = useState<NavView>('chantier1');
-
-  // Synchronize active role when enterprise SSO user changes
-  useEffect(() => {
-    if (user?.role) {
-      setActiveRole(user.role);
-    }
-  }, [user?.role]);
 
   // Modals state
   const [isNewProjectOpen, setIsNewProjectOpen] = useState(false);
@@ -70,74 +64,7 @@ export default function App() {
   const [isTestsModalOpen, setIsTestsModalOpen] = useState(false);
   const [isBackupModalOpen, setIsBackupModalOpen] = useState(false);
 
-  // Load remote projects, audit logs, and benchmarks from Neon DB on mount if available
-  useEffect(() => {
-    NeonService.fetchProjects().then((remoteProjects) => {
-      if (remoteProjects && remoteProjects.length > 0) {
-        setProjects((prev) => {
-          const existingIds = new Set(prev.map((p) => p.id));
-          const newFromNeon = remoteProjects.filter((p) => !existingIds.has(p.id));
-          if (newFromNeon.length > 0) {
-            console.log(`[TrueTCO] Loaded ${newFromNeon.length} new project(s) from Neon database.`);
-            return [...newFromNeon, ...prev];
-          }
-          return prev;
-        });
-      }
-    });
-
-    NeonService.fetchAuditLogs().then((remoteLogs) => {
-      if (remoteLogs && remoteLogs.length > 0) {
-        setAuditLogs((prev) => {
-          const existingIds = new Set(prev.map((l) => l.id));
-          const newFromNeon = remoteLogs.filter((l) => !existingIds.has(l.id));
-          return newFromNeon.length > 0 ? [...newFromNeon, ...prev] : prev;
-        });
-      }
-    });
-
-    NeonService.fetchBenchmarks().then((remoteBenchmarks) => {
-      if (remoteBenchmarks && remoteBenchmarks.length > 0) {
-        setBenchmarks((prev) => {
-          const existingNames = new Set(prev.map((b) => b.name));
-          const newFromNeon = remoteBenchmarks.filter((b) => !existingNames.has(b.name));
-          return newFromNeon.length > 0 ? [...newFromNeon, ...prev] : prev;
-        });
-      }
-    });
-  }, []);
-
-  // Demo behavior only: the API is disabled and tenant changes do not establish server isolation.
-  useEffect(() => {
-    let isMounted = true;
-
-    NeonService.fetchProjects(currentTenant.id).then((remoteProjects) => {
-      if (!isMounted) return;
-      if (remoteProjects && remoteProjects.length > 0) {
-        setProjects(remoteProjects);
-        setCurrentProjectId(remoteProjects[0].id);
-      }
-    });
-
-    NeonService.fetchSuppliers(currentTenant.id).then((remoteSuppliers) => {
-      if (!isMounted) return;
-      if (remoteSuppliers && remoteSuppliers.length > 0) {
-        setSuppliers(remoteSuppliers);
-      }
-    });
-
-    NeonService.fetchAuditLogs(currentTenant.id).then((remoteLogs) => {
-      if (!isMounted) return;
-      if (remoteLogs && remoteLogs.length > 0) {
-        setAuditLogs(remoteLogs);
-      }
-    });
-
-    return () => {
-      isMounted = false;
-    };
-  }, [currentTenant.id]);
-
+  // Remote reads are disabled; this UI uses local demo fixtures only.
   // Sync state to local storage on changes
   useEffect(() => {
     StorageService.saveProjects(projects);
@@ -187,8 +114,8 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'local-unverified',
-      userName: user?.fullName || 'Utilisateur non vérifié',
+      userId: 'local-unverified',
+      userName: 'Utilisateur non vérifié',
       userRole: activeRole,
       projectId: newProject.id,
       entityName: 'Projet d\'Achat',
@@ -211,8 +138,8 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'local-unverified',
-      userName: user?.fullName || 'Utilisateur non vérifié',
+      userId: 'local-unverified',
+      userName: 'Utilisateur non vérifié',
       userRole: activeRole,
       projectId: currentProject.id,
       offerId: newOffer.id,
@@ -253,8 +180,8 @@ export default function App() {
     const log: AuditLogEntry = {
       id: `log-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      userId: user?.id || 'local-unverified',
-      userName: user?.fullName || 'Utilisateur non vérifié',
+      userId: 'local-unverified',
+      userName: 'Utilisateur non vérifié',
       userRole: activeRole,
       entityName: `Fournisseur ${newSupplier.name}`,
       fieldChanged: 'Référencement & Qualification Tiers',
@@ -349,8 +276,6 @@ export default function App() {
         currentProject={currentProject}
         projects={projects}
         onSelectProject={handleSelectProject}
-        activeRole={activeRole}
-        onChangeRole={setActiveRole}
         onOpenNewProject={() => setIsNewProjectOpen(true)}
         onOpenTestsModal={() => setIsTestsModalOpen(true)}
         onOpenReportModal={() => setCurrentView('report')}

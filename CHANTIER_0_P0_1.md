@@ -76,3 +76,13 @@ Le chantier d’architecture est documenté dans [`RAPPORT_P0_2.md`](RAPPORT_P0_
 Voir aussi `MATRICE_RBAC.md` (droits non accordés faute de décision approuvée), `DOSSIER_CLERK.md`, `DOSSIER_NEON.md`, `PLAN_MIGRATIONS_NEON.md` et `P0_API_ROUTE_INVENTORY.md`. Deux candidats SQL `.sql.draft` ont été préparés comme brouillons uniquement; aucune migration/connexion/changement distant Neon n’a eu lieu. Les constats Neon sont ceux antérieurement communiqués par le propriétaire et ne sont pas re-mesurés ici.
 
 Vérifications locales P0.2 : `npm test` 26/26; typecheck, lint, build, audit dépendances prod (`npm audit --omit=dev --audit-level=high`) et `git diff --check` réussis. Le build conserve des warnings Vite sur `__dirname` et la taille des chunks. Sur le commit de code `f10267c230ddb3f42a93a9d962b88dc8f45a41e4`, la CI GitHub a réussi (runs `44075921597` et `44075930484`), Vercel et Preview Comments sont SUCCESS; la PR #1 est ouverte/non fusionnée. Aucun rôle Neon ou secret n’a été changé. Tests PostgreSQL/RLS et JWT Clerk réel restent à établir. **Les routes demeurent désactivées; aucun GO production ou fusion n’est revendiqué.**
+
+## P0.3 — neutralisation des identités et tenants contrôlés par le client
+
+La livraison détaillée figure dans [`RAPPORT_P0_3.md`](RAPPORT_P0_3.md). Le checkout initial était sur `edc44ceb6570f705f4edf591dfd95524838a1160`, alors que la tête réelle de la PR #1 était `3f7324a705cb16619ccf2348846217aa635eb41b`; la branche imposée a été fast-forwardée à la tête PR. Le stash `Preserve pre-P0.3 workspace before syncing PR head` et l’audit P0.1 non suivi ont été préservés.
+
+`server.ts` n’a plus de client Neon ni de handlers métier/session. L’ordre est middleware Clerk préparatoire → gate global → unique `GET /api/health`; static/Vite suivent. Les anciennes voies de tenant, user-sync, sessions locale/Bearer et SSO ont été retirées. Le frontend ne stocke plus identité/token/tenant; les vues affichent « non connecté » ou « organisation indisponible ».
+
+P0.4 local limité : comparaison Drizzle/DDL/script/drafts; absence de `drizzle/` généré documentée, incohérences de champs, contraintes, defaults et indexes consignées; retrait d’un `DROP TRIGGER` dupliqué et avertissement legacy corrigé dans `migrate-neon.mjs`. Aucun SQL/seed/backfill exécuté; aucune connexion Neon ni modification distante.
+
+Tests locaux finaux avant publication : **28/28**; `npm ci`, typecheck, lint, audit production, build et diff-check réussis. Les tests adversariaux comptent zéro invocation de handlers simulés après la séquence Clerk→gate. PostgreSQL/JWT réel non testés. SHA/CI du commit P0.3 à renseigner après publication et vérification distante. La PR reste à laisser ouverte, non fusionnée; NO-GO pour toute route métier ou production.

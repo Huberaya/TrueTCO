@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import express from 'express';
 import test from 'node:test';
 import { createFailClosedApiGate } from './apiGate';
+import { createClerkSessionMiddleware } from './clerkAuth';
 
 const businessRoutes: Array<{ method: string; path: string }> = [
   { method: 'GET', path: '/api/tenants' },
@@ -30,64 +31,56 @@ const businessRoutes: Array<{ method: string; path: string }> = [
 ];
 
 const commonMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+const clerkTestEnv = {
+  CLERK_SECRET_KEY: 'sk_test_only_for_injected_test_middleware',
+  CLERK_PUBLISHABLE_KEY: 'pk_test_only_for_injected_test_middleware',
+  CLERK_AUTHORIZED_PARTIES: 'https://app.example.invalid',
+};
 
-test('production server mounts the API gate before every API handler and fallback', async () => {
-  const [serverSource, integrationsSource] = await Promise.all([
-    readFile(new URL('../../server.ts', import.meta.url), 'utf8'),
-    readFile(new URL('./safetyRoutes.ts', import.meta.url), 'utf8'),
-  ]);
+test('production server mounts Clerk, then the gate, then the only public handler and static fallback', async () => {
+  const serverSource = await readFile(new URL('../../server.ts', import.meta.url), 'utf8');
+  const clerkMount = serverSource.indexOf("app.use('/api', createClerkSessionMiddleware())");
   const gateMount = serverSource.indexOf("app.use('/api', createFailClosedApiGate())");
-  assert.ok(gateMount >= 0, 'the server must mount the API gate');
+  const healthRoute = serverSource.indexOf("app.get('/api/health'");
+  const appFallback = serverSource.indexOf('app.use(vite.middlewares)');
+  const staticFallback = serverSource.indexOf('app.use(express.static');
+
+  assert.ok(clerkMount >= 0 && gateMount > clerkMount, 'Clerk verification must precede the global gate');
+  assert.ok(healthRoute > gateMount, 'health must be the sole explicit API handler after the gate');
+  assert.ok(appFallback > gateMount && staticFallback > gateMount, 'SPA/static fallbacks must follow the API gate');
 
   const routePattern = /app\.(get|post|put|patch|delete|all)\(\s*['"](\/api\/[^'"]+)['"]/g;
-  const serverRoutes = [...serverSource.matchAll(routePattern)];
-  assert.ok(serverRoutes.length > 0);
-  for (const route of serverRoutes) {
-    assert.ok(route.index! > gateMount, `API route ${route[2]} must be behind the gate`);
-  }
-  const integrationPaths = new Set([
-    '/api/erp/connectors/:id/test',
-    '/api/erp/connectors/:id/sync-inbound',
-    '/api/erp/connectors/:id/push-award',
-    '/api/ai/parse-document',
-  ]);
-  const expectedServerRoutes = businessRoutes
-    .filter((route) => !route.path.startsWith('/api/erp/') && route.path !== '/api/ai/parse-document')
-    .map((route) => `${route.method} ${route.path}`);
-  expectedServerRoutes.push('GET /api/health');
-  assert.deepEqual(
-    serverRoutes.map((route) => `${route[1].toUpperCase()} ${route[2]}`).sort(),
-    expectedServerRoutes.sort(),
-    'server.ts API handlers must match the checked-in inventory',
-  );
-
-  const disabledMount = serverSource.indexOf('app.use(createDisabledIntegrationRouter())');
-  assert.ok(disabledMount > gateMount, 'the integration router must also be behind the gate');
-  const appFallback = serverSource.indexOf('app.use(vite.middlewares)');
-  const staticFallback = serverSource.indexOf("app.use(express.static(path.resolve(__dirname, 'dist')))");
-  assert.ok(appFallback > gateMount && staticFallback > gateMount, 'Vite and static fallbacks must follow the gate');
-
-  const integrationRoutes = [...integrationsSource.matchAll(/router\.post\(\s*["']([^"']+)["']/g)].map((match) => match[1]);
-  assert.deepEqual(integrationRoutes.sort(), [...integrationPaths].sort(), 'disabled integration routes must match the inventory');
-  assert.match(serverSource, /app\.get\('\/api\/health'/);
-  assert.doesNotMatch(serverSource, /app\.(?:post|put|patch|delete)\('\/api\/health'/);
+  const routes = [...serverSource.matchAll(routePattern)].map((route) => `${route[1].toUpperCase()} ${route[2]}`);
+  assert.deepEqual(routes, ['GET /api/health'], 'no historical business or session handler may remain registered');
+  assert.doesNotMatch(serverSource, /resolveTenantId|getOrganizationId|x-tenant-id|x-organization-id|x-tenant-slug|user_sessions|clerkId|req\.query|req\.body/);
+  assert.doesNotMatch(serverSource, /createDisabledIntegrationRouter|DATABASE_URL|neon\(/);
 });
 
-test('anonymous callers cannot reach any business API by route, method, or common path variant', async () => {
+test('forged tenant, role, bearer and identity inputs cannot reach legacy handlers; Clerk runs before gate', async () => {
   const app = express();
-  let handlerInvocations = 0;
-  let dataMutations = 0;
+  app.use(express.json());
+  const middlewareOrder: string[] = [];
+  const clerk = createClerkSessionMiddleware(clerkTestEnv, () => (_req, _res, next) => {
+    middlewareOrder.push('clerk');
+    next(); // even a valid Clerk session must not open an API route while authorization is incomplete
+  });
+  const gate = createFailClosedApiGate();
+  app.use('/api', clerk);
+  app.use('/api', (req, res, next) => {
+    middlewareOrder.push('gate');
+    return gate(req, res, next);
+  });
 
-  app.use('/api', createFailClosedApiGate());
-  app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
-
+  let historicalHandlerInvocations = 0;
   for (const route of businessRoutes) {
-    app.all(route.path, (req, res) => {
-      handlerInvocations += 1;
-      if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) dataMutations += 1;
-      return res.json({ success: true, secret: 'business-data', mutated: true });
+    app.all(route.path, (_req, res) => {
+      historicalHandlerInvocations += 1;
+      return res.json({ leaked: 'business-handler-ran', success: true });
     });
   }
+  app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+  app.use(express.static(new URL('../../public', import.meta.url).pathname));
+  app.get('*', (_req, res) => res.send('static-shell-only'));
 
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -96,42 +89,54 @@ test('anonymous callers cannot reach any business API by route, method, or commo
   const baseUrl = `http://127.0.0.1:${address.port}`;
 
   try {
-    for (const path of new Set(businessRoutes.map((route) => route.path))) {
-      for (const method of commonMethods) {
-        const response = await fetch(`${baseUrl}${path}`, { method });
-        assert.equal(response.status, 503, `${method} ${path} must fail closed`);
-        const text = await response.text();
-        assert.doesNotMatch(text, /business-data|mutated/);
-        if (method !== 'HEAD') {
-          const body = JSON.parse(text);
-          assert.equal(body.success, false);
-          assert.match(body.error, /authentification et autorisations serveur non configurées/);
-        }
+    const adversarialRequests: Array<{ path: string; init: RequestInit }> = [
+      { path: '/api/projects', init: { headers: { 'x-tenant-id': '00000000-0000-0000-0000-000000000099' } } },
+      { path: '/api/projects', init: { headers: { 'x-organization-id': '00000000-0000-0000-0000-000000000099', 'x-tenant-slug': 'victim-org' } } },
+      { path: '/api/projects?tenantId=00000000-0000-0000-0000-000000000099', init: {} },
+      { path: '/api/projects', init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ organizationId: '00000000-0000-0000-0000-000000000099', tenantId: '00000000-0000-0000-0000-000000000099' }) } },
+      { path: '/api/projects', init: { method: 'POST', headers: { 'content-type': 'application/json', 'x-role': 'admin' }, body: JSON.stringify({ role: 'admin', organizationId: '00000000-0000-0000-0000-000000000099' }) } },
+      { path: '/api/auth/me', init: { headers: { authorization: 'Bearer arbitrary-forged-token' } } },
+      { path: '/api/users/sync', init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ clerkId: 'user_forged', email: 'attacker@example.invalid', role: 'admin', organizationId: '00000000-0000-0000-0000-000000000099' }) } },
+      { path: '/api/auth/sso/login', init: { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'attacker@example.invalid', role: 'admin', ssoProvider: 'fake' }) } },
+      { path: '/api/auth/logout', init: { method: 'POST', headers: { authorization: 'Bearer arbitrary-forged-token', 'content-type': 'application/json' }, body: JSON.stringify({ token: 'arbitrary-forged-token' }) } },
+      { path: '/api/auth/users', init: {} },
+    ];
+
+    for (const { path, init } of adversarialRequests) {
+      const response = await fetch(`${baseUrl}${path}`, init);
+      assert.equal(response.status, 503, `${init.method ?? 'GET'} ${path} must be closed`);
+      assert.doesNotMatch(await response.text(), /business-handler-ran|attacker@example/);
+    }
+
+    assert.deepEqual(middlewareOrder.slice(0, 2), ['clerk', 'gate']);
+    assert.equal(historicalHandlerInvocations, 0, 'handlers after the gate must not execute');
+
+    for (const method of commonMethods) {
+      const response = await fetch(`${baseUrl}/api/health`, { method });
+      if (method === 'GET') {
+        assert.equal(response.status, 200);
+        assert.deepEqual(await response.json(), { status: 'ok' });
+      } else {
+        assert.equal(response.status, 503, `${method} /api/health must not be public`);
       }
     }
 
-    for (const path of ['/API/projects', '/api/%70rojects', '/api//projects', '/%61pi/projects', '/api%2Fprojects']) {
+    for (const route of businessRoutes) {
+      for (const method of commonMethods) {
+        const response = await fetch(`${baseUrl}${route.path}`, { method });
+        assert.equal(response.status, 503, `${method} ${route.path} must fail closed`);
+        assert.doesNotMatch(await response.text(), /business-handler-ran/);
+      }
+    }
+
+    for (const path of ['/API/projects', '/api/%70rojects', '/api//projects', '/%61pi/projects', '/api%2Fprojects', '/api/unknown']) {
       const response = await fetch(`${baseUrl}${path}`);
-      assert.ok(response.status < 200 || response.status >= 300, `path variant ${path} must not expose business data`);
       const text = await response.text();
-      assert.doesNotMatch(text, /business-data|mutated/);
+      assert.doesNotMatch(text, /business-handler-ran|business-data/);
+      assert.notEqual(text, 'business-handler-ran');
     }
 
-    const health = await fetch(`${baseUrl}/api/health`);
-    assert.equal(health.status, 200);
-    assert.deepEqual(await health.json(), { status: 'ok' });
-
-    const healthWithQuery = await fetch(`${baseUrl}/api/health?probe=1`);
-    assert.equal(healthWithQuery.status, 200);
-    assert.deepEqual(await healthWithQuery.json(), { status: 'ok' });
-
-    for (const method of ['POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']) {
-      const response = await fetch(`${baseUrl}/api/health`, { method });
-      assert.equal(response.status, 503, `${method} /api/health must not be public`);
-    }
-
-    assert.equal(handlerInvocations, 0, 'no business handler may run anonymously');
-    assert.equal(dataMutations, 0, 'no anonymous request may mutate business data');
+    assert.equal(historicalHandlerInvocations, 0, 'no historical handler may run for any adversarial request');
   } finally {
     server.close();
     await once(server, 'close');

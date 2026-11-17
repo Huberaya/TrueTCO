@@ -13,77 +13,35 @@ export interface Tenant {
   userCount?: number | string;
 }
 
-const ACTIVE_TENANT_KEY = 'truetco_active_tenant_id';
+export const TENANT_UNAVAILABLE_MESSAGE =
+  'Organisation indisponible : aucune identité vérifiée ni appartenance serveur n’est configurée.';
 
-export const DEFAULT_TENANT: Tenant = {
-  id: 'a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
-  name: 'Organisation de démonstration',
-  slug: 'demo',
-  domain: 'demo.invalid',
-  subscriptionTier: 'starter',
-  dataResidency: 'Non vérifiée',
-  countryCode: 'FR',
-  defaultCurrency: 'EUR',
-};
-
+/** Tenant discovery and selection are disabled; browser state is never authority. */
 export class TenantService {
-  public static getActiveTenantId(): string {
-    if (typeof window === 'undefined') return DEFAULT_TENANT.id;
-    return localStorage.getItem(ACTIVE_TENANT_KEY) || DEFAULT_TENANT.id;
+  public static getActiveTenantId(): null {
+    return null;
   }
 
-  public static setActiveTenantId(tenantId: string): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem(ACTIVE_TENANT_KEY, tenantId);
+  public static setActiveTenantId(_tenantId: string): void {
+    // Deliberately do not persist a selected organization in browser storage.
   }
 
   public static async getTenants(): Promise<Tenant[]> {
-    try {
-      const res = await fetch('/api/tenants');
-      if (!res.ok) return [DEFAULT_TENANT];
-      const data = await res.json();
-      return Array.isArray(data) && data.length > 0 ? data : [DEFAULT_TENANT];
-    } catch (err) {
-      console.warn('[TenantService] Failed to fetch tenants from Neon, using default:', err);
-      return [DEFAULT_TENANT];
-    }
+    return [];
   }
 
-  public static async getCurrentTenant(): Promise<Tenant | null> {
-    const tenantId = this.getActiveTenantId();
-    try {
-      const res = await fetch('/api/tenants/current', {
-        headers: {
-          'x-tenant-id': tenantId,
-        },
-      });
-      if (!res.ok) return null;
-      return await res.json();
-    } catch {
-      return null;
-    }
+  public static async getCurrentTenant(): Promise<null> {
+    return null;
   }
 
-  public static async createTenant(payload: {
+  public static async createTenant(_payload: {
     name: string;
     domain?: string;
     subscriptionTier?: string;
     countryCode?: string;
     defaultCurrency?: string;
     legalRegistrationNumber?: string;
-  }): Promise<Tenant> {
-    const res = await fetch('/api/tenants', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({ error: 'Erreur lors de la création du tenant' }));
-      throw new Error(err.error || `Erreur HTTP ${res.status}`);
-    }
-
-    const data = await res.json();
-    return data.tenant;
+  }): Promise<never> {
+    throw new Error(TENANT_UNAVAILABLE_MESSAGE);
   }
 }

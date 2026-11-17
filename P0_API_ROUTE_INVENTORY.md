@@ -1,51 +1,40 @@
-# TrueTCO — inventaire API et garde P0.2
+# TrueTCO — inventaire API / contrôle P0.3
 
-**Référence code :** branche `arena/ea5046f1-truetco`, HEAD de base P0.2 `38edd8504e5d84cef89229a3e0347178a9505067`. Cet inventaire sera actualisé au SHA final après livraison. Il décrit le code local; aucun endpoint de production n’a été sondé.
+**État du code :** branche `arena/ea5046f1-truetco`; le serveur Express ne déclare désormais que `GET /api/health`. Aucune sonde de production n’a été effectuée.
 
-## 1. Garde et ordre des middlewares
+## Ordre serveur vérifié
 
-Pour `/api`, l’ordre dans `server.ts` est :
+1. `express.json` (limite 10 Mo; pas d’effet métier).
+2. `createClerkSessionMiddleware()` sur `/api` : le SDK Clerk officiel vérifie une session seulement si les clés et `CLERK_AUTHORIZED_PARTIES` sont configurées; sinon, refus 503. Le middleware Clerk n’accorde pas d’autorisation.
+3. `createFailClosedApiGate()` sur `/api` : seul `GET /health` poursuit; toute autre méthode ou chemin retourne 503.
+4. `GET /api/health` renvoie exclusivement `{"status":"ok"}`.
+5. Vite/static/SPA fallbacks après la garde; aucun handler métier Express n’est monté.
 
-1. `createClerkSessionMiddleware()` — si les trois éléments serveur sont correctement configurés (`CLERK_SECRET_KEY`, clé publishable, `CLERK_AUTHORIZED_PARTIES`), délègue la vérification de session au SDK officiel `@clerk/express`. Si configuration manquante, répond 503 générique. Seul `GET /api/health` est exclu.
-2. `createFailClosedApiGate()` — répond 503 à toute route métier et méthode sauf `GET /api/health`, même quand Clerk est configuré. Cette garde reste obligatoire : aucun mapping membership, RBAC, tenant DB et contrôle IDOR complet n’autorise encore l’ouverture de route.
-3. Handlers historiques, router intégrations, middleware Vite/static — jamais atteints pour une route métier API tant que la garde est en place.
+## Routes historiques neutralisées
 
-Liveness public : `GET /api/health` renvoie uniquement `{"status":"ok"}`. Le middleware Clerk et la garde ne rendent pas publiques les autres méthodes sur la route santé.
+Les anciens chemins ne sont plus déclarés dans `server.ts`. Leur tentative reçoit 503 par le gate, avant les fallbacks et sans handler ni mutation :
 
-## 2. Routes métier déclarées par le serveur
+| Famille de chemins retirée | Comportement actuel |
+|---|---|
+| `/api/tenants*` | Pas de découverte, sélection, création ou synchronisation d’organisation |
+| `/api/users/sync` | Endpoint supprimé; aucun traitement de `clerkId`, email, rôle ou organisation du body |
+| `/api/auth/*` | Routes locales de session, bearer, SSO, logout et annuaire supprimées |
+| `/api/projects`, `/api/offers`, `/api/suppliers`, `/api/benchmarks`, `/api/audit-logs` | Handlers DB supprimés; aucun CRUD/API métier exposé |
+| `/api/erp/*`, `/api/ai/*` | Router historique non monté; aucune intégration/forwarding API |
+| tout autre `/api/*` | Refus 503 global; le fallback de l’application ne retourne pas de donnée métier |
 
-Aucune autorisation rôle/route n’est attribuée par cette liste; voir `MATRICE_RBAC.md`. Tous les chemins suivants demeurent inaccessibles, HTTP 503 avant handler.
+## Identité, tenant et session
 
-| Méthode | Route | Effet latent / risque notable |
-|---|---|---|
-| GET | `/api/tenants` | Liste d’organisations/compteurs |
-| GET | `/api/tenants/current` | Contexte tenant; ancien resolver client-controlled |
-| POST | `/api/tenants` | Création organisation depuis body |
-| GET | `/api/health` | Liveness public minimal |
-| POST | `/api/users/sync` | Upsert user historique; identity/rôle pris du body |
-| POST | `/api/auth/sso/login` | Refus 503 explicite; pas de vrai SSO |
-| GET | `/api/auth/me` | Session locale historique |
-| POST | `/api/auth/logout` | Session locale historique |
-| GET | `/api/auth/users` | Liste utilisateurs, dépend ancien tenant resolver |
-| GET | `/api/projects` | Lecture projets |
-| POST | `/api/projects` | Création projet; tenant resolver historique |
-| POST | `/api/offers` | Création offre; schéma/relations multi-tenant non alignés |
-| POST | `/api/audit-logs` | Écriture événements applicatifs; pas une preuve immuable |
-| GET | `/api/audit-logs` | Lecture événements, ancien scope tenant |
-| GET | `/api/suppliers` | Lecture fournisseurs |
-| POST | `/api/suppliers` | Création fournisseur |
-| GET | `/api/benchmarks` | Lecture; handler historique sans filtre tenant |
-| POST | `/api/benchmarks` | Création; ancien fallback tenant |
-| POST | `/api/erp/connectors/:id/test` | Intégration désactivée |
-| POST | `/api/erp/connectors/:id/sync-inbound` | Import désactivé |
-| POST | `/api/erp/connectors/:id/push-award` | Envoi désactivé |
-| POST | `/api/ai/parse-document` | Traitement documentaire désactivé |
+- Suppression de `resolveTenantId`, `getOrganizationId`, des lectures `x-tenant-id`, `x-organization-id`, `x-tenant-slug`, query/body tenant, du lookup `user_sessions`, et des fallbacks premier tenant/UUID.
+- Suppression du client Neon et des queries SQL de `server.ts`; aucune identité ou organisation issue du navigateur n’atteint un handler serveur.
+- `AuthService` ne lit ni n’écrit de token/cache local; le login SSO historique rejette avec un message d’indisponibilité. `AuthContext` expose toujours `user: null`, `isAuthenticated: false`; le rôle ne peut pas être commuté via l’UI.
+- `TenantService` renvoie liste vide et organisation `null`; aucune sélection, création, valeur localStorage ou ID par défaut. Le sélecteur affiche « Organisation indisponible ».
+- La synchronisation Clerk→Neon côté navigateur a été supprimée; `NeonService` n’émet aucune requête.
 
-Les handlers listés sont du code latent, non des autorisations accordées. L’ancien resolver `resolveTenantId` accepte des données client et possède un fallback; `users/sync` accepte notamment l’identité/rôle du body. Aucun changement P0.2 ne rend ces voies acceptables : elles restent derrière la garde.
+## Preuves automatisées P0.3
 
-## 3. Vérifications pérennes
+`src/server/apiGate.test.ts` monte le middleware de vérification Clerk (factory de test instrumentée), puis le gate, puis des handlers historiques simulés. Les entrées falsifiées suivantes sont testées : headers tenant/organization/slug, query tenant, body `organizationId`/`tenantId`, rôle `admin`, bearer arbitraire, `clerkId`/email, endpoints de session/SSO. L’ordre est `Clerk → gate`; compteur d’invocation des handlers : **0**.
 
-- `src/server/apiGate.test.ts` vérifie ordre API/gate/handlers et accès anonyme bloqué sur méthodes et chemins inventoriés.
-- `src/server/clerkAuth.test.ts` vérifie la configuration fail-closed Clerk et l’ordre middleware officiel avant la garde sans libérer la route.
-- Le résultat réel des tests doit être lu dans la session CI locale de livraison; les anciennes observations de 112 combinaisons de l’étape P0 ne valent pas comme preuve d’un JWT Clerk ni de l’isolement Neon.
-- Aucun test de production, de base Neon, de JWT réel, de rôle/membership, d’IDOR ni de RLS n’a été réalisé pour ce dossier.
+Le même test vérifie les méthodes `GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS`, health GET uniquement, chemins API historiques, chemins encodés/variantes, endpoint inconnu et fallback. `src/server/p0_3.security.test.ts` vérifie absence des anciens résolveurs/sessions/fallbacks serveur et absence de persistance/envoi d’identité côté client. `src/services/safetyP0.test.ts` vérifie l’état frontend déconnecté.
+
+Le test de middleware Clerk utilise une factory instrumentée sans credential afin de tester l’ordre de composition; ce n’est pas un test d’un JWT ou d’un tenant Clerk réel.

@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS organizations (
 CREATE INDEX IF NOT EXISTS idx_organizations_name ON organizations(name);
 
 DROP TRIGGER IF EXISTS trigger_update_organizations_updated_at ON organizations;
-DROP TRIGGER IF EXISTS trigger_update_organizations_updated_at ON organizations;
 CREATE TRIGGER trigger_update_organizations_updated_at
 BEFORE UPDATE ON organizations
 FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

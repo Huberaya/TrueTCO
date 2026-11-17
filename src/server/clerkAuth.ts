@@ -65,7 +65,10 @@ export const getClerkServerConfig = (env: ClerkEnvironment = process.env): Clerk
  * this middleware, until membership mapping, RBAC and tenant-safe DB access have
  * passed integration tests. Liveness remains public and contains no internals.
  */
-export const createClerkSessionMiddleware = (env: ClerkEnvironment = process.env): RequestHandler => {
+export const createClerkSessionMiddleware = (
+  env: ClerkEnvironment = process.env,
+  middlewareFactory: (config: ClerkServerConfig) => RequestHandler = clerkMiddleware,
+): RequestHandler => {
   const result = getClerkServerConfig(env);
   if (!result.configured) {
     return (req, res, next) => {
@@ -77,7 +80,7 @@ export const createClerkSessionMiddleware = (env: ClerkEnvironment = process.env
     };
   }
 
-  const verifySession = clerkMiddleware(result.config);
+  const verifySession = middlewareFactory(result.config);
   return (req, res, next) => {
     if (req.method === 'GET' && req.path === '/health') return next();
     return verifySession(req, res, next);
