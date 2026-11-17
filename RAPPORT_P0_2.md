@@ -60,12 +60,15 @@ P0.2 livre une **couche de vérification Clerk préparatoire**, des contrôles f
 - `npm ci` après mise à jour de la lockfile : **réussi** (623 packages; 8 vulnérabilités modérées rapportées par npm, aucune correction forcée appliquée).
 - `npm audit --omit=dev --audit-level=high` : **réussi**, 0 vulnérabilité dans les dépendances de production au seuil `high`.
 - Tests Clerk avec clés/JWT réels : non réalisés, aucune clé tenant Clerk fournie.
-- Tests PostgreSQL/RLS/migrations : non réalisés, aucune base PostgreSQL/Neon de test inspectée ou modifiée.
+- Tests PostgreSQL/RLS/migrations : non réalisés; aucune base PostgreSQL/Neon de test inspectée ou modifiée, et aucun `psql`/serveur PostgreSQL local n’était disponible dans l’environnement.
 - `npm ci` a rapporté 8 vulnérabilités modérées avant mise à jour de lockfile; aucune correction forcée de dépendances n’a été tentée.
 
 ### CI / intégration
 
-À vérifier sur le SHA final après commit/push si autorisé. Au SHA de départ de P0.2, la CI GitHub était verte et Vercel échouait sur `build-rate-limit`; cela ne constitue pas le résultat du SHA P0.2.
+- Commit de code P0.2 `f10267c230ddb3f42a93a9d962b88dc8f45a41e4` poussé sur la seule branche autorisée `arena/ea5046f1-truetco`; la PR #1 demeure ouverte, non fusionnée.
+- CI GitHub sur ce commit : réussite complète (clean install, typecheck, lint, tests, audit production et build), workflow run `44075921597`; un second déclenchement PR a également réussi (`44075930484`).
+- Checks PR observés ensuite : `Vercel` SUCCESS et `Vercel Preview Comments` SUCCESS; état de fusion GitHub `CLEAN`. Cela confirme les statuts de checks, pas une inspection indépendante des paramètres ou du contenu applicatif du déploiement Vercel.
+- Le commit de code f102... est celui dont les checks sont explicitement consignés. Tout commit ultérieur, même documentaire, doit être revérifié sur son propre SHA.
 
 ## 5. Limites et actions bloquantes restantes
 
