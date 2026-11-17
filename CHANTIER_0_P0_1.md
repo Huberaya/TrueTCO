@@ -68,3 +68,11 @@
 ## Décision
 
 **GO limité** pour garder les fonctions trompeuses désactivées et soumettre les corrections au CI. **NO-GO** pour usage commercial reposant sur les documents IA, reporting réglementaire, signature/eIDAS, audit probant, connecteurs ERP, données clients ou déploiement production, tant que les critères bloquants ne sont pas vérifiés. Aucun déploiement, migration de production ou fusion sur `main` n’a été effectué.
+
+## Suite P0.2 — Clerk + Neon (11 novembre 2026)
+
+Le chantier d’architecture est documenté dans [`RAPPORT_P0_2.md`](RAPPORT_P0_2.md). À partir de la tête PR #1 `38edd8504e5d84cef89229a3e0347178a9505067`, une couche officielle `@clerk/express` a été ajoutée avec vérification fail-closed de configuration et tests. Elle ne confère aucune permission et la garde globale continue de bloquer les routes métier. Aucun JWT réel/tenant Clerk n’a été testé.
+
+Voir aussi `MATRICE_RBAC.md` (droits non accordés faute de décision approuvée), `DOSSIER_CLERK.md`, `DOSSIER_NEON.md`, `PLAN_MIGRATIONS_NEON.md` et `P0_API_ROUTE_INVENTORY.md`. Deux candidats SQL `.sql.draft` ont été préparés comme brouillons uniquement; aucune migration/connexion/changement distant Neon n’a eu lieu. Les constats Neon sont ceux antérieurement communiqués par le propriétaire et ne sont pas re-mesurés ici.
+
+Vérifications locales P0.2 : `npm test` 26/26; typecheck, lint, build et `git diff --check` réussis. Le build conserve des warnings Vite sur `__dirname` et la taille de chunks. Tests PostgreSQL/RLS, vérification d’un token Clerk réel, CI sur le SHA P0.2 et état Vercel final restent à établir. **Les routes demeurent désactivées; aucun GO production ou fusion n’est revendiqué.**

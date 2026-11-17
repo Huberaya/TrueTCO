@@ -12,12 +12,13 @@
     "lint": "biome lint src server.ts vite.config.ts",
     "db:migrate": "node scripts/migrate-neon.mjs",
     "db:push": "drizzle-kit push --config=src/db/drizzle.config.ts",
-    "test": "tsx --test src/engine/tcoEngine.node.test.ts src/services/safetyP0.test.ts src/server/safetyRoutes.test.ts src/server/apiGate.test.ts",
+    "test": "tsx --test src/engine/tcoEngine.node.test.ts src/services/safetyP0.test.ts src/server/safetyRoutes.test.ts src/server/apiGate.test.ts src/server/clerkAuth.test.ts",
     "typecheck": "tsc --noEmit",
     "test:p0": "tsx --test src/services/safetyP0.test.ts src/server/safetyRoutes.test.ts src/server/apiGate.test.ts"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.61.3",
+    "@clerk/express": "^2.1.91",
     "@google/genai": "^2.4.0",
     "@neondatabase/serverless": "^1.1.0",
     "@tailwindcss/vite": "^4.3.3",

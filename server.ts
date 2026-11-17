@@ -7,6 +7,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createDisabledIntegrationRouter } from './src/server/safetyRoutes';
+import { createClerkSessionMiddleware } from './src/server/clerkAuth';
 import { createFailClosedApiGate } from './src/server/apiGate';
 
 dotenv.config();
@@ -23,7 +24,9 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Fail closed until real identity, RBAC and tenant isolation are in place.
+// Clerk may verify sessions when configured, but identity verification alone is
+// not authorization. Missing configuration and all business routes remain closed.
+app.use('/api', createClerkSessionMiddleware());
 app.use('/api', createFailClosedApiGate());
 
 // Initialize Neon SQL client
