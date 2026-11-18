@@ -7,7 +7,7 @@
 - `origin/main` vérifié : `edc44ceb6570f705f4edf591dfd95524838a1160`. Le head PR initial était 10 commits devant la base, sans divergence de main.
 - Commit de code/tests P0.3/P0.4 : `725caed0a4fe95e772977d0574830ddd268320ca` (`test(p0.4): verify PostgreSQL baseline and close safety gate`), publié sur la branche imposée.
 - `origin/main` reste à `edc44ceb6570f705f4edf591dfd95524838a1160`; aucun rebase ou changement de branche effectué.
-- PR #1 observée après publication de ce SHA : ouverte vers `main`, head exact `725caed0a4fe95e772977d0574830ddd268320ca`, `mergeStateStatus=CLEAN`; aucun conflit rapporté. Elle n’a pas été fusionnée. Revoir le corps de PR pour l’actualiser au head final.
+- PR #1 observée après publication de ce SHA : ouverte vers `main`, head exact `725caed0a4fe95e772977d0574830ddd268320ca`, `mergeStateStatus=CLEAN`; aucun conflit rapporté. Elle n’a pas été fusionnée. Le corps de PR a été actualisé après la publication avec le SHA, les validations et les réserves.
 
 ## 1. P0.3 — neutralisation et tests d’exécution
 
