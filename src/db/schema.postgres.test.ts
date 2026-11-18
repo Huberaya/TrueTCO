@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { drizzle } from 'drizzle-orm/pglite';
 import { migrate } from 'drizzle-orm/pglite/migrator';
@@ -250,7 +250,7 @@ test('Drizzle P0 migration ledger is stable and the P1 draft evolves it to the c
   }
 });
 
-test('tenant RLS isolates A/B rows and transaction-local context does not leak between requests', async () => {
+test('tenant RLS isolates A/B CRUD and relations as a LOGIN NOBYPASSRLS non-owner', async () => {
   const db = await createFromDdl();
   try {
     const tenantA = await insertValidFixture(db);
@@ -259,40 +259,132 @@ test('tenant RLS isolates A/B rows and transaction-local context does not leak b
     await db.query("UPDATE users SET clerk_id = 'clerk-b' WHERE id = $1", [tenantB.user]);
     await db.query('UPDATE supplier_offers SET organization_id = $1 WHERE id = $2', [tenantA.organization, tenantA.offer]);
     await db.query('UPDATE supplier_offers SET organization_id = $1 WHERE id = $2', [tenantB.organization, tenantB.offer]);
-    await db.exec(`CREATE ROLE p1_test_app NOSUPERUSER NOBYPASSRLS;
-      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO p1_test_app;
-      SET ROLE p1_test_app`);
+    await db.query("INSERT INTO cost_items (organization_id, offer_id, category, label, amount, unit, source_name, source_type, confidence_level) VALUES ($1, $2, 'purchase', 'Tenant B item', 1, 'unit', 'fixture', 'estimee', 50)", [tenantB.organization, tenantB.offer]);
+
+    await db.exec(`CREATE ROLE p1_test_app LOGIN NOSUPERUSER NOBYPASSRLS;
+      GRANT SELECT ON organizations, users, projects, suppliers, supplier_offers, cost_items, carbon_items, risk_items, reference_benchmarks, audit_logs TO p1_test_app;
+      GRANT INSERT, UPDATE, DELETE ON projects, supplier_offers, cost_items, carbon_items, risk_items TO p1_test_app;
+      SET SESSION AUTHORIZATION p1_test_app`);
+    const roleProof = (await db.query<Record<string, unknown>>(
+      `SELECT current_user, session_user, r.rolcanlogin, r.rolsuper, r.rolbypassrls,
+              pg_get_userbyid(c.relowner) AS table_owner
+       FROM pg_roles r
+       JOIN pg_class c ON c.relname = 'projects' AND c.relkind = 'r'
+       WHERE r.rolname = current_user`,
+    )).rows[0];
+    assert.deepEqual(roleProof, {
+      current_user: 'p1_test_app', session_user: 'p1_test_app', rolcanlogin: true,
+      rolsuper: false, rolbypassrls: false, table_owner: 'postgres',
+    });
+    assert.notEqual(roleProof.table_owner, roleProof.current_user, 'the RLS proof role must not own the table');
+    const assertRejectedAndRecover = async (operation: () => Promise<unknown>, pattern: RegExp, message: string) => {
+      await db.exec('SAVEPOINT expected_rls_denial');
+      await assert.rejects(operation(), pattern, message);
+      await db.exec('ROLLBACK TO SAVEPOINT expected_rls_denial');
+      await db.exec('RELEASE SAVEPOINT expected_rls_denial');
+    };
 
     await db.exec('BEGIN');
     await db.query("SELECT set_config('true_tco.organization_id', '', true), set_config('true_tco.clerk_user_id', $1, true)", ['clerk-a']);
-    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM users WHERE clerk_id = $1', ['clerk-a'])).rows[0].count, 1, 'the pre-resolution policy may see only the matching Clerk membership');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM users WHERE clerk_id = $1', ['clerk-a'])).rows[0].count, 1, 'pre-resolution may see only the matching Clerk membership');
     assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM users WHERE clerk_id = $1', ['clerk-b'])).rows[0].count, 0);
     await db.exec('COMMIT');
 
     await db.exec('BEGIN');
     await db.query("SELECT set_config('true_tco.organization_id', $1, true), set_config('true_tco.user_id', $2, true), set_config('true_tco.clerk_user_id', $3, true)", [tenantA.organization, tenantA.user, 'clerk-a']);
     await db.query("SELECT set_config('true_tco.clerk_user_id', 'clerk-b', true)");
-    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM users WHERE organization_id = $1', [tenantB.organization])).rows[0].count, 0, 'a mismatched subject must not escape the resolved tenant scope');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM users WHERE organization_id = $1', [tenantB.organization])).rows[0].count, 0, 'a mismatched subject cannot escape resolved tenant scope');
     await db.query("SELECT set_config('true_tco.clerk_user_id', 'clerk-a', true)");
+
     for (const table of ['organizations', 'users', 'projects', 'suppliers', 'supplier_offers']) {
       const column = table === 'organizations' ? 'id' : 'organization_id';
       const visible = (await db.query<Record<string, unknown>>(`SELECT count(*)::int AS count FROM ${table} WHERE ${column} = $1`, [tenantA.organization])).rows[0].count;
-      assert.equal(visible, 1, `${table} should expose one tenant A row`);
+      assert.equal(visible, 1, `${table} should expose only tenant A rows`);
       const hidden = (await db.query<Record<string, unknown>>(`SELECT count(*)::int AS count FROM ${table} WHERE ${column} = $1`, [tenantB.organization])).rows[0].count;
       assert.equal(hidden, 0, `${table} must hide tenant B rows from tenant A`);
     }
-    await assert.rejects(
-      db.query(`INSERT INTO projects (organization_id, reference, name, category, company_name, budget_cap, planned_volume, unit_name, horizon_years, discount_rate, energy_inflation_rate, general_inflation_rate, created_by_user_id) VALUES ($1, 'A-FORGED', 'forged', 'IT', 'A', 1, 1, 'unit', 1, 0, 0, 0, $2)`, [tenantB.organization, tenantB.user]),
-      /row-level security policy/,
+
+    const inserted = (await db.query<Record<string, unknown>>(
+      `INSERT INTO projects (organization_id, reference, name, category, company_name, budget_cap, planned_volume, unit_name, horizon_years, discount_rate, energy_inflation_rate, general_inflation_rate, created_by_user_id)
+       VALUES ($1, 'A-TEMP', 'Tenant A temp', 'IT', 'A', 1, 1, 'unit', 1, 0, 0, 0, $2) RETURNING id`,
+      [tenantA.organization, tenantA.user],
+    )).rows[0];
+    assert.ok(inserted.id, 'tenant A may insert a scoped row');
+    assert.equal((await db.query<Record<string, unknown>>('UPDATE projects SET name = $1 WHERE id = $2 RETURNING id', ['Tenant A updated', tenantA.project])).rows.length, 1, 'tenant A may update its own row');
+    assert.equal((await db.query<Record<string, unknown>>('UPDATE projects SET name = $1 WHERE id = $2 RETURNING id', ['forged B update', tenantB.project])).rows.length, 0, 'tenant A cannot update a hidden B row');
+    assert.equal((await db.query<Record<string, unknown>>('DELETE FROM projects WHERE id = $1 RETURNING id', [tenantB.project])).rows.length, 0, 'tenant A cannot delete a hidden B row');
+    assert.equal((await db.query<Record<string, unknown>>('DELETE FROM projects WHERE id = $1 RETURNING id', [inserted.id])).rows.length, 1, 'tenant A may delete its own row');
+
+    await assertRejectedAndRecover(
+      () => db.query(`INSERT INTO supplier_offers (organization_id, project_id, supplier_id, offer_reference, apparent_total) VALUES ($1, $2, $3, 'A-CROSS-SUPPLIER', 1)`, [tenantA.organization, tenantA.project, tenantB.supplier]),
+      /fk_supplier_offers_supplier_tenant/,
+      'a same-tenant offer cannot reference a supplier from tenant B',
     );
+    await assertRejectedAndRecover(
+      () => db.query(`INSERT INTO supplier_offers (organization_id, project_id, supplier_id, offer_reference, apparent_total) VALUES ($1, $2, $3, 'B-FORGED', 1)`, [tenantB.organization, tenantA.project, tenantB.supplier]),
+      /row-level security policy/,
+      'tenant A cannot insert a row carrying tenant B scope',
+    );
+    await assertRejectedAndRecover(
+      () => db.query(`INSERT INTO cost_items (organization_id, offer_id, category, label, amount, unit, source_name, source_type, confidence_level) VALUES ($1, $2, 'purchase', 'cross offer', 1, 'unit', 'fixture', 'estimee', 50)`, [tenantA.organization, tenantB.offer]),
+      /fk_cost_items_offer_tenant/,
+      'a tenant A child cannot reference a tenant B offer',
+    );
+    const ownChild = (await db.query<Record<string, unknown>>(
+      `INSERT INTO cost_items (organization_id, offer_id, category, label, amount, unit, source_name, source_type, confidence_level) VALUES ($1, $2, 'purchase', 'A item', 1, 'unit', 'fixture', 'estimee', 50) RETURNING id`,
+      [tenantA.organization, tenantA.offer],
+    )).rows[0].id;
+    assert.equal((await db.query<Record<string, unknown>>('UPDATE cost_items SET amount = 2 WHERE id = $1 RETURNING id', [ownChild])).rows.length, 1);
+    assert.equal((await db.query<Record<string, unknown>>('DELETE FROM cost_items WHERE id = $1 RETURNING id', [ownChild])).rows.length, 1);
     await db.exec('COMMIT');
 
-    const noContext = (await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM projects')).rows[0].count;
-    assert.equal(noContext, 0, 'transaction-local tenant context must not leak to the next request');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM projects')).rows[0].count, 0, 'no context must return no tenant rows');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM supplier_offers')).rows[0].count, 0, 'legacy/unscoped offers are invisible without context');
+    await db.exec('BEGIN');
+    await assertRejectedAndRecover(
+      () => db.query(`INSERT INTO projects (organization_id, reference, name, category, company_name, budget_cap, planned_volume, unit_name, horizon_years, discount_rate, energy_inflation_rate, general_inflation_rate) VALUES ($1, 'NO-CONTEXT', 'blocked', 'IT', 'A', 1, 1, 'unit', 1, 0, 0, 0)`, [tenantA.organization]),
+      /row-level security policy/,
+      'writes without tenant context must be denied',
+    );
+    await db.exec('ROLLBACK');
 
     await db.exec('BEGIN');
     await db.query("SELECT set_config('true_tco.organization_id', $1, true), set_config('true_tco.user_id', $2, true), set_config('true_tco.clerk_user_id', $3, true)", [tenantB.organization, tenantB.user, 'clerk-b']);
-    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM projects')).rows[0].count, 1);
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM projects')).rows[0].count, 1, 'tenant B sees its own row');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM projects WHERE organization_id = $1', [tenantA.organization])).rows[0].count, 0, 'tenant B does not see tenant A');
+    assert.equal((await db.query<Record<string, unknown>>('UPDATE projects SET name = $1 WHERE id = $2 RETURNING id', ['Tenant B updated', tenantB.project])).rows.length, 1);
+    await db.exec('COMMIT');
+  } finally {
+    await db.close();
+  }
+});
+
+test('0003 remains a non-executable draft, preserves historical NULLs, and RLS hides them from a LOGIN NOBYPASSRLS role', async () => {
+  const executableEntries = await readdir(migrationDir);
+  assert.equal(executableEntries.includes('0003_p1_tenant_scope.sql.draft'), false);
+  const journal = JSON.parse(await readFile(new URL('../../drizzle/migrations/meta/_journal.json', import.meta.url), 'utf8')) as { entries: Array<{ tag: string }> };
+  assert.equal(journal.entries.some((entry) => entry.tag.includes('0003_p1_tenant_scope')), false);
+
+  const db = await createFromP0Baseline();
+  try {
+    const fixture = await insertValidFixture(db);
+    await db.query("UPDATE users SET clerk_id = 'clerk-legacy' WHERE id = $1", [fixture.user]);
+    await db.query("INSERT INTO cost_items (offer_id, category, label, amount, unit, source_name, source_type, confidence_level) VALUES ($1, 'purchase', 'Legacy child', 1, 'unit', 'fixture', 'estimee', 50)", [fixture.offer]);
+    await applyTenantCandidate(db);
+
+    assert.equal((await db.query<Record<string, unknown>>('SELECT organization_id FROM supplier_offers WHERE id = $1', [fixture.offer])).rows[0].organization_id, null, 'the draft must not guess/backfill historical offer tenant IDs');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT organization_id FROM cost_items WHERE offer_id = $1', [fixture.offer])).rows[0].organization_id, null, 'historical children remain NULL until a reviewed mapping exists');
+    await db.exec(`CREATE ROLE p1_legacy_reader LOGIN NOSUPERUSER NOBYPASSRLS;
+      GRANT SELECT ON users, projects, supplier_offers, cost_items TO p1_legacy_reader;
+      SET SESSION AUTHORIZATION p1_legacy_reader`);
+    const role = (await db.query<Record<string, unknown>>('SELECT current_user, session_user, rolcanlogin, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user')).rows[0];
+    assert.deepEqual(role, { current_user: 'p1_legacy_reader', session_user: 'p1_legacy_reader', rolcanlogin: true, rolsuper: false, rolbypassrls: false });
+
+    await db.exec('BEGIN');
+    await db.query("SELECT set_config('true_tco.organization_id', $1, true), set_config('true_tco.clerk_user_id', 'clerk-legacy', true)", [fixture.organization]);
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM projects WHERE id = $1', [fixture.project])).rows[0].count, 1);
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM supplier_offers WHERE id = $1', [fixture.offer])).rows[0].count, 0);
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM cost_items WHERE offer_id = $1', [fixture.offer])).rows[0].count, 0);
     await db.exec('COMMIT');
   } finally {
     await db.close();
