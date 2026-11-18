@@ -3,26 +3,16 @@ import { Supplier } from '../types/domain';
 import {
   Building2,
   ShieldCheck,
-  CheckCircle2,
   Award,
   Search,
   Plus,
-  Filter,
   Phone,
   Mail,
-  Clock,
-  FileCheck,
-  Leaf,
   BarChart,
   Truck,
   Download,
   AlertTriangle,
   Sliders,
-  HelpCircle,
-  TrendingDown,
-  Info,
-  Layers,
-  ArrowRight,
 } from 'lucide-react';
 import { AddSupplierModal } from './AddSupplierModal';
 import { SupplierDetailModal } from './SupplierDetailModal';
@@ -135,7 +125,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
             Référentiel Fournisseurs, Incoterms & Scoring Qualité
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Gestion des tiers conforme à la Section 6 : Incoterms contractuels (frais cachés logistiques), taux de défaillance $P \times I$, certifications environnementales et pénalités d'incertitude documentaire.
+            Référentiel de démonstration : Incoterms, scores, risques et certifications sont des données saisies ou d’exemple, non vérifiées et sans effet contractuel.
           </p>
         </div>
 
@@ -162,25 +152,25 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
       {/* Top 4 Performance & Quality KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Fournisseurs Qualifiés</div>
+          <div className="text-slate-400 text-[11px]">Fournisseurs affichés (démo)</div>
           <div className="text-xl font-bold font-mono text-white mt-0.5">{suppliers.length}</div>
-          <div className="text-[10px] text-slate-500">Tiers actifs dans Neon DB</div>
+          <div className="text-[10px] text-slate-500">Données locales non synchronisées</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Score ESG Moyen</div>
+          <div className="text-slate-400 text-[11px]">Moyenne des scores ESG déclarés</div>
           <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">{avgEsg}/100</div>
-          <div className="text-[10px] text-slate-500">Évaluation RSE globale</div>
+          <div className="text-[10px] text-slate-500">Score indicatif, non vérifié</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Qualité Moyenne Données</div>
+          <div className="text-slate-400 text-[11px]">Moyenne des scores de données</div>
           <div className="text-xl font-bold font-mono text-sky-400 mt-0.5">{avgDataQuality}%</div>
-          <div className="text-[10px] text-slate-500">Fiabilité des pièces justificatives</div>
+          <div className="text-[10px] text-slate-500">Score indicatif, pièces non vérifiées</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Certifiés ISO 14001 / EcoVadis</div>
+          <div className="text-slate-400 text-[11px]">Certifications déclarées — non vérifiées</div>
           <div className="text-xl font-bold font-mono text-indigo-400 mt-0.5">{iso14001Count}</div>
           <div className="text-[10px] text-slate-500">Management environnemental</div>
         </div>
@@ -328,7 +318,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                 <div className="space-y-1.5">
                   <div className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
                     <Award className="w-3.5 h-3.5 text-sky-400" />
-                    Certifications officielles :
+                    Certifications déclarées par le fournisseur :
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {s.certifications.map((c, i) => (
@@ -530,7 +520,7 @@ export const SuppliersView: React.FC<SuppliersViewProps> = ({
                   <Award className="w-4 h-4 text-emerald-400" />
                 </div>
                 <p className="text-[11px] text-slate-400">
-                  Fournisseurs certifiés avec score ESG &gt; 80 et taux de qualité &gt; 85%. Relation de co-développement recommandée.
+                  Exemples de fournisseurs selon les scores saisis (non vérifiés) : ESG &gt; 80 et qualité documentaire &gt; 85%. Cette classification indicative ne vérifie ni les certifications ni la fiabilité réelle.
                 </p>
                 <div className="space-y-1.5 pt-2">
                   {suppliers

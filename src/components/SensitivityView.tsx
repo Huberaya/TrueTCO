@@ -1,7 +1,7 @@
 import React from 'react';
 import { Project, SupplierOffer } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
-import { Activity, AlertCircle, TrendingDown, TrendingUp } from 'lucide-react';
+import { Activity, AlertCircle, } from 'lucide-react';
 
 interface SensitivityViewProps {
   project: Project;

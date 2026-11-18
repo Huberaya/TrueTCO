@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useOnlineStatus } from '../hooks/useOnlineStatus';
-import { Wifi, WifiOff, HardDrive, CheckCircle2 } from 'lucide-react';
+import { WifiOff, HardDrive } from 'lucide-react';
 
 export const OfflineIndicator: React.FC = () => {
   const isOnline = useOnlineStatus();
@@ -21,9 +21,9 @@ export const OfflineIndicator: React.FC = () => {
           <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
         </span>
         <WifiOff className="w-3.5 h-3.5 text-amber-400" />
-        <span className="font-semibold">Mode Hors-Ligne Actif</span>
+        <span className="font-semibold">Connexion réseau indisponible</span>
         <span className="text-[11px] text-amber-300/80 border-l border-amber-700/60 pl-2 hidden sm:inline">
-          Dossier & calculs 100% locaux
+          Disponibilité de l’application non garantie
         </span>
       </div>
 
@@ -31,14 +31,13 @@ export const OfflineIndicator: React.FC = () => {
         <div className="mt-2 bg-slate-900 border border-slate-800 rounded-xl p-3 text-xs text-slate-300 w-72 shadow-2xl space-y-2">
           <div className="font-bold text-white flex items-center gap-1.5">
             <HardDrive className="w-3.5 h-3.5 text-emerald-400" />
-            Fonctionnement Déconnecté
+            État réseau
           </div>
           <p className="text-[11px] text-slate-400 leading-normal">
-            Le Service Worker et le stockage local maintiennent l'intégralité du moteur financier TCO et de vos dossiers sans coupure.
+            Le navigateur signale une absence de connexion réseau. Les ressources en cache et les données locales peuvent être incomplètes ; certaines fonctions peuvent nécessiter une connexion.
           </p>
-          <div className="text-[10px] text-emerald-400 flex items-center gap-1 font-mono">
-            <CheckCircle2 className="w-3 h-3" />
-            Toutes les modifications sont sauvegardées.
+          <div className="text-[10px] text-amber-300 flex items-center gap-1 font-mono">
+            L’enregistrement des modifications n’est pas garanti hors connexion.
           </div>
         </div>
       )}

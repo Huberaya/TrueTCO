@@ -15,7 +15,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   onAddProject,
 }) => {
   const [name, setName] = useState('');
-  const [companyName, setCompanyName] = useState('Acme Industrial Europe');
+  const [companyName, setCompanyName] = useState('Organisation de démonstration');
   const [reference, setReference] = useState(`AO-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`);
   const [category, setCategory] = useState<ProcurementCategory>('flotte_automobile');
   const [budgetCap, setBudgetCap] = useState(1200000);
@@ -26,7 +26,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
   const [unitName, setUnitName] = useState('unités');
   const [purchaseFrequency, setPurchaseFrequency] = useState<'unique' | 'annuel' | 'pluriannuel'>('unique');
   const [objective, setObjective] = useState('');
-  const [ownerName, setOwnerName] = useState('Sophie Valéry');
+  const [ownerName, setOwnerName] = useState('Utilisateur non vérifié');
   const [discountRate, setDiscountRate] = useState(0.045);
   const [carbonPrice, setCarbonPrice] = useState(120);
   const [validationErrors, setValidationErrors] = useState<string[]>([]);
@@ -103,7 +103,7 @@ export const NewProjectModal: React.FC<NewProjectModalProps> = ({
       purchaseFrequency,
       objective: objective.trim() || 'Arbitrage économique et ESG multicritères TrueTCO',
       ownerId: 'u-acheteur',
-      ownerName: ownerName.trim() || 'Acheteur Lead',
+      ownerName: ownerName.trim() || 'Utilisateur non vérifié',
       status: 'collecte_offres' as const,
       discountRate: Number(discountRate),
       carbonScenario: 'central' as const,

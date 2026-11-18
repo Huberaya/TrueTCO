@@ -1,22 +1,15 @@
 import React, { useState } from 'react';
-import { Project, ProjectStatus, ProcurementCategory, SupplierOffer } from '../types/domain';
+import { Project, ProjectStatus, SupplierOffer } from '../types/domain';
 import {
   Plus,
   FolderKanban,
-  CheckCircle2,
-  Clock,
-  Filter,
   Search,
   ArrowRight,
   Building,
   Calendar,
-  Layers,
-  Archive,
-  RefreshCw,
   Copy,
   Sliders,
   Scale,
-  FileText,
 } from 'lucide-react';
 import { NavView } from './Sidebar';
 import { ProjectDetailModal } from './ProjectDetailModal';
@@ -63,33 +56,23 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
   const getStatusBadge = (status: ProjectStatus) => {
     switch (status) {
       case 'brouillon':
-        return { label: 'Brouillon', color: 'text-slate-400 bg-slate-900 border-slate-700' };
+        return { label: 'État de démo : brouillon', color: 'text-slate-400 bg-slate-900 border-slate-700' };
       case 'collecte_offres':
-        return { label: 'Collecte des offres', color: 'text-indigo-400 bg-indigo-950/60 border-indigo-800/60' };
+        return { label: 'État de démo : collecte', color: 'text-indigo-400 bg-indigo-950/60 border-indigo-800/60' };
       case 'analyse':
-        return { label: 'En Analyse TCO', color: 'text-sky-400 bg-sky-950/60 border-sky-800/60' };
+        return { label: 'État de démo : analyse', color: 'text-sky-400 bg-sky-950/60 border-sky-800/60' };
       case 'validation_finance':
-        return { label: 'Validation Finance', color: 'text-amber-400 bg-amber-950/60 border-amber-800/60' };
+        return { label: 'État de démo : finance', color: 'text-amber-400 bg-amber-950/60 border-amber-800/60' };
       case 'validation_achats':
-        return { label: 'Validation Achats', color: 'text-purple-400 bg-purple-950/60 border-purple-800/60' };
+        return { label: 'État de démo : achats', color: 'text-purple-400 bg-purple-950/60 border-purple-800/60' };
       case 'decision':
-        return { label: 'Comité de Décision', color: 'text-emerald-400 bg-emerald-950/60 border-emerald-800/60' };
+        return { label: 'État de démo : décision', color: 'text-emerald-400 bg-emerald-950/60 border-emerald-800/60' };
       case 'termine':
-        return { label: 'Terminé / Arbitré', color: 'text-slate-300 bg-slate-800 border-slate-700' };
+        return { label: 'État de démo : terminé', color: 'text-slate-300 bg-slate-800 border-slate-700' };
       case 'archive':
-        return { label: 'Archivé', color: 'text-slate-500 bg-slate-950 border-slate-800' };
+        return { label: 'État de démo : archivé', color: 'text-slate-500 bg-slate-950 border-slate-800' };
       default:
         return { label: status, color: 'text-slate-400 bg-slate-900 border-slate-800' };
-    }
-  };
-
-  const handleStatusChange = (p: Project, newStatus: ProjectStatus) => {
-    if (onUpdateProject) {
-      onUpdateProject({
-        ...p,
-        status: newStatus,
-        updatedAt: new Date().toISOString(),
-      });
     }
   };
 
@@ -109,7 +92,7 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
             Gestion du Cycle de Vie des Projets d'Achat
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Gestion multicritères conforme à la Section 5 : horizons (1, 3, 5, 7, 10 ans), volumes d'achat, gouvernance des statuts et isolation des hypothèses financières.
+            Vue de démonstration des projets et hypothèses saisies. Elle n’établit ni conformité à un référentiel, ni gouvernance ou isolation des données.
           </p>
         </div>
 
@@ -125,25 +108,25 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
       {/* Top Quick Metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Total Consultations</div>
+          <div className="text-slate-400 text-[11px]">Projets de démonstration</div>
           <div className="text-xl font-bold font-mono text-white mt-0.5">{projects.length}</div>
-          <div className="text-[10px] text-slate-500">{activeCount} actives en cours</div>
+          <div className="text-[10px] text-slate-500">{activeCount} états actifs affichés</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">Budget Plafond Global</div>
+          <div className="text-slate-400 text-[11px]">Budget total saisi (démo)</div>
           <div className="text-xl font-bold font-mono text-emerald-400 mt-0.5">
             {totalBudget.toLocaleString('fr-FR')} €
           </div>
-          <div className="text-[10px] text-slate-500">Engagements pluriannuels</div>
+          <div className="text-[10px] text-slate-500">Aucun engagement vérifié</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
-          <div className="text-slate-400 text-[11px]">En Attente de Visa</div>
+          <div className="text-slate-400 text-[11px]">États de démo en attente</div>
           <div className="text-xl font-bold font-mono text-amber-400 mt-0.5">
             {projects.filter((p) => p.status === 'validation_finance' || p.status === 'validation_achats').length}
           </div>
-          <div className="text-[10px] text-slate-500">Finance ou Achats</div>
+          <div className="text-[10px] text-slate-500">aucun visa enregistré</div>
         </div>
 
         <div className="p-3.5 bg-slate-900 border border-slate-800 rounded-xl">
@@ -187,15 +170,15 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
             onChange={(e) => setStatusFilter(e.target.value)}
             className="bg-slate-950 border border-slate-800 rounded-lg px-2.5 py-1.5 text-slate-300 focus:outline-none focus:border-emerald-500"
           >
-            <option value="all">Tous les 8 statuts</option>
-            <option value="brouillon">Brouillon</option>
-            <option value="collecte_offres">Collecte des offres</option>
-            <option value="analyse">Analyse</option>
-            <option value="validation_finance">Validation Finance</option>
-            <option value="validation_achats">Validation Achats</option>
-            <option value="decision">Décision</option>
-            <option value="termine">Terminé</option>
-            <option value="archive">Archivé</option>
+            <option value="all">Tous les états de démonstration</option>
+            <option value="brouillon">Démo : brouillon</option>
+            <option value="collecte_offres">Démo : collecte des offres</option>
+            <option value="analyse">Démo : analyse</option>
+            <option value="validation_finance">Démo : état finance</option>
+            <option value="validation_achats">Démo : état achats</option>
+            <option value="decision">Démo : décision</option>
+            <option value="termine">Démo : terminé</option>
+            <option value="archive">Démo : archivé</option>
           </select>
         </div>
       </div>
@@ -269,22 +252,12 @@ export const ProjectsView: React.FC<ProjectsViewProps> = ({
                     </button>
                   )}
 
-                  {/* Status Dropdown Controller */}
-                  <select
-                    value={p.status}
-                    onChange={(e) => handleStatusChange(p, e.target.value as ProjectStatus)}
-                    className="bg-slate-950 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
-                    title="Changer le statut du projet"
+                  <span
+                    className="px-2.5 py-1.5 text-[10px] text-amber-200 bg-amber-950/40 border border-amber-800 rounded-lg"
+                    title="Statut de démonstration; aucune approbation ou adjudication réelle n’est enregistrée."
                   >
-                    <option value="brouillon">1. Brouillon</option>
-                    <option value="collecte_offres">2. Collecte des offres</option>
-                    <option value="analyse">3. Analyse TCO</option>
-                    <option value="validation_finance">4. Validation Finance</option>
-                    <option value="validation_achats">5. Validation Achats</option>
-                    <option value="decision">6. Comité de Décision</option>
-                    <option value="termine">7. Terminé / Arbitré</option>
-                    <option value="archive">8. Archivé</option>
-                  </select>
+                    {getStatusBadge(p.status).label} · démo non vérifiée
+                  </span>
 
                   <button
                     onClick={() => {

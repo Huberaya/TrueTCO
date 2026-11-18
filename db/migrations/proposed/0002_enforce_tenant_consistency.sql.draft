@@ -1,0 +1,84 @@
+-- DRAFT ONLY — P0.2 / migration candidate 0002
+-- This filename is deliberately not a Drizzle migration extension. DO NOT RUN.
+-- Requires an approved, separately executed backfill plus a reviewed zero-orphan,
+-- zero-cross-tenant, zero-NULL report. No backfill is included in this file.
+--
+-- Do not run on production or staging from this checkout. Re-introspect names and
+-- existing constraints, test lock time on a disposable PostgreSQL 18 database,
+-- and have the schema/data owner review before converting to a real migration.
+
+BEGIN;
+
+-- Deliberate stop conditions: ambiguous/missing mappings must be manually resolved.
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM supplier_offers WHERE organization_id IS NULL)
+     OR EXISTS (SELECT 1 FROM cost_items WHERE organization_id IS NULL)
+     OR EXISTS (SELECT 1 FROM carbon_items WHERE organization_id IS NULL)
+     OR EXISTS (SELECT 1 FROM risk_items WHERE organization_id IS NULL) THEN
+    RAISE EXCEPTION 'Tenant columns contain NULL rows; reconcile explicitly before constraints';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM supplier_offers offer
+    JOIN projects project ON project.id = offer.project_id
+    WHERE offer.organization_id <> project.organization_id
+  ) OR EXISTS (
+    SELECT 1
+    FROM supplier_offers offer
+    JOIN suppliers supplier ON supplier.id = offer.supplier_id
+    WHERE offer.organization_id <> supplier.organization_id
+  ) THEN
+    RAISE EXCEPTION 'Cross-organization offer relation found; reconcile explicitly';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1
+    FROM cost_items child
+    JOIN supplier_offers offer ON offer.id = child.offer_id
+    WHERE child.organization_id <> offer.organization_id
+  ) OR EXISTS (
+    SELECT 1
+    FROM carbon_items child
+    JOIN supplier_offers offer ON offer.id = child.offer_id
+    WHERE child.organization_id <> offer.organization_id
+  ) OR EXISTS (
+    SELECT 1
+    FROM risk_items child
+    JOIN supplier_offers offer ON offer.id = child.offer_id
+    WHERE child.organization_id <> offer.organization_id
+  ) THEN
+    RAISE EXCEPTION 'Cross-organization offer child found; reconcile explicitly';
+  END IF;
+END $$;
+
+ALTER TABLE supplier_offers ALTER COLUMN organization_id SET NOT NULL;
+ALTER TABLE cost_items ALTER COLUMN organization_id SET NOT NULL;
+ALTER TABLE carbon_items ALTER COLUMN organization_id SET NOT NULL;
+ALTER TABLE risk_items ALTER COLUMN organization_id SET NOT NULL;
+
+ALTER TABLE projects
+  ADD CONSTRAINT uq_projects_organization_id_id UNIQUE (organization_id, id);
+ALTER TABLE suppliers
+  ADD CONSTRAINT uq_suppliers_organization_id_id UNIQUE (organization_id, id);
+ALTER TABLE supplier_offers
+  ADD CONSTRAINT uq_supplier_offers_organization_id_id UNIQUE (organization_id, id);
+
+ALTER TABLE supplier_offers
+  ADD CONSTRAINT fk_supplier_offers_project_tenant
+  FOREIGN KEY (organization_id, project_id) REFERENCES projects (organization_id, id);
+ALTER TABLE supplier_offers
+  ADD CONSTRAINT fk_supplier_offers_supplier_tenant
+  FOREIGN KEY (organization_id, supplier_id) REFERENCES suppliers (organization_id, id);
+ALTER TABLE cost_items
+  ADD CONSTRAINT fk_cost_items_offer_tenant
+  FOREIGN KEY (organization_id, offer_id) REFERENCES supplier_offers (organization_id, id);
+ALTER TABLE carbon_items
+  ADD CONSTRAINT fk_carbon_items_offer_tenant
+  FOREIGN KEY (organization_id, offer_id) REFERENCES supplier_offers (organization_id, id);
+ALTER TABLE risk_items
+  ADD CONSTRAINT fk_risk_items_offer_tenant
+  FOREIGN KEY (organization_id, offer_id) REFERENCES supplier_offers (organization_id, id);
+
+COMMIT;

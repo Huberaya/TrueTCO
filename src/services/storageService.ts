@@ -142,7 +142,7 @@ export class StorageService {
     const payload: TrueTCOBackupPayload = {
       version: '1.2.0',
       exportedAt: new Date().toISOString(),
-      organization: 'Acme Group Europe',
+      organization: 'Organisation de démonstration',
       projects,
       offers,
       suppliers,
@@ -206,7 +206,7 @@ export class StorageService {
     // 1. Organization
     lines.push('-- 1. Organisation Racine');
     lines.push(`INSERT INTO organizations (id, name, legal_registration_number, country_code, default_currency)
-VALUES ('00000000-0000-0000-0000-000000000001', 'Acme Group Europe', 'FR12345678901', 'FR', 'EUR')
+VALUES ('00000000-0000-0000-0000-000000000001', 'Organisation de démonstration', NULL, 'FR', 'EUR')
 ON CONFLICT (id) DO NOTHING;\n`);
 
     // 2. Suppliers
@@ -225,7 +225,7 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, esg_score = EXCLUDED.esg_sc
     projects.forEach((p) => {
       lines.push(
         `INSERT INTO projects (id, organization_id, reference, name, company_name, budget_cap, currency, planned_volume, unit_name, horizon_years, status, discount_rate, energy_inflation_rate, general_inflation_rate, carbon_price_per_tonne, category)
-VALUES (${escapeSql(p.id)}, '00000000-0000-0000-0000-000000000001', ${escapeSql(p.reference)}, ${escapeSql(p.name)}, ${escapeSql(p.companyName || 'Acme Group')}, ${p.budgetCap}, ${escapeSql(p.currency)}, ${p.plannedVolume}, ${escapeSql(p.unitName)}, ${p.horizonYears}, ${escapeSql(p.status)}, ${p.discountRate}, ${p.energyInflationRate}, ${p.inflationRate}, ${p.carbonPricePerTonne}, ${escapeSql(p.category)})
+VALUES (${escapeSql(p.id)}, '00000000-0000-0000-0000-000000000001', ${escapeSql(p.reference)}, ${escapeSql(p.name)}, ${escapeSql(p.companyName || 'Organisation de démonstration')}, ${p.budgetCap}, ${escapeSql(p.currency)}, ${p.plannedVolume}, ${escapeSql(p.unitName)}, ${p.horizonYears}, ${escapeSql(p.status)}, ${p.discountRate}, ${p.energyInflationRate}, ${p.inflationRate}, ${p.carbonPricePerTonne}, ${escapeSql(p.category)})
 ON CONFLICT (id) DO UPDATE SET budget_cap = EXCLUDED.budget_cap, discount_rate = EXCLUDED.discount_rate;`
       );
     });

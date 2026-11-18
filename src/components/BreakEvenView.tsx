@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Project, SupplierOffer } from '../types/domain';
 import { TCOEngine } from '../engine/tcoEngine';
-import { TrendingUp, CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
+import { CheckCircle2, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface BreakEvenViewProps {
   project: Project;

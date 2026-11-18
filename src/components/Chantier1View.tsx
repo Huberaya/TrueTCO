@@ -6,16 +6,12 @@ import {
   ShieldCheck,
   CheckCircle2,
   XCircle,
-  Play,
   RotateCcw,
-  Code2,
   Binary,
   Layers,
   Calculator,
   HelpCircle,
   FileCheck,
-  ChevronRight,
-  Info,
 } from 'lucide-react';
 import { WhyThisAmountModal } from './WhyThisAmountModal';
 
@@ -79,14 +75,14 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
             Chantier 1 — Architecture, Modèle de Données & Moteur TCO
           </h2>
           <p className="text-xs text-slate-400 mt-1 max-w-3xl">
-            Vérification formelle des 10 exigences du Chantier 1 : modèle d'entités, typage strict, formules mathématiques certifiées, neutralité ESG, suite de tests unitaires et banc d'essai interactif.
+            État de démonstration du Chantier 1 : contrôles locaux et tests exploratoires ; aucune validation indépendante ou certification n’est établie.
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-emerald-950/60 border border-emerald-800/80 rounded-lg text-emerald-400 text-xs font-semibold">
             <CheckCircle2 className="w-4 h-4" />
-            <span>Chantier 1 Validé (100%)</span>
+            <span>État indicatif — non certifié</span>
           </div>
         </div>
       </div>
@@ -126,7 +122,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
           }`}
         >
           <Binary className="w-3.5 h-3.5 text-indigo-400" />
-          04. Formules & Hypothèses Auditées
+          04. Formules & Hypothèses — non auditées
         </button>
 
         <button
@@ -249,11 +245,11 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
                   Décomposition Algorithmique des Lignes de Coûts
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  Cliquez sur l'icône d'aide de chaque ligne pour auditer la formule, la provenance et le score de confiance.
+                  Consultez les détails affichés ; les sources, la provenance et les scores ne sont pas vérifiés indépendamment.
                 </p>
               </div>
               <div className="text-xs font-mono text-emerald-400 font-semibold">
-                Score de Qualité des Données : {calculation.dataQualityScore}%
+                Score interne indicatif (non validé) : {calculation.dataQualityScore}%
               </div>
             </div>
 
@@ -304,7 +300,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
                               calculatedFormula: item.isRecurringYearly
                                 ? `Coût_Annuel × Σ(1 + Inflation)^(t-1) sur ${project.horizonYears} ans`
                                 : 'Montant forfaitaire ponctuel Année 0',
-                              calculationExplanation: item.amount.notes || 'Poste audité selon les règles du moteur TCO.',
+                              calculationExplanation: item.amount.notes || 'Poste calculé à titre indicatif par le moteur TCO ; non audité.',
                             })
                           }
                           className="p-1 text-slate-400 hover:text-white rounded"
@@ -349,7 +345,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
         )
       )}
 
-      {/* TAB 2: TESTS AUTOMATISÉS CERTIFIÉS */}
+      {/* TAB 2: TESTS AUTOMATISÉS LOCAUX — NON CERTIFIÉS */}
       {activeTab === 'tests' && (
         <div className="space-y-4">
           <div className="p-4 bg-slate-900 border border-slate-800 rounded-xl flex items-center justify-between gap-4">
@@ -358,7 +354,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
                 Rapport d'Exécution des Tests Mathématiques
               </h3>
               <p className="text-xs text-slate-400">
-                La suite de tests unitaires valide l'absence de régression sur les calculs de CAPEX, d'OPEX indexé, d'actualisation WACC, de monétisation carbone et d'objectivité sans biais.
+                Les tests embarqués vérifient un ensemble limité de cas d’exécution. Ils ne prouvent ni l’absence générale de régression, ni la justesse métier, ni l’absence de biais.
               </p>
             </div>
 
@@ -411,7 +407,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
         </div>
       )}
 
-      {/* TAB 3: FORMULES & HYPOTHÈSES AUDITÉES */}
+      {/* TAB 3: FORMULES & HYPOTHÈSES — NON AUDITÉES */}
       {activeTab === 'formulas' && (
         <div className="space-y-4">
           <div className="p-5 bg-slate-900 border border-slate-800 rounded-xl space-y-3">
@@ -449,7 +445,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
                   Coût_Carbone = Émissions_Totales_(tCO2e) × Valeur_Tutélaire_(€/t)
                 </div>
                 <div className="text-slate-400 text-[11px] pt-1">
-                  Basé sur les facteurs d'émission officiels ADEME Base Carbone et la trajectoire de la commission Quinet (120 €/t en 2026).
+                  Facteurs et trajectoire saisis à titre indicatif ; source, version et validité réglementaire non vérifiées.
                 </div>
               </div>
 
@@ -485,7 +481,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               Architecture Entités-Relations (src/types/domain.ts)
             </h3>
             <p className="text-xs text-slate-400">
-              Modélisation TypeScript stricte pour garantir l'intégrité, l'isolation multi-tenant et la traçabilité.
+              Types de données indicatifs. Ils ne garantissent ni intégrité, ni isolation multi-tenant, ni traçabilité vérifiée.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
@@ -516,7 +512,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
               <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-lg space-y-1">
                 <div className="font-bold text-emerald-400 font-mono">TCOCalculationResult</div>
                 <div className="text-slate-300">
-                  Sortie immuable du moteur : TCO standard, LCC actualisé, intervalle d'incertitude et cash flows.
+                  Résultats calculés à partir des entrées courantes (non certifiés) : TCO, LCC, intervalle d'incertitude et cash flows.
                 </div>
                 <div className="text-[10px] text-slate-500">Prêt pour l'exportation et le reporting de direction</div>
               </div>
@@ -532,7 +528,7 @@ export const Chantier1View: React.FC<Chantier1ViewProps> = ({ project, offers })
             <h3 className="text-sm font-bold text-white uppercase tracking-wider">
               Rapport de Clôture & Revue de Code — Chantier 1
             </h3>
-            <span className="text-emerald-400 font-mono font-bold text-xs">Statut : Validé 100%</span>
+            <span className="text-amber-300 font-mono font-bold text-xs">Statut : non vérifié</span>
           </div>
 
           <div className="space-y-2">

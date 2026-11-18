@@ -1,0 +1,33 @@
+-- DRAFT ONLY — P0.2 / migration candidate 0001
+-- This filename is deliberately not a Drizzle migration extension. DO NOT RUN.
+-- No production/staging database was connected or changed to create this draft.
+--
+-- Preconditions before a reviewed copy may be executed:
+--   1. Re-introspect the exact target branch and confirm these columns are absent.
+--   2. Back up and restore-test the target environment; review lock/runtime impact.
+--   3. Inventory rows, parent links, duplicate IDs and project/supplier tenant conflicts.
+--   4. Agree on authoritative organization mapping and prepare a reviewed backfill.
+--   5. Do not set NOT NULL or add tenant foreign keys until every row is reconciled.
+--   6. Use a dedicated migration identity; never validate RLS as neondb_owner/BYPASSRLS.
+--
+-- This additive expansion intentionally has no data backfill, no guessed tenant,
+-- no NOT NULL, no FK/unique constraint, no RLS policy, and no destructive action.
+-- It is not an executable deployment artifact until approved and re-reviewed.
+
+BEGIN;
+
+ALTER TABLE supplier_offers ADD COLUMN IF NOT EXISTS organization_id UUID;
+ALTER TABLE cost_items ADD COLUMN IF NOT EXISTS organization_id UUID;
+ALTER TABLE carbon_items ADD COLUMN IF NOT EXISTS organization_id UUID;
+ALTER TABLE risk_items ADD COLUMN IF NOT EXISTS organization_id UUID;
+
+CREATE INDEX IF NOT EXISTS idx_supplier_offers_org_project
+  ON supplier_offers (organization_id, project_id);
+CREATE INDEX IF NOT EXISTS idx_cost_items_org_offer
+  ON cost_items (organization_id, offer_id);
+CREATE INDEX IF NOT EXISTS idx_carbon_items_org_offer
+  ON carbon_items (organization_id, offer_id);
+CREATE INDEX IF NOT EXISTS idx_risk_items_org_offer
+  ON risk_items (organization_id, offer_id);
+
+COMMIT;

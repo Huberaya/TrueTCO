@@ -44,34 +44,34 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({
   currentView,
   onNavigate,
-  pendingApprovalsCount = 1,
+  pendingApprovalsCount = 0,
 }) => {
   const navItems: { id: NavView; label: string; icon: React.ReactNode; badge?: string | number }[] = [
     {
       id: 'chantier1',
-      label: 'Chantier 1 (Moteur TCO)',
+      label: 'Chantier 1 (calculs indicatifs)',
       icon: <Scale className="w-4 h-4 text-emerald-400" />,
-      badge: 'Validé',
+      badge: 'Démo',
     },
     {
       id: 'dashboard',
-      label: 'Dashboard Exécutif',
+      label: 'Tableau de bord — démo',
       icon: <LayoutDashboard className="w-4 h-4" />,
     },
     {
       id: 'comparator',
-      label: 'Comparateur & TCO',
+      label: 'Comparateur indicatif',
       icon: <Scale className="w-4 h-4" />,
     },
     {
       id: 'multicriteria',
-      label: 'Matrice 360° (Scoring)',
+      label: 'Pondérations — démo',
       icon: <Award className="w-4 h-4 text-emerald-400" />,
-      badge: 'Nouveau',
+      badge: 'Démo',
     },
     {
       id: 'breakeven',
-      label: 'Point Mort (Break-Even)',
+      label: 'Point mort — indicatif',
       icon: <TrendingUp className="w-4 h-4" />,
     },
     {
@@ -81,62 +81,62 @@ export const Sidebar: React.FC<SidebarProps> = ({
     },
     {
       id: 'sensitivity',
-      label: 'Analyse Sensibilité',
+      label: 'Sensibilité — indicative',
       icon: <Activity className="w-4 h-4" />,
     },
     {
       id: 'projects',
-      label: 'Chantier 3 (Appels d\'Offres)',
+      label: 'Chantier 3 (projets — démo)',
       icon: <FolderKanban className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
+      badge: 'Démo',
     },
     {
       id: 'suppliers',
-      label: 'Chantier 4 (Fournisseurs & ESG)',
+      label: 'Chantier 4 (fournisseurs — démo)',
       icon: <Building2 className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
+      badge: 'Démo',
     },
     {
       id: 'externalities',
-      label: 'Chantier 5 (Référentiels ADEME)',
+      label: 'Chantier 5 (références — non vérifiées)',
       icon: <Database className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
+      badge: 'Démo',
     },
     {
       id: 'audit',
-      label: 'Chantier 5 (Audit & Visas CAC)',
+      label: 'Chantier 5 (journal applicatif)',
       icon: <History className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
+      badge: 'Démo',
     },
     {
       id: 'report',
-      label: 'Chantier 6 (Dossier Comex)',
+      label: 'Chantier 6 (rapport indicatif)',
       icon: <FileCheck className="w-4 h-4 text-emerald-400" />,
-      badge: 'Actif',
+      badge: 'Démo',
     },
     {
       id: 'erp_connectors',
-      label: 'Chantier 7 (Connecteurs ERP)',
+      label: 'Chantier 7 (ERP — désactivé)',
       icon: <Network className="w-4 h-4 text-sky-400" />,
-      badge: 'e-Proc',
+      badge: 'Off',
     },
     {
       id: 'ai_parser',
-      label: 'Chantier 8 (Parser IA & FDES)',
+      label: 'Chantier 8 (analyse docs — désactivée)',
       icon: <Sparkles className="w-4 h-4 text-purple-400" />,
-      badge: 'IA OCR',
+      badge: 'Off',
     },
     {
       id: 'digital_signature',
-      label: 'Chantier 9 (Signature eIDAS)',
+      label: 'Chantier 9 (signature — désactivée)',
       icon: <Fingerprint className="w-4 h-4 text-emerald-400" />,
-      badge: 'eIDAS',
+      badge: 'Off',
     },
     {
       id: 'csrd_taxonomy',
-      label: 'Chantier 10 (CSRD & Taxonomie)',
+      label: 'Chantier 10 (CSRD — données insuffisantes)',
       icon: <Leaf className="w-4 h-4 text-teal-400" />,
-      badge: 'ESRS E1',
+      badge: 'Off',
     },
   ];
 
@@ -184,10 +184,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <div className="p-3 bg-slate-900/70 border border-slate-800 rounded-lg text-xs">
           <div className="flex items-center justify-between text-slate-400 text-[11px] mb-1">
             <span>Règle d'arbitrage</span>
-            <span className="text-emerald-400 font-mono">Neutralité</span>
+            <span className="text-amber-300 font-mono">À valider</span>
           </div>
           <p className="text-[11px] text-slate-300 leading-relaxed">
-            Les conclusions économiques reposent exclusivement sur des flux documentés et vérifiables.
+            Résultats exploratoires : hypothèses, provenance et calculs doivent être vérifiés indépendamment.
           </p>
         </div>
       </div>

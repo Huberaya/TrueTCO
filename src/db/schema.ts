@@ -7,10 +7,11 @@ import {
   timestamp,
   boolean,
   uuid,
+  check,
   index,
-  uniqueIndex,
+  unique,
 } from 'drizzle-orm/pg-core';
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
 /**
  * =========================================================================
@@ -29,7 +30,7 @@ export const organizations = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('org_name_idx').on(table.name),
+    index('idx_organizations_name').on(table.name),
   ]
 );
 
@@ -54,9 +55,11 @@ export const users = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('user_org_email_idx').on(table.organizationId, table.email),
-    index('user_role_idx').on(table.role),
-    index('user_clerk_id_idx').on(table.clerkId),
+    unique('uq_users_org_email').on(table.organizationId, table.email),
+    index('idx_users_org').on(table.organizationId),
+    index('idx_users_role').on(table.role),
+    index('idx_users_clerk_id').on(table.clerkId),
+    check('users_role_check', sql`${table.role} IN ('directeur_achats', 'acheteur', 'finance_controleur', 'rse_esg', 'direction_generale', 'admin')`),
   ]
 );
 
@@ -81,20 +84,26 @@ export const projects = pgTable(
     currency: varchar('currency', { length: 3 }).default('EUR').notNull(),
     plannedVolume: integer('planned_volume').notNull(),
     unitName: varchar('unit_name', { length: 50 }).notNull(), // 'véhicules', 'postes de travail', 'serveurs'
-    horizonYears: integer('horizon_years').notNull(), // 1 to 10 years
+    horizonYears: integer('horizon_years').notNull(), // 1 to 15 years
     status: varchar('status', { length: 50 }).default('Brouillon').notNull(), // 'Brouillon' | 'Cahier des charges' | 'Consultation' | 'Analyse' | 'Décision' | 'Contractualisé' | 'En exploitation' | 'Archivé'
     discountRate: numeric('discount_rate', { precision: 6, scale: 4 }).notNull(), // WACC, e.g. 0.0450 (4.5%)
     energyInflationRate: numeric('energy_inflation_rate', { precision: 6, scale: 4 }).notNull(), // e.g. 0.0550 (5.5%)
     generalInflationRate: numeric('general_inflation_rate', { precision: 6, scale: 4 }).notNull(), // e.g. 0.0200 (2.0%)
-    carbonPricePerTonne: numeric('carbon_price_per_tonne', { precision: 10, scale: 2 }).notNull(), // Quinet €/tCO2e (e.g. 120.00)
-    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    carbonPricePerTonne: numeric('carbon_price_per_tonne', { precision: 10, scale: 2 }).default('120.00').notNull(), // Quinet €/tCO2e (e.g. 120.00)
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('project_org_ref_idx').on(table.organizationId, table.reference),
-    index('project_status_idx').on(table.status),
-    index('project_category_idx').on(table.category),
+    unique('uq_projects_org_ref').on(table.organizationId, table.reference),
+    index('idx_projects_org').on(table.organizationId),
+    index('idx_projects_status').on(table.status),
+    index('idx_projects_category').on(table.category),
+    check('projects_budget_cap_check', sql`${table.budgetCap} > 0`),
+    check('projects_planned_volume_check', sql`${table.plannedVolume} > 0`),
+    check('projects_horizon_years_check', sql`${table.horizonYears} BETWEEN 1 AND 15`),
+    check('projects_status_check', sql`${table.status} IN ('brouillon', 'collecte_offres', 'analyse', 'validation_finance', 'validation_achats', 'decision', 'termine', 'archive', 'Brouillon', 'Cahier des charges', 'Consultation', 'Analyse', 'Validation Finance', 'Validation Achats', 'Décision', 'Contractualisé', 'En exploitation', 'Archivé', 'Terminé / Arbitré')`),
+    check('projects_discount_rate_check', sql`${table.discountRate} >= 0`),
   ]
 );
 
@@ -112,7 +121,7 @@ export const suppliers = pgTable(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 255 }).notNull(),
     countryCode: varchar('country_code', { length: 2 }).notNull(),
-    incoterm: varchar('incoterm', { length: 10 }).notNull(), // 'DDP', 'FCA', 'EXW', 'CIP'
+    incoterm: varchar('incoterm', { length: 10 }).default('DDP').notNull(), // 'DDP', 'FCA', 'EXW', 'CIP'
     paymentTermsDays: integer('payment_terms_days').default(30).notNull(),
     standardLeadTimeDays: integer('standard_lead_time_days').notNull(),
     minimumOrderQuantity: integer('minimum_order_quantity').default(1).notNull(),
@@ -127,7 +136,10 @@ export const suppliers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('supplier_org_name_idx').on(table.organizationId, table.name),
+    unique('uq_suppliers_org_name').on(table.organizationId, table.name),
+    index('idx_suppliers_org').on(table.organizationId),
+    check('suppliers_esg_score_check', sql`${table.esgScore} BETWEEN 0 AND 100`),
+    check('suppliers_data_quality_score_check', sql`${table.dataQualityScore} BETWEEN 0 AND 100`),
   ]
 );
 
@@ -160,8 +172,11 @@ export const supplierOffers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('offer_project_ref_idx').on(table.projectId, table.offerReference),
-    index('offer_project_id_idx').on(table.projectId),
+    unique('uq_offers_project_ref').on(table.projectId, table.offerReference),
+    index('idx_offers_project').on(table.projectId),
+    index('idx_offers_supplier').on(table.supplierId),
+    check('supplier_offers_apparent_total_check', sql`${table.apparentTotal} >= 0`),
+    check('supplier_offers_confidence_score_check', sql`${table.confidenceScore} BETWEEN 0 AND 100`),
   ]
 );
 
@@ -191,8 +206,10 @@ export const costItems = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('cost_items_offer_id_idx').on(table.offerId),
-    index('cost_items_category_idx').on(table.category),
+    index('idx_cost_items_offer').on(table.offerId),
+    index('idx_cost_items_category').on(table.category),
+    check('cost_items_source_type_check', sql`${table.sourceType} IN ('verifiee', 'calculee', 'estimee')`),
+    check('cost_items_confidence_level_check', sql`${table.confidenceLevel} BETWEEN 0 AND 100`),
   ]
 );
 
@@ -217,7 +234,9 @@ export const carbonItems = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('carbon_items_offer_id_idx').on(table.offerId),
+    index('idx_carbon_items_offer').on(table.offerId),
+    check('carbon_items_scope_check', sql`${table.scope} IN ('Scope 1', 'Scope 2', 'Scope 3 Amont', 'Scope 3 Aval')`),
+    check('carbon_items_confidence_level_check', sql`${table.confidenceLevel} BETWEEN 0 AND 100`),
   ]
 );
 
@@ -240,7 +259,9 @@ export const riskItems = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    index('risk_items_offer_id_idx').on(table.offerId),
+    index('idx_risk_items_offer').on(table.offerId),
+    check('risk_items_probability_check', sql`${table.probability} BETWEEN 0 AND 1`),
+    check('risk_items_financial_impact_check', sql`${table.financialImpact} >= 0`),
   ]
 );
 
@@ -269,13 +290,17 @@ export const referenceBenchmarks = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
-    uniqueIndex('bench_org_name_idx').on(table.organizationId, table.name),
+    unique('uq_benchmarks_org_name').on(table.organizationId, table.name),
+    index('idx_benchmarks_org').on(table.organizationId),
+    index('idx_benchmarks_category').on(table.category),
+    check('reference_benchmarks_category_check', sql`${table.category} IN ('energie', 'carbone', 'financier', 'social', 'dechets', 'wacc', 'pollution_locale', 'main_d_oeuvre', 'taux_interet')`),
+    check('reference_benchmarks_confidence_score_check', sql`${table.confidenceScore} BETWEEN 0 AND 100`),
   ]
 );
 
 /**
  * =========================================================================
- * 10. AUDIT LOGS (Journal d'Audit Immuable Légal / CAC)
+ * 10. AUDIT LOGS (événements applicatifs ; non immuables / non certifiés)
  * =========================================================================
  */
 export const auditLogs = pgTable(
@@ -293,12 +318,12 @@ export const auditLogs = pgTable(
     entityName: varchar('entity_name', { length: 255 }).notNull(),
     fieldChanged: varchar('field_changed', { length: 255 }).notNull(),
     oldValue: text('old_value').notNull(),
-    newValue: text('newValue').notNull(),
+    newValue: text('new_value').notNull(),
     justification: text('justification').notNull(),
   },
   (table) => [
-    index('audit_org_timestamp_idx').on(table.organizationId, table.timestamp),
-    index('audit_project_id_idx').on(table.projectId),
+    index('idx_audit_logs_org_timestamp').on(table.organizationId, table.timestamp.desc()),
+    index('idx_audit_logs_project').on(table.projectId),
   ]
 );
 

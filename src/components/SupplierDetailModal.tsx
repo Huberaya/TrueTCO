@@ -6,16 +6,9 @@ import {
   ShieldCheck,
   CheckCircle2,
   AlertTriangle,
-  Award,
-  Phone,
-  Mail,
   Truck,
   Leaf,
-  Scale,
   Save,
-  HelpCircle,
-  Clock,
-  TrendingDown,
   Info,
 } from 'lucide-react';
 
@@ -135,7 +128,7 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
                   {supplier.country}
                 </span>
                 <span className="text-[10px] text-emerald-400 font-mono font-semibold bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800">
-                  Fournisseur Qualifié
+                  Données déclaratives — non vérifiées
                 </span>
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
@@ -277,7 +270,7 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-400 mb-1">Certifications (séparées par une virgule)</label>
+                <label className="block text-slate-400 mb-1">Certifications déclarées — non vérifiées (séparées par une virgule)</label>
                 <input
                   type="text"
                   value={certificationsText}
@@ -437,7 +430,7 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
                 />
 
                 <div className="flex items-center justify-between text-[10px] text-slate-500">
-                  <span>Score EcoVadis / B Corp audité</span>
+                  <span>Score ESG déclaré (non vérifié)</span>
                   <span>Impacte la pondération ESG dans la matrice 360°</span>
                 </div>
               </div>
@@ -451,7 +444,7 @@ export const SupplierDetailModal: React.FC<SupplierDetailModalProps> = ({
             {isSavedNotice && (
               <span className="text-emerald-400 font-mono flex items-center gap-1.5 animate-fadeIn">
                 <CheckCircle2 className="w-4 h-4" />
-                Fiche fournisseur mise à jour dans Neon DB !
+                Fiche modifiée localement. La sauvegarde distante n’est pas confirmée.
               </span>
             )}
           </div>
