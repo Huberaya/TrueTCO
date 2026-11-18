@@ -79,12 +79,12 @@ test('Clerk configuration failure is fail-closed while liveness remains public',
   }
 });
 
-test('production server verifies Clerk before, but never instead of, the global API gate', async () => {
+test('production app factory verifies Clerk before, but never instead of, the global API gate', async () => {
   const { readFile } = await import('node:fs/promises');
-  const serverSource = await readFile(new URL('../../server.ts', import.meta.url), 'utf8');
-  const clerkMount = serverSource.indexOf("app.use('/api', createClerkSessionMiddleware())");
-  const gateMount = serverSource.indexOf("app.use('/api', createFailClosedApiGate())");
+  const applicationSource = await readFile(new URL('./application.ts', import.meta.url), 'utf8');
+  const clerkMount = applicationSource.indexOf("app.use('/api', clerk)");
+  const gateMount = applicationSource.indexOf("app.use('/api', gate)");
   assert.ok(clerkMount >= 0 && gateMount > clerkMount);
-  assert.match(serverSource, /createClerkSessionMiddleware\(\)/);
-  assert.match(serverSource, /createFailClosedApiGate\(\)/);
+  assert.match(applicationSource, /createClerkSessionMiddleware\(\)/);
+  assert.match(applicationSource, /createFailClosedApiGate\(\)/);
 });

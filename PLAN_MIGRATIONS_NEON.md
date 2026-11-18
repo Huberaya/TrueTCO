@@ -1,87 +1,77 @@
-# TrueTCO — plan versionné de migrations Neon / P0.2
+# TrueTCO — stratégie de migrations Neon / P0.4
 
-**Décision :** préparation uniquement; aucun SQL appliqué. Aucun accès distant, changement de rôle, de branche Neon, de donnée, de secret ou de base n’a été effectué durant ce chantier.
+**Statut : préparation locale versionnée uniquement.** Aucun SQL n’a été appliqué sur Neon, aucune base distante n’a été consultée, et aucun rôle, secret, donnée ou paramètre distant n’a été modifié.
 
-## 1. État de vérité à réconcilier
+## 1. État de départ connu
 
-Le propriétaire du projet a communiqué que production est la branche `br-bold-leaf-b2eclysi`, la preview PR la branche `br-noisy-star-b2g4bwcn`, PostgreSQL 18.7, 11 tables dont `user_sessions`, aucune RLS/policy trouvée, et le rôle de diagnostic `neondb_owner` a `BYPASSRLS`. Aucun rôle applicatif dédié ni historique de migration n’a été identifié lors de cette vérification antérieure. Ces faits sont rapportés par le propriétaire et non revalidés par une connexion Neon dans la présente exécution.
+Les informations de Neon (branches `br-bold-leaf-b2eclysi` et `br-noisy-star-b2g4bwcn`, PostgreSQL 18.7, 11 tables dont `user_sessions`, absence de RLS/policies observée, rôle diagnostic `neondb_owner` avec `BYPASSRLS`) sont les constats antérieurement rapportés par le propriétaire. Elles ne sont pas revérifiées dans ce travail.
 
-Le schéma local suivi décrit dix tables. Il diffère de la base rapportée sur `users`/`organizations`, omet `user_sessions`, et manque `organization_id` sur `supplier_offers`, `cost_items`, `carbon_items`, `risk_items`. Les clés actuelles n’assurent pas la cohérence tenant entre projet, fournisseur, offre et enfants. Les noms et définitions exactes de toutes les colonnes distantes doivent être photographiés avant de concevoir une migration corrective.
+Le dépôt local décrit dix tables. Il ne décrit pas `user_sessions`; les quatre tables offre/enfants n’ont pas `organization_id` localement. Aucune différence locale n’établit à elle seule la structure ou les contraintes actuellement déployées sur Neon.
 
-## 2. Fichiers préparés et statut
+## 2. Canonisation et changements locaux
 
-| Version candidate | Fichier | Intention | Statut |
-|---|---|---|---|
-| 0001 | `db/migrations/proposed/0001_expand_tenant_scope.sql.draft` | Ajouter nullable `organization_id` sur les quatre tables non-scopées, indexer; pas de backfill | Brouillon interdit d’exécution |
-| 0002 | `db/migrations/proposed/0002_enforce_tenant_consistency.sql.draft` | Après mapping revu, arrêter sur NULL/incohérence, puis `NOT NULL`, uniques et FKs composites | Brouillon interdit d’exécution; exige changement de données fait indépendamment et approuvé |
+- `src/db/schema.ts` est la définition déclarative Drizzle; `drizzle/migrations/0000_initial_schema.sql` est le baseline généré pour une base **neuve**, avec les six triggers custom ajoutés explicitement.
+- `src/db/schema.sql` reste un bootstrap DDL idempotent pour création d’un schéma local neuf; `CREATE TABLE IF NOT EXISTS` ne met jamais à niveau une table existante.
+- Types, colonnes, nullabilité, defaults, checks, FK/actions, indexes et unique ont été alignés entre Drizzle et le bootstrap. `updated_at` triggers sont la seule extension SQL custom nécessaire au-delà du schéma déclaratif.
+- La vérification en base jetable compare réellement les catalogues PostgreSQL 18.6 PGlite du DDL et du baseline; le rapport de test est `src/db/schema.postgres.test.ts`.
+- Le script `db:push` a été retiré. `db:generate` sert à produire des fichiers de migration à revoir; aucun exécuteur de migration distant n’est configuré par ce chantier.
+- `scripts/migrate-neon.mjs` est conservé comme garde de compatibilité désactivée : aucune lecture d’environnement, connexion, migration ou seed; il échoue avec un message explicite. L’ancien script n’était qu’un bootstrap et seed conditionnel, pas une migration versionnée.
 
-`*.sql.draft` n’est pas reconnu comme migration par Drizzle. Ces fichiers ne sont pas exécutés par `npm run db:migrate` ou `db:push` et ne constituent pas un journal d’application. Ils doivent être re-introspectés, relus, convertis explicitement après approbation et testés en environnement jetable/staging. Aucune migration n’est « appliquée » ou « prête production ».
+### Procédure reproductible
 
-Le `db:migrate` présent lance `scripts/migrate-neon.mjs`, qui applique directement `src/db/schema.sql` puis le seed; il est déconseillé de l’exécuter sur la base existante. `drizzle.config.ts` pointe vers `./drizzle/migrations`, mais aucun historique de migration canonique n’a été validé ici. Ne pas exécuter ces scripts pendant le chantier.
+1. Toute modification de `schema.ts` passe par génération Drizzle, revue de la migration SQL et mise à jour des tests d’intégration; jamais `drizzle-kit push`.
+2. Tester du vide vers la baseline sur moteur PostgreSQL jetable; tester aussi la migration version précédente vers la suivante, les contraintes, indexes, triggers, réexécution via journal et l’absence de régression.
+3. Pour un environnement existant, introspection read-only d’abord et baseline approuvée correspondant à l’état réel. **Ne pas appliquer `0000_initial_schema.sql` à Neon existant** : il crée un schéma neuf, il ne décrit pas un historique qui a déjà été appliqué.
+4. Une étape de déploiement distante ne pourra être ajoutée qu’avec autorisation, identité migrateur dédiée, backup/restore éprouvé, préflight des données, lock budget, rollback et approbation explicite.
+5. Les `.sql.draft` ne sont jamais découverts par le générateur, migrateur ou workflow; conversion manuelle après approbation et re-revue uniquement.
 
-## 3. Séquence obligatoire de la prochaine étape
+## 3. Brouillons multi-tenant P0.2
 
-### M0 — photographie read-only
+| Fichier | Ce qu’il propose | Statut |
+|---|---|---|
+| `db/migrations/proposed/0001_expand_tenant_scope.sql.draft` | Colonnes `organization_id` nullables et indexes sur offres, coûts, carbone, risques | Toujours `.sql.draft`; aucun backfill; testé seulement comme fixture PGlite, avec réexécution |
+| `db/migrations/proposed/0002_enforce_tenant_consistency.sql.draft` | Arrêt sur NULL/cross-tenant puis `NOT NULL`, clés uniques/FK composites | Toujours `.sql.draft`; non approuvé; test local exige une association de fixture explicite et confirme les stop conditions |
 
-- Réinspecter la branche Neon ciblée avec accès limité aux catalogues, sans lire ou exporter de données métier ni de secrets.
-- Capturer colonnes, types, nullabilité, defaults, PK/FK/uniques/index, policies, RLS, grants et rôles (secrets expurgés).
-- Comparer à la fois Drizzle, `schema.sql`, les requêtes `server.ts` et les scripts. Préserver explicitement les colonnes additionnelles existantes.
+Le draft 0002 n’est pas idempotent et ne doit pas être exécuté/rejoué hors d’un futur journal versionné et d’une migration approuvée. Aucun résultat de PGlite ne constitue un état ou un test de la base Neon.
 
-### M1 — tests de pré-migration
+## 4. Résultats de tests PostgreSQL jetable
 
-- Sur une DB de test isolée, vérifier les deux versions de départ: schéma vide depuis migrations canoniques, puis copie anonymisée/structurelle de la version existante.
-- Produire compteurs d’orphelins, NULL, doublons, conflits de tenants et relations incohérentes. Les lignes problématiques vont dans un rapport, pas dans un update automatique.
-- Simuler durée/locks et restauration avant toute opération staging.
+Trois tests intégrés à `npm test` utilisent PGlite 0.5.16, qui embarque PostgreSQL 18.6 sous WebAssembly et crée les bases en mémoire :
 
-### M2 — expansion additive
+- DDL `schema.sql` appliqué depuis zéro puis rejoué; checks, FKs, uniques, `ON DELETE`, triggers `updated_at` et cascade exercés.
+- Migration Drizzle appliquée depuis zéro, comparaison de catalogue avec le DDL (colonnes/types/nullabilité/defaults/contraintes/indexes/triggers), puis second run via le journal sans DDL rejoué.
+- Drafts exercés sur une fixture : réexécution 0001; refus 0002 sur colonnes NULL, offre cross-tenant et enfants incohérents; après correction de la fixture, les contraintes composites bloquent création inter-tenant.
 
-- Après revue/approbation, ajouter colonnes nullable et indexes d’abord. Pas de valeur par défaut d’organisation.
-- Déployer code capable de tolérer étape expand seulement si routes métier toujours fermées; le code de ce dépôt ne consomme pas encore ces nouvelles colonnes.
+Limites : moteur WASM, non service natif; aucune mesure de locks, réplication, restore, Neon ou RLS/rôle runtime. Pas de données ni d’identifiants distants utilisés.
 
-### M3 — association manuelle
+## 5. Plan si une migration existante est autorisée plus tard
 
-- Déduire le tenant d’une offre de son projet seulement si le lien projet existe et que le fournisseur appartient au même tenant; sinon isoler et demander une décision humaine.
-- Pour chaque coût/carbone/risque, associer l’organisation de l’offre parent uniquement si la relation est prouvée.
-- Recompter avant/après et conserver une piste de décision indépendante. Pas de backfill silencieux ni de fallback.
+### M0 — observation read-only
 
-### M4 — contraintes composées
+Catalogues de chaque cible, version, tables/colonnes/types/nullabilité/defaults, contraintes/indexes, triggers, RLS/policies/grants/rôles et état de l’historique. N’exporter ni secrets ni lignes métier; conserver les champs distants inconnus jusqu’à décision.
 
-- En staging, exiger zéro NULL et zéro conflit tenant avant `NOT NULL`.
-- Ajouter les clés uniques composites `organization_id,id` nécessaires, puis FKs composites offre→projet, offre→fournisseur, enfants→offre; valider et mesurer impact.
-- Les contraintes ne remplacent ni le filtre tenant des queries ni l’autorisation applicative.
+### M1 — préflight sur une copie structurelle autorisée
 
-### M5 — rôle runtime et RLS
+Comptes de rows orphelines, NULL, doublons, références projet/fournisseur/offre incohérentes; mesurer locks/temps sur version PG proche de la cible et tester restauration. Aucun backfill implicite.
 
-- Créer (après autorisation hors de cette PR) rôles migrateur et runtime séparés; runtime non-owner, `NOBYPASSRLS`, grants minimaux.
-- Définir et tester le passage de `organization_id` comme variable transaction-locale issue du contexte serveur vérifié. Évaluer explicitement si l’API Neon HTTP et le client courant supportent le modèle transactionnel choisi sans fuite de contexte.
-- Activer `ENABLE` et `FORCE ROW LEVEL SECURITY` puis policies `USING`/`WITH CHECK` tenant-scopées. Tester avec le vrai runtime role; `neondb_owner BYPASSRLS` n’est pas une preuve.
+### M2 — migration additive approuvée
 
-### M6 — autorisation et décision d’ouverture
+Ajouter uniquement ce qui est confirmé absent, colonnes nullables au départ; pas de tenant par défaut, pas de NOT NULL, pas de RLS avant rapport propre et mapping propriétaire approuvé.
 
-- Implémenter mapping Clerk user/org ↔ records locaux, membership actif et matrice approuvée; corriger tous les queries, IDOR, exports et relations imbriquées.
-- Exécuter tests API et PostgreSQL inter-tenant, tests de migration à vide et depuis l’état existant, restore staging et revue externe.
-- Seule une allowlist explicitement testée peut remplacer la garde 503. Routes inconnues et erreurs restent refusées.
+### M3 — association manuelle et vérifiable
 
-## 4. Tests PostgreSQL à joindre au changement de migration effectif
+Attribuer l’offre à un tenant uniquement si projet et fournisseur le prouvent; attribuer les enfants uniquement selon le tenant de l’offre vérifié. Isoler toute ambiguïté et faire valider la décision.
 
-1. A et B isolés pour chaque ressource, lecture et mutation directe et imbriquée.
-2. A tente IDs B, organisation B en body/query/header, tenant absent/inconnu et bascule d’organisation : zéro exposition/mutation.
-3. Offre d’un projet A + fournisseur B refusée; enfant A + offer B refusé; contraintes réelles vérifiées.
-4. Orphelins, doublons, tenant NULL et associations ambiguës bloquent la phase enforce sans assignation automatique.
-5. Tests des deux chemins de migration depuis zéro et depuis l’état distant; transactions concurrentes, lock time et rollback/restore.
-6. RLS vérifiée sur role runtime `NOBYPASSRLS`, y compris absence de contexte, lecture, insertion, update, tenant forgé et pool reuse; comparer séparément le comportement owner/bypass.
+### M4 — contraintes
 
-Aucun PostgreSQL test n’a été installé ou connecté dans cette session; aucune exécution de ces scénarios n’est revendiquée.
+Après zéro NULL/orphelin/cross-tenant, ajouter uniques et FKs composites offre→projet/fournisseur et enfants→offre; valider checks, stratégie locks et rollback. Les contraintes DB ne remplacent pas les filtres et autorisations applicatives.
 
-## État P0.4 — comparaison dépôt effectuée, sans opérations DB
+### M5 — identité, rôles et RLS
 
-Inspection locale de `src/db/schema.ts`, `src/db/schema.sql`, `src/db/drizzle.config.ts`, `scripts/migrate-neon.mjs` et `db/migrations/proposed/*.sql.draft` :
+Après approbation distincte, rôle runtime `NOBYPASSRLS`, grants minimaux, policies `USING` + `WITH CHECK` et contexte de tenant transaction-local construit uniquement depuis identité Clerk vérifiée et membership actif. Tester avec le vrai rôle runtime, jamais uniquement `neondb_owner`.
 
-- Aucun `drizzle/` ni migration générée n’existe dans le checkout, bien que Drizzle soit configuré pour `./drizzle/migrations`.
-- Les deux schémas locaux déclarent dix tables; le `user_sessions` distant rapporté n’est pas décrit localement.
-- Divergences avérées : Drizzle déclare `users.clerk_id` et son index, absents du DDL SQL; le SQL contient des `CHECK` role/plages/valeurs non reproduits par Drizzle; noms de contraintes/indexes et defaults ne sont pas homogènes. Exemple : statut projet `Brouillon` côté Drizzle vs `brouillon` côté SQL.
-- `migrate-neon.mjs` exécute le DDL bootstrap `CREATE TABLE IF NOT EXISTS` puis seed si l’organisation est absente; `CREATE TABLE IF NOT EXISTS` ne réconcilie pas une table existante et ce script n’est pas un mécanisme de migration versionnée. Son avertissement console a été corrigé en P0.4; le script n’a pas été exécuté.
-- Un `DROP TRIGGER IF EXISTS` dupliqué pour le trigger organizations a été retiré de `src/db/schema.sql`.
-- Les drafts 0001/0002 restent `.sql.draft`, non exécutables et hors de toute migration générée. Ils ne sont pas alignés automatiquement au modèle local, et aucune contrainte distante n’est vérifiée.
+### M6 — ouverture explicite
 
-Décisions restantes : source de vérité Drizzle/SQL, exact mapping des colonnes distantes additionnelles, statut des colonnes Clerk et sessions, alignement `CHECK`/defaults/indexes/contraintes et stratégie multi-tenant. Aucune base PostgreSQL/Neon jetable n’était disponible; aucun test SQL, migration ou backfill n’a été exécuté.
+Tests API allow/deny par route/action, IDOR et inter-tenant; tests ancien→nouveau et vide→baseline; restore/rollback staging; revue sécurité. Maintenir la garde 503 pour toute route non explicitement validée.
+
+**Décision actuelle :** P0.4 côté dépôt et PostgreSQL jetable terminé; NO-GO pour toute opération distante, activation métier, données clients, RBAC, RLS ou isolation multi-tenant.

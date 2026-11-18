@@ -3,9 +3,7 @@
 -- Application SaaS B2B d'Aide à la Décision & Arbitrage Coût Complet (TCO / LCC)
 -- =============================================================================
 
--- Activation de l'extension pour les identifiants uniques
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+-- gen_random_uuid() est fourni par PostgreSQL 13+; aucune extension tierce n’est requise.
 
 -- Fonction générique pour la mise à jour automatique de updated_at
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -41,9 +39,10 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL CONSTRAINT users_organization_id_organizations_id_fk REFERENCES organizations(id) ON DELETE CASCADE,
     email VARCHAR(255) NOT NULL,
     full_name VARCHAR(255) NOT NULL,
+    clerk_id VARCHAR(255),
     role VARCHAR(50) NOT NULL CHECK (role IN (
         'directeur_achats',
         'acheteur',
@@ -60,6 +59,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_clerk_id ON users(clerk_id);
 
 DROP TRIGGER IF EXISTS trigger_update_users_updated_at ON users;
 CREATE TRIGGER trigger_update_users_updated_at
@@ -71,7 +71,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS projects (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL CONSTRAINT projects_organization_id_organizations_id_fk REFERENCES organizations(id) ON DELETE CASCADE,
     reference VARCHAR(100) NOT NULL,
     name VARCHAR(255) NOT NULL,
     description TEXT,
@@ -82,7 +82,7 @@ CREATE TABLE IF NOT EXISTS projects (
     planned_volume INTEGER NOT NULL CHECK (planned_volume > 0),
     unit_name VARCHAR(50) NOT NULL,
     horizon_years INTEGER NOT NULL CHECK (horizon_years BETWEEN 1 AND 15),
-    status VARCHAR(50) NOT NULL DEFAULT 'brouillon' CHECK (status IN (
+    status VARCHAR(50) NOT NULL DEFAULT 'Brouillon' CHECK (status IN (
         'brouillon',
         'collecte_offres',
         'analyse',
@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS projects (
     energy_inflation_rate NUMERIC(6, 4) NOT NULL,
     general_inflation_rate NUMERIC(6, 4) NOT NULL,
     carbon_price_per_tonne NUMERIC(10, 2) NOT NULL DEFAULT 120.00, -- Quinet €/tCO2e
-    created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_by_user_id UUID CONSTRAINT projects_created_by_user_id_users_id_fk REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT uq_projects_org_ref UNIQUE (organization_id, reference)
@@ -127,7 +127,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS suppliers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL CONSTRAINT suppliers_organization_id_organizations_id_fk REFERENCES organizations(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     country_code VARCHAR(2) NOT NULL,
     incoterm VARCHAR(10) NOT NULL DEFAULT 'DDP',
@@ -158,8 +158,8 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS supplier_offers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    supplier_id UUID NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+    project_id UUID NOT NULL CONSTRAINT supplier_offers_project_id_projects_id_fk REFERENCES projects(id) ON DELETE CASCADE,
+    supplier_id UUID NOT NULL CONSTRAINT supplier_offers_supplier_id_suppliers_id_fk REFERENCES suppliers(id) ON DELETE RESTRICT,
     offer_reference VARCHAR(100) NOT NULL,
     apparent_total NUMERIC(14, 2) NOT NULL CHECK (apparent_total >= 0),
     is_responsible_candidate BOOLEAN NOT NULL DEFAULT FALSE,
@@ -188,7 +188,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cost_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    offer_id UUID NOT NULL REFERENCES supplier_offers(id) ON DELETE CASCADE,
+    offer_id UUID NOT NULL CONSTRAINT cost_items_offer_id_supplier_offers_id_fk REFERENCES supplier_offers(id) ON DELETE CASCADE,
     category VARCHAR(100) NOT NULL,
     label VARCHAR(255) NOT NULL,
     amount NUMERIC(14, 2) NOT NULL,
@@ -211,7 +211,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_items_category ON cost_items(category);
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS carbon_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    offer_id UUID NOT NULL REFERENCES supplier_offers(id) ON DELETE CASCADE,
+    offer_id UUID NOT NULL CONSTRAINT carbon_items_offer_id_supplier_offers_id_fk REFERENCES supplier_offers(id) ON DELETE CASCADE,
     scope VARCHAR(20) NOT NULL CHECK (scope IN ('Scope 1', 'Scope 2', 'Scope 3 Amont', 'Scope 3 Aval')),
     lifecycle_phase VARCHAR(100) NOT NULL,
     emissions_per_unit_tonne_co2e NUMERIC(10, 4) NOT NULL,
@@ -228,7 +228,7 @@ CREATE INDEX IF NOT EXISTS idx_carbon_items_offer ON carbon_items(offer_id);
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS risk_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    offer_id UUID NOT NULL REFERENCES supplier_offers(id) ON DELETE CASCADE,
+    offer_id UUID NOT NULL CONSTRAINT risk_items_offer_id_supplier_offers_id_fk REFERENCES supplier_offers(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
     probability NUMERIC(5, 4) NOT NULL CHECK (probability BETWEEN 0 AND 1),
     financial_impact NUMERIC(14, 2) NOT NULL CHECK (financial_impact >= 0),
@@ -243,7 +243,7 @@ CREATE INDEX IF NOT EXISTS idx_risk_items_offer ON risk_items(offer_id);
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS reference_benchmarks (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL CONSTRAINT reference_benchmarks_organization_id_organizations_id_fk REFERENCES organizations(id) ON DELETE CASCADE,
     name VARCHAR(255) NOT NULL,
     category VARCHAR(100) NOT NULL CHECK (category IN ('energie', 'carbone', 'financier', 'social', 'dechets', 'wacc', 'pollution_locale', 'main_d_oeuvre', 'taux_interet')),
     source VARCHAR(255) NOT NULL,
@@ -271,12 +271,12 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS audit_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    organization_id UUID NOT NULL CONSTRAINT audit_logs_organization_id_organizations_id_fk REFERENCES organizations(id) ON DELETE CASCADE,
     timestamp TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    user_id UUID CONSTRAINT audit_logs_user_id_users_id_fk REFERENCES users(id) ON DELETE SET NULL,
     user_name VARCHAR(255) NOT NULL,
     user_role VARCHAR(50) NOT NULL,
-    project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
+    project_id UUID CONSTRAINT audit_logs_project_id_projects_id_fk REFERENCES projects(id) ON DELETE SET NULL,
     entity_name VARCHAR(255) NOT NULL,
     field_changed VARCHAR(255) NOT NULL,
     old_value TEXT NOT NULL,
@@ -284,7 +284,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     justification TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_audit_logs_org_timestamp ON audit_logs(organization_id, timestamp DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org_timestamp ON audit_logs(organization_id, timestamp DESC NULLS LAST);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_project ON audit_logs(project_id);
 
 -- Fin du Script DDL

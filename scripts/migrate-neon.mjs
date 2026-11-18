@@ -1,64 +1,19 @@
-import { Client } from '@neondatabase/serverless';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
+#!/usr/bin/env node
 
-dotenv.config();
+/**
+ * Retired legacy bootstrap entry point.
+ *
+ * This file intentionally performs no environment reads, network connections,
+ * DDL, seed, or data mutation. The former CREATE TABLE IF NOT EXISTS + optional
+ * seed script was not a versioned migration and could not reconcile an existing
+ * database. Generate reviewed, ordered Drizzle migrations for a verified target;
+ * do not use this legacy command against Neon.
+ */
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-async function runMigration() {
-  const dbUrl = process.env.DATABASE_URL;
-  if (!dbUrl) {
-    console.error('DATABASE_URL is missing in environment!');
-    process.exit(1);
-  }
-
-  console.log('Connecting to Neon via WebSocket client (multi-statement support)...');
-  const client = new Client(dbUrl);
-  await client.connect();
-
-  const nowRes = await client.query('SELECT NOW(), current_database(), current_user;');
-  console.log('✓ Successfully connected to Neon:', nowRes.rows[0]);
-
-  // Read schema.sql
-  const schemaPath = path.resolve(__dirname, '../src/db/schema.sql');
-  const schemaSql = fs.readFileSync(schemaPath, 'utf8');
-
-  console.warn('Executing legacy bootstrap DDL only; CREATE TABLE IF NOT EXISTS does not reconcile existing table schemas. This is not a versioned migration.');
-  await client.query(schemaSql);
-  console.log('✓ Bootstrap DDL executed; existing table definitions were not reconciled.');
-
-  // Verify created tables
-  const tablesRes = await client.query(`
-    SELECT table_name 
-    FROM information_schema.tables 
-    WHERE table_schema = 'public' 
-    ORDER BY table_name;
-  `);
-  console.log('✓ Verified tables in Neon public schema:', tablesRes.rows.map(r => r.table_name));
-
-  // Seed default data if organizations table is empty
-  const orgCountRes = await client.query('SELECT COUNT(*) as count FROM organizations;');
-  if (parseInt(orgCountRes.rows[0].count, 10) === 0) {
-    console.log('Seeding initial data to Neon...');
-    const seedPath = path.resolve(__dirname, '../src/db/seed.sql');
-    if (fs.existsSync(seedPath)) {
-      const seedSql = fs.readFileSync(seedPath, 'utf8');
-      await client.query(seedSql);
-      console.log('✓ Seed data populated successfully!');
-    }
-  } else {
-    console.log(`✓ Neon database already contains data (${orgCountRes.rows[0].count} organization(s)).`);
-  }
-
-  await client.end();
-  console.log('✓ Migration finished cleanly.');
-}
-
-runMigration().catch((err) => {
-  console.error('Migration failed:', err);
-  process.exit(1);
-});
+console.error(
+  'Disabled: scripts/migrate-neon.mjs was a non-versioned bootstrap, not a migration runner. No database connection or write was attempted.',
+);
+console.error(
+  'Use the reviewed migration files and the documented baseline/reconciliation procedure; production application is not authorized by this script.',
+);
+process.exitCode = 1;

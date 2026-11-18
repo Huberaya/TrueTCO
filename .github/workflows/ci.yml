@@ -37,7 +37,7 @@ jobs:
         run: npm run typecheck
       - name: Lint
         run: npm run lint
-      - name: Unit, P0 security and API tests
+      - name: Unit, P0 security/API and PostgreSQL 18 integration tests
         run: npm test
       - name: Production dependency audit
         run: npm audit --omit=dev --audit-level=high

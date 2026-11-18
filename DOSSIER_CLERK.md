@@ -6,9 +6,9 @@
 
 - Dépendance serveur ajoutée : `@clerk/express@2.1.91`. Métadonnées npm consultées le 11 novembre 2026 : Node `>=20.9.0`, peer Express `^4.17.0 || ^5.0.0`; compatible sur les plages déclarées par ce dépôt. Le middleware et `getAuth` sont les APIs documentées du SDK. Seul `clerkMiddleware` est utilisé ici; aucune route ne consomme encore `getAuth` pour donner accès aux données.
 - `src/server/clerkAuth.ts` exige une clé secrète serveur `CLERK_SECRET_KEY` commençant par `sk_`, une clé publishable `CLERK_PUBLISHABLE_KEY` (ou la variable publique existante `VITE_CLERK_PUBLISHABLE_KEY`) commençant par `pk_`, et `CLERK_AUTHORIZED_PARTIES` sous forme de liste d’origines exactes séparées par virgules. Les valeurs placeholder, origines HTTP non-locales, wildcards, chemins et URL invalides sont refusés.
-- `server.ts` monte ce middleware avant `createFailClosedApiGate()`. La santé `GET /api/health` est exclue de la vérification; toutes les autres requêtes sont ensuite bloquées par la garde, quel que soit le résultat Clerk. Aucun handler métier n’est devenu accessible.
+- `src/server/application.ts` monte le middleware Clerk avant le gate global. `GET /api/health` est explicitement exempté de vérification d’identité et renvoie seulement `{ "status": "ok" }`; toutes les autres API passent à la garde, quel que soit le résultat Clerk. Les variantes encodées/non canoniques de `/api` suivent également Clerk puis la garde. Aucun handler métier n’est accessible.
 - Si la configuration attendue manque, la couche Clerk renvoie 503 générique sans divulguer noms de variables, clé, claims ou détails sensibles. La santé minimale demeure disponible.
-- `src/server/clerkAuth.test.ts` teste les champs requis, le rejet d’une clé publique utilisée comme secret, les origines autorisées, le refus en configuration manquante, l’exception health et l’ordre middleware Clerk → garde globale.
+- `src/server/clerkAuth.test.ts` teste la configuration et le refus fail-closed. `src/server/apiGate.test.ts` exécute l’application Express partagée avec factory Clerk instrumentée et le vrai gate : seules les requêtes health GET sont publiques; les handlers/fallbacks simulés après la pile ne sont jamais atteints par des requêtes API.
 
 ## 2. Configuration attendue — noms seulement
 
@@ -50,4 +50,4 @@ Aucun endpoint webhook n’est exposé. Si les événements Clerk sont requis, d
 
 - API SDK officiel et compatibilité package/runtimes inspectés via paquet npm installé et ses types/metadata; les tokens et les clés n’ont pas été vérifiés contre un tenant Clerk.
 - Tests locaux de configuration et fail-closed : inclus dans `npm test`.
-- Pas de test d’intégration avec JWT réel, tenant Clerk, webhook, révocation ni données PostgreSQL. L’ajout de la dépendance et du middleware ne constitue pas un SSO configuré ni une certification de sécurité.
+- Aucun JWT réel, tenant Clerk, webhook, révocation, identité persistée ni session PostgreSQL n’a été testé. Les tests PostgreSQL PGlite ajoutés en P0.4 portent uniquement sur schéma/migrations locales et ne prouvent ni l’authentification ni les memberships. L’ajout du SDK et du middleware ne constitue pas un SSO configuré ni une certification de sécurité.

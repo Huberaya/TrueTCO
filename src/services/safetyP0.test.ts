@@ -149,16 +149,17 @@ test('tenant service and organization UI have no default, cache, selection or cr
   assert.doesNotMatch(newTenant, /createTenant\(/);
 });
 
-test('server only registers health after Clerk verification and the global fail-closed gate', async () => {
-  const [server, gate] = await Promise.all([
+test('shared app stack only registers health after Clerk verification and the global fail-closed gate', async () => {
+  const [application, server, gate] = await Promise.all([
+    readFile(new URL('../server/application.ts', import.meta.url), 'utf8'),
     readFile(new URL('../../server.ts', import.meta.url), 'utf8'),
     readFile(new URL('../server/apiGate.ts', import.meta.url), 'utf8'),
   ]);
-  const clerkMount = server.indexOf("app.use('/api', createClerkSessionMiddleware())");
-  const gateMount = server.indexOf("app.use('/api', createFailClosedApiGate())");
-  const healthRoute = server.indexOf("app.get('/api/health'");
+  const clerkMount = application.indexOf("app.use('/api', clerk)");
+  const gateMount = application.indexOf("app.use('/api', gate)");
+  const healthRoute = application.indexOf("app.get('/api/health'");
   assert.ok(clerkMount >= 0 && gateMount > clerkMount && healthRoute > gateMount);
-  assert.doesNotMatch(server, /app\.(?:get|post|put|patch|delete|all)\('\/api\/(?!health)/);
+  assert.doesNotMatch(application + server, /app\.(?:get|post|put|patch|delete|all)\('\/api\/(?!health)/);
   assert.match(gate, /req\.path === '\/health'/);
   assert.match(gate, /status\(503\)/);
   assert.match(gate, /authentification et autorisations serveur non configurées/);

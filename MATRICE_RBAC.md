@@ -1,6 +1,8 @@
-# TrueTCO — matrice RBAC P0.2
+# TrueTCO — matrice RBAC / état P0.4
 
 **État :** politique d’accès non approuvée; toutes les routes métier restent fermées par défaut. Cette matrice inventorie les capacités visibles dans le dépôt et distingue explicitement les rôles historiques des autorisations réellement décidées. Elle ne constitue pas une activation d’accès.
+
+Le schéma local limite maintenant la valeur de `users.role` à la liste historique via un `CHECK`; cela ne crée ni rôle vérifié ni permission. La pile API et les handlers métier simulés sont testés en HTTP local, et aucun rôle ne passe le gate. Les tests PGlite vérifient uniquement les contraintes de schéma, pas l’autorisation applicative/RLS.
 
 ## 1. Rôles présents dans les contrats existants
 

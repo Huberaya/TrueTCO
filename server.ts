@@ -1,36 +1,24 @@
 import express from 'express';
 import http from 'node:http';
-import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createClerkSessionMiddleware } from './src/server/clerkAuth';
-import { createFailClosedApiGate } from './src/server/apiGate';
+import { createApplication } from './src/server/application';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const app = express();
 const PORT = 3000;
 
-app.use(express.json({ limit: '10mb' }));
-
-// This Clerk layer only verifies a session when configured; it grants no access.
-app.use('/api', createClerkSessionMiddleware());
-// Keep before every API route and static/Vite fallback: only GET /health passes.
-app.use('/api', createFailClosedApiGate());
-
-// Public liveness only. Do not expose DB connectivity, identity or configuration.
-app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
-
-// Historical business/auth handlers have been removed. The API gate also rejects
-// unknown paths and methods, so no fallback can expose a business response.
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
+  const app = createApplication();
   const server = http.createServer(app);
 
   if (!isProd) {
+    // Vite is a build/development tool, not a production runtime dependency.
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,

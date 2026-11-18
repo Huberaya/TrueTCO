@@ -7,13 +7,13 @@ import { TenantService } from '../services/tenantService';
 
 const source = (relative: string) => readFile(new URL(relative, import.meta.url), 'utf8');
 
-test('historical tenant resolver, session lookup, user sync and fallback identities are absent from server', async () => {
-  const server = await source('../../server.ts');
-  assert.doesNotMatch(server, /resolveTenantId|getOrganizationId|x-tenant-id|x-organization-id|x-tenant-slug/);
-  assert.doesNotMatch(server, /req\.query|req\.body|user_sessions|clerkId|organizationId|tenantId/);
-  assert.doesNotMatch(server, /a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11|LIMIT 1|ORDER BY created_at/);
-  assert.doesNotMatch(server, /app\.(?:get|post|put|patch|delete|all)\('\/api\/(?!health)/);
-  assert.match(server, /app\.get\('\/api\/health'/);
+test('historical tenant resolver, session lookup, user sync and fallback identities are absent from the server stack', async () => {
+  const [server, application] = await Promise.all([source('../../server.ts'), source('./application.ts')]);
+  assert.doesNotMatch(server + application, /resolveTenantId|getOrganizationId|x-tenant-id|x-organization-id|x-tenant-slug/);
+  assert.doesNotMatch(server + application, /req\.query|req\.body|user_sessions|clerkId|organizationId|tenantId/);
+  assert.doesNotMatch(server + application, /a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11|LIMIT 1|ORDER BY created_at/);
+  assert.doesNotMatch(application, /app\.(?:get|post|put|patch|delete|all)\('\/api\/(?!health)/);
+  assert.match(application, /app\.get\('\/api\/health'/);
 });
 
 test('auth, tenant discovery and Clerk user sync compatibility methods cannot read, persist or send browser identity', async () => {
