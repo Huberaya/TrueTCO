@@ -5,8 +5,9 @@
 - Dépôt : `Huberaya/TrueTCO`; branche de travail imposée `arena/ea5046f1-truetco`; PR #1 vers `main`.
 - À l’ouverture de cette mission, le checkout local avait `HEAD=edc44ceb6570f705f4edf591dfd95524838a1160` (base `main`) et des fichiers de travail non commités. Vérification par empreintes du worktree contre la branche distante : les fichiers correspondaient au tree PR `4da032dc7f3bbe6ea18a0c8be57b4357fca12cde`, à l’exception de l’audit P0.1 préexistant non suivi. Le pointeur local a été avancé en fast-forward à `4da032d` sans écraser de fichier. `git stash list -n 5` est vide dans le checkout effectif; aucun stash n’a été appliqué ni supprimé.
 - `origin/main` vérifié : `edc44ceb6570f705f4edf591dfd95524838a1160`. Le head PR initial était 10 commits devant la base, sans divergence de main.
-- **SHA final de cette livraison et commits ajoutés :** à compléter après le commit et push des corrections de cette mission.
-- **État actuel observé avant la nouvelle publication :** PR #1 ouverte, cible `main`, mergeable/clean; aucun conflit rapporté. L’état sera revérifié sur le SHA final.
+- Commit de code/tests P0.3/P0.4 : `725caed0a4fe95e772977d0574830ddd268320ca` (`test(p0.4): verify PostgreSQL baseline and close safety gate`), publié sur la branche imposée.
+- `origin/main` reste à `edc44ceb6570f705f4edf591dfd95524838a1160`; aucun rebase ou changement de branche effectué.
+- PR #1 observée après publication de ce SHA : ouverte vers `main`, head exact `725caed0a4fe95e772977d0574830ddd268320ca`, `mergeStateStatus=CLEAN`; aucun conflit rapporté. Elle n’a pas été fusionnée. Revoir le corps de PR pour l’actualiser au head final.
 
 ## 1. P0.3 — neutralisation et tests d’exécution
 
@@ -46,16 +47,18 @@ Sur l’état préparé localement :
 
 L’audit complet courant annonce **17 vulnérabilités dans les dépendances incluant dev** (6 modérées, 11 élevées; aucune critique). Les packages modérés concernés sont `@esbuild-kit/core-utils`, `@esbuild-kit/esm-loader`, `drizzle-kit`, `esbuild` transitif, `glob` et `minimatch`; les élevées incluent la chaîne Vite/`picomatch`/`tinyglobby`/`fdir` et les plugins Rollup/Workbox de `vite-plugin-pwa`. Les tools Vite/PWA ont été déplacés en `devDependencies`; Vite est chargé dynamiquement uniquement en mode développement, donc ils ne sont pas dans l’audit production. `npm audit fix` a été tenté sans `--force` : aucun correctif semver-compatible disponible; npm recommande des downgrades/versions major incompatibles (notamment Drizzle Kit, vite-plugin-pwa/Vite). Aucun forçage non testé n’a été appliqué. Les vulnérabilités d’outillage restent un risque de build/développement à surveiller, pas un risque de code livré runtime établi par ces avis.
 
-## 4. CI finale — à renseigner sur le head publié
+## 4. CI et preview — vérifiés sur le commit de code publié
 
-- SHA exact du head final : à renseigner.
-- URL du workflow CI du SHA : à renseigner.
-- Job unique `Install, typecheck, lint, test, build` : le run doit confirmer chaque étape : checkout, Node 22.22.3, npm 10.9.8, `npm ci`, typecheck, lint, tests unitaires/P0/PostgreSQL, audit production, build (plus initialisation du job).
-- Résultat détaillé, statuts Vercel et vérification `gh pr checks 1` : à renseigner après publication; seul le résultat sur le head exact comptera.
+- SHA testé : `725caed0a4fe95e772977d0574830ddd268320ca`.
+- GitHub Actions run `44268729624` : [CI sur ce SHA](https://github.com/Huberaya/TrueTCO/actions/runs/44268729624), conclusion `success`; job `Install, typecheck, lint, test, build` entièrement vert : checkout, Node 22.22.3, npm 10.9.8, `npm ci`, typecheck, lint, suite P0/API/PostgreSQL, audit production, build.
+- Un second run `44268736044` sur le même SHA est également `success`.
+- `gh pr checks 1` : CI, `Vercel` et `Vercel Preview Comments` en `pass` pour ce SHA. Le statut Vercel pointe vers [l’aperçu de la PR](https://vercel.com/baya-ibraimmayoanouedu-8164s-projects/truetco/9R6gbDHpR4X7aEf9tcJH1DbhEoR5). Le connecteur Vercel a refusé l’accès à `list_deployments`; l’état vert est donc vérifié via le statut de commit GitHub, pas par inspection indépendante des détails du déploiement.
+- La PR #1 reste `OPEN`, base `main`, état de fusion `CLEAN`; aucune revue/approbation n’était enregistrée dans la réponse GitHub au moment du contrôle. Aucun merge effectué.
+- L’annotation CI non bloquante signale la dépréciation Node 20 de `actions/checkout@v4` et `actions/setup-node@v4` (runner les force actuellement sous Node 24), ainsi que la migration future du label `ubuntu-latest` vers Ubuntu 26.
 
 ## 5. Documents, portée opérationnelle et réserves
 
-Documents actualisés : `DOSSIER_NEON.md`, `DOSSIER_CLERK.md`, `PLAN_MIGRATIONS_NEON.md`, `P0_API_ROUTE_INVENTORY.md`, `MATRICE_RBAC.md`, présent rapport, description de PR #1 à actualiser après publication.
+Documents actualisés : `DOSSIER_NEON.md`, `DOSSIER_CLERK.md`, `PLAN_MIGRATIONS_NEON.md`, `P0_API_ROUTE_INVENTORY.md`, `MATRICE_RBAC.md`, présent rapport et corps de PR #1 (mis à jour via l’API GitHub après publication).
 
 - **Opérationnel et testé localement :** liveness GET; calcul TCO de l’engin par tests unitaires; garde API fail-closed; checks structurels du schéma neuf dans PGlite.
 - **Désactivé volontairement :** endpoints métier et intégrations IA/ERP/Clerk→Neon; login/tenant local simulé; sélection de tenant/role; script legacy bootstrap/seed.
@@ -66,4 +69,4 @@ Aucune migration, seed ou backfill Neon; aucun changement secrets GitHub/Vercel,
 
 ## 6. Décision
 
-**P0.3 : GO limité pour la livraison fail-closed et sa vérification. P0.4 : GO limité pour la cohérence locale et la reproductibilité sur base neuve; NO-GO pour application distante tant que l’introspection/baseline Neon existante n’est pas approuvée.** La décision de fusion de la PR dépend de CI verte sur le SHA final, checks Vercel, revue complète des fichiers et réserves d’outillage indiquées ci-dessus. La fusion n’est pas autorisée par ce rapport.
+**Décision : GO SOUS CONDITIONS pour fusionner la PR de neutralisation préparatoire, pas pour ouvrir les routes métier ni appliquer une migration distante.** La CI complète et les statuts Vercel via GitHub sont verts sur le commit de code `725caed0a4fe95e772977d0574830ddd268320ca`, et la PR est ouverte/clean. Conditions restantes : obtenir la revue/approbation humaine requise; accepter explicitement ou planifier le traitement des 17 avis de dépendances de développement (6 modérés, 11 élevés; aucun correctif sans changement incompatible n’a été trouvé, aucun `--force`); et maintenir le NO-GO pour Neon/Clerk, RBAC/RLS, données clients, opérations distantes et activation métier. Le verdict n’autorise pas la fusion automatique; aucune fusion n’a été effectuée.
