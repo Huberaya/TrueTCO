@@ -169,7 +169,7 @@ Après `npm ci` :
 | `npm audit --audit-level=high` | 8 vulnérabilités modérées, 0 haute/critique; les corrections proposées par npm impliquent des changements forcés/majeurs et n’ont pas été appliquées. |
 | `git diff --check` | Réussite. |
 
-Ces résultats sont locaux. Les checks CI GitHub doivent encore être associés au SHA final publié pour revue; ils ne signifient ni approbation, ni merge, ni déploiement.
+Le workflow GitHub `Install, typecheck, lint, test, build` a ensuite réussi sur le commit de code `4aae18cc332bce42fb54781bdecb04dd97acbc8e` (PR #2, `arena/22658028-truetco`). Le check Vercel de preview PR a aussi retourné `pass`; aucun déploiement de production ni changement de configuration n’a été demandé depuis cette branche. Ces checks techniques ne signifient ni approbation humaine, ni merge, ni activation opérationnelle.
 
 ## Conditions préalables à une activation future (hors de cette PR)
 
