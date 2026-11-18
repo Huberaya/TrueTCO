@@ -14,11 +14,30 @@ test('Clerk server config requires private secret, publishable key and exact aut
     CLERK_SECRET_KEY: 'sk_test_server_secret_not_real',
     CLERK_PUBLISHABLE_KEY: 'pk_test_frontend_key_not_real',
     CLERK_AUTHORIZED_PARTIES: 'https://app.example.invalid, http://localhost:3000',
+    CLERK_JWT_AUDIENCE: 'truetco-api',
   });
   assert.equal(valid.configured, true);
   if (!valid.configured) return;
   assert.deepEqual(valid.config.authorizedParties, ['https://app.example.invalid', 'http://localhost:3000']);
+  assert.deepEqual(valid.config.audience, ['truetco-api']);
   assert.equal(valid.config.secretKey, 'sk_test_server_secret_not_real');
+  const ordinaryAudience = getClerkServerConfig({
+    CLERK_SECRET_KEY: 'sk_test_server_secret_not_real',
+    CLERK_PUBLISHABLE_KEY: 'pk_test_frontend_key_not_real',
+    CLERK_AUTHORIZED_PARTIES: 'https://app.example.invalid',
+    CLERK_JWT_AUDIENCE: 'session-api',
+  });
+  assert.equal(ordinaryAudience.configured, true, 'the audience parser must not reject the letter s');
+  for (const audience of ['space not allowed', 'wild*card']) {
+    const invalid = getClerkServerConfig({
+      CLERK_SECRET_KEY: 'sk_test_server_secret_not_real',
+      CLERK_PUBLISHABLE_KEY: 'pk_test_frontend_key_not_real',
+      CLERK_AUTHORIZED_PARTIES: 'https://app.example.invalid',
+      CLERK_JWT_AUDIENCE: audience,
+    });
+    assert.equal(invalid.configured, false);
+    if (!invalid.configured) assert.ok(invalid.missing.includes('CLERK_JWT_AUDIENCE'));
+  }
 
   for (const parties of [
     'https://app.example.invalid/path',
@@ -39,6 +58,7 @@ test('Clerk server config requires private secret, publishable key and exact aut
     CLERK_SECRET_KEY: 'pk_test_not_a_secret',
     VITE_CLERK_PUBLISHABLE_KEY: 'pk_test_frontend_key_not_real',
     CLERK_AUTHORIZED_PARTIES: 'https://app.example.invalid',
+    CLERK_JWT_AUDIENCE: 'truetco-api',
   });
   assert.equal(publicKeyAsSecret.configured, false);
 });

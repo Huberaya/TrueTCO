@@ -19,6 +19,7 @@ const applicationTables = [
   'users',
 ];
 const ddlUrl = new URL('./schema.sql', import.meta.url);
+const p0BaselineUrl = new URL('../../drizzle/migrations/0000_initial_schema.sql', import.meta.url);
 const migrationDir = fileURLToPath(new URL('../../drizzle/migrations', import.meta.url));
 const readSql = (url: URL) => readFile(url, 'utf8');
 
@@ -34,6 +35,24 @@ async function createFromMigrations() {
   return client;
 }
 
+async function createFromP0Baseline() {
+  const db = new PGlite();
+  await db.exec(await readSql(p0BaselineUrl));
+  return db;
+}
+
+async function applyTenantCandidate(db: PGlite) {
+  const candidate = await readSql(new URL('../../db/migrations/proposed/0003_p1_tenant_scope.sql.draft', import.meta.url));
+  const statements = candidate.split('--> statement-breakpoint').map((statement) => statement.trim()).filter(Boolean);
+  for (const statement of statements) await db.exec(statement);
+}
+
+async function createFromTenantCandidate() {
+  const db = await createFromP0Baseline();
+  await applyTenantCandidate(db);
+  return db;
+}
+
 async function catalog(db: PGlite) {
   const columns = (
     await db.query<Record<string, unknown>>(
@@ -44,7 +63,7 @@ async function catalog(db: PGlite) {
        JOIN pg_namespace n ON n.oid = t.relnamespace AND n.nspname = c.table_schema
        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attname = c.column_name
        WHERE c.table_schema = 'public' AND c.table_name = ANY($1::text[])
-       ORDER BY table_name, ordinal_position`,
+       ORDER BY table_name, column_name`,
       [applicationTables],
     )
   ).rows.map((row) => ({
@@ -77,6 +96,15 @@ async function catalog(db: PGlite) {
     ...row,
     indexdef: typeof row.indexdef === 'string' ? row.indexdef.replaceAll('"', '').replaceAll('public.', '').replaceAll(/\s+/g, ' ').trim() : '',
   }));
+  const policies = (
+    await db.query<Record<string, unknown>>(
+      `SELECT tablename, policyname, permissive, roles, cmd, qual, with_check
+       FROM pg_policies
+       WHERE schemaname = 'public' AND tablename = ANY($1::text[])
+       ORDER BY tablename, policyname`,
+      [applicationTables],
+    )
+  ).rows;
   const triggers = (
     await db.query<Record<string, unknown>>(
       `SELECT event_object_table AS table_name, trigger_name, action_timing,
@@ -88,7 +116,7 @@ async function catalog(db: PGlite) {
     )
   ).rows;
 
-  return { columns, constraints, indexes, triggers };
+  return { columns, constraints, indexes, policies, triggers };
 }
 
 async function insertValidFixture(db: PGlite) {
@@ -195,17 +223,20 @@ test('PostgreSQL 18 creates the SQL snapshot idempotently and enforces keys, che
   }
 });
 
-test('Drizzle migration from an empty PostgreSQL database matches schema.sql and ledger replay is a no-op', async () => {
+test('Drizzle P0 migration ledger is stable and the P1 draft evolves it to the canonical tenant schema', async () => {
   const ddlDb = await createFromDdl();
   const migrationDb = await createFromMigrations();
+  const p0Baseline = await createFromP0Baseline();
+  const candidateDb = await createFromTenantCandidate();
   try {
-    assert.deepEqual(await catalog(migrationDb), await catalog(ddlDb), 'the migration and bootstrap snapshots must be structurally equivalent');
+    assert.deepEqual(await catalog(migrationDb), await catalog(p0Baseline), 'Drizzle migration and captured P0 baseline must match');
     const before = await catalog(migrationDb);
     await migrate(drizzle(migrationDb), { migrationsFolder: migrationDir });
     assert.deepEqual(await catalog(migrationDb), before, 'the migration ledger must prevent replaying a committed migration');
-    const fixture = await insertValidFixture(migrationDb);
+    assert.deepEqual(await catalog(candidateDb), await catalog(ddlDb), 'the non-deployed P1 draft must evolve P0 into the canonical schema');
+    const fixture = await insertValidFixture(candidateDb);
     const defaultValues = (
-      await migrationDb.query(
+      await candidateDb.query(
         `SELECT p.status, p.carbon_price_per_tonne, s.incoterm
          FROM projects p CROSS JOIN suppliers s
          WHERE p.id = $1 AND s.id = $2`,
@@ -213,15 +244,79 @@ test('Drizzle migration from an empty PostgreSQL database matches schema.sql and
       )
     ).rows[0];
     assert.deepEqual(defaultValues, { status: 'Brouillon', carbon_price_per_tonne: '120.00', incoterm: 'DDP' });
-    assert.equal((await migrationDb.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'audit_logs' AND column_name = 'new_value'")).rows.length, 1);
+    assert.equal((await candidateDb.query("SELECT column_name FROM information_schema.columns WHERE table_name = 'audit_logs' AND column_name = 'new_value'")).rows.length, 1);
   } finally {
-    await ddlDb.close();
-    await migrationDb.close();
+    await Promise.all([ddlDb.close(), migrationDb.close(), p0Baseline.close(), candidateDb.close()]);
   }
 });
 
-test('proposed tenant drafts apply only in an isolated database and enforce their stop conditions', async () => {
+test('tenant RLS isolates A/B rows and transaction-local context does not leak between requests', async () => {
   const db = await createFromDdl();
+  try {
+    const tenantA = await insertValidFixture(db);
+    const tenantB = await insertValidFixture(db);
+    await db.query("UPDATE users SET clerk_id = 'clerk-a' WHERE id = $1", [tenantA.user]);
+    await db.query("UPDATE users SET clerk_id = 'clerk-b' WHERE id = $1", [tenantB.user]);
+    await db.query('UPDATE supplier_offers SET organization_id = $1 WHERE id = $2', [tenantA.organization, tenantA.offer]);
+    await db.query('UPDATE supplier_offers SET organization_id = $1 WHERE id = $2', [tenantB.organization, tenantB.offer]);
+    await db.exec(`CREATE ROLE p1_test_app NOSUPERUSER NOBYPASSRLS;
+      GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO p1_test_app;
+      SET ROLE p1_test_app`);
+
+    await db.exec('BEGIN');
+    await db.query("SELECT set_config('true_tco.organization_id', '', true), set_config('true_tco.clerk_user_id', $1, true)", ['clerk-a']);
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM users WHERE clerk_id = $1', ['clerk-a'])).rows[0].count, 1, 'the pre-resolution policy may see only the matching Clerk membership');
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM users WHERE clerk_id = $1', ['clerk-b'])).rows[0].count, 0);
+    await db.exec('COMMIT');
+
+    await db.exec('BEGIN');
+    await db.query("SELECT set_config('true_tco.organization_id', $1, true), set_config('true_tco.user_id', $2, true), set_config('true_tco.clerk_user_id', $3, true)", [tenantA.organization, tenantA.user, 'clerk-a']);
+    await db.query("SELECT set_config('true_tco.clerk_user_id', 'clerk-b', true)");
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM users WHERE organization_id = $1', [tenantB.organization])).rows[0].count, 0, 'a mismatched subject must not escape the resolved tenant scope');
+    await db.query("SELECT set_config('true_tco.clerk_user_id', 'clerk-a', true)");
+    for (const table of ['organizations', 'users', 'projects', 'suppliers', 'supplier_offers']) {
+      const column = table === 'organizations' ? 'id' : 'organization_id';
+      const visible = (await db.query<Record<string, unknown>>(`SELECT count(*)::int AS count FROM ${table} WHERE ${column} = $1`, [tenantA.organization])).rows[0].count;
+      assert.equal(visible, 1, `${table} should expose one tenant A row`);
+      const hidden = (await db.query<Record<string, unknown>>(`SELECT count(*)::int AS count FROM ${table} WHERE ${column} = $1`, [tenantB.organization])).rows[0].count;
+      assert.equal(hidden, 0, `${table} must hide tenant B rows from tenant A`);
+    }
+    await assert.rejects(
+      db.query(`INSERT INTO projects (organization_id, reference, name, category, company_name, budget_cap, planned_volume, unit_name, horizon_years, discount_rate, energy_inflation_rate, general_inflation_rate, created_by_user_id) VALUES ($1, 'A-FORGED', 'forged', 'IT', 'A', 1, 1, 'unit', 1, 0, 0, 0, $2)`, [tenantB.organization, tenantB.user]),
+      /row-level security policy/,
+    );
+    await db.exec('COMMIT');
+
+    const noContext = (await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM projects')).rows[0].count;
+    assert.equal(noContext, 0, 'transaction-local tenant context must not leak to the next request');
+
+    await db.exec('BEGIN');
+    await db.query("SELECT set_config('true_tco.organization_id', $1, true), set_config('true_tco.user_id', $2, true), set_config('true_tco.clerk_user_id', $3, true)", [tenantB.organization, tenantB.user, 'clerk-b']);
+    assert.equal((await db.query<Record<string, unknown>>('SELECT count(*)::int AS count FROM projects')).rows[0].count, 1);
+    await db.exec('COMMIT');
+  } finally {
+    await db.close();
+  }
+});
+
+test('P1 tenant candidate stops before DDL when existing offer parents cross organizations', async () => {
+  const db = await createFromP0Baseline();
+  try {
+    const orgA = (await db.query<Record<string, unknown>>("INSERT INTO organizations (name) VALUES ('Preflight A') RETURNING id")).rows[0].id as string;
+    const orgB = (await db.query<Record<string, unknown>>("INSERT INTO organizations (name) VALUES ('Preflight B') RETURNING id")).rows[0].id as string;
+    const projectA = (await db.query<Record<string, unknown>>("INSERT INTO projects (organization_id, reference, name, category, company_name, budget_cap, planned_volume, unit_name, horizon_years, discount_rate, energy_inflation_rate, general_inflation_rate) VALUES ($1, 'PF-A', 'A', 'IT', 'A', 1, 1, 'unit', 1, 0, 0, 0) RETURNING id", [orgA])).rows[0].id as string;
+    const supplierB = (await db.query<Record<string, unknown>>("INSERT INTO suppliers (organization_id, name, country_code, standard_lead_time_days) VALUES ($1, 'PF-B', 'FR', 1) RETURNING id", [orgB])).rows[0].id as string;
+    await db.query("INSERT INTO supplier_offers (project_id, supplier_id, offer_reference, apparent_total) VALUES ($1, $2, 'PF-CROSS', 1)", [projectA, supplierB]);
+    await assert.rejects(applyTenantCandidate(db), /offer project and supplier belong to different organizations/);
+    await db.exec('ROLLBACK');
+    assert.equal((await db.query<Record<string, unknown>>("SELECT count(*)::int AS count FROM information_schema.columns WHERE table_name = 'supplier_offers' AND column_name = 'organization_id'")).rows[0].count, 0);
+  } finally {
+    await db.close();
+  }
+});
+
+test('proposed tenant drafts apply only in an isolated P0 database and enforce their stop conditions', async () => {
+  const db = await createFromP0Baseline();
   const draftExpand = await readSql(new URL('../../db/migrations/proposed/0001_expand_tenant_scope.sql.draft', import.meta.url));
   const draftEnforce = await readSql(new URL('../../db/migrations/proposed/0002_enforce_tenant_consistency.sql.draft', import.meta.url));
   try {

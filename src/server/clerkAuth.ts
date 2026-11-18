@@ -3,7 +3,7 @@ import type { RequestHandler } from 'express';
 
 export type ClerkEnvironment = Record<string, string | undefined>;
 
-export type ClerkServerConfig = Pick<ClerkMiddlewareOptions, 'secretKey' | 'publishableKey' | 'authorizedParties'>;
+export type ClerkServerConfig = Pick<ClerkMiddlewareOptions, 'secretKey' | 'publishableKey' | 'authorizedParties' | 'audience'>;
 
 export type ClerkConfigResult =
   | { configured: true; config: ClerkServerConfig }
@@ -11,6 +11,13 @@ export type ClerkConfigResult =
 
 const isPlaceholder = (value: string | undefined): boolean =>
   !value || /sample|placeholder|change.?me|your.?key/i.test(value);
+
+const parseAudience = (raw: string | undefined): string[] | null => {
+  if (!raw) return null;
+  const audiences = raw.split(',').map((value) => value.trim()).filter(Boolean);
+  if (audiences.length === 0 || audiences.some((value) => /[*\s]/.test(value))) return null;
+  return [...new Set(audiences)];
+};
 
 const parseAuthorizedParties = (raw: string | undefined): string[] | null => {
   if (!raw) return null;
@@ -35,18 +42,20 @@ const parseAuthorizedParties = (raw: string | undefined): string[] | null => {
 
 /**
  * Read server-side Clerk configuration without logging or exposing secret values.
- * A public frontend key is not accepted as the server secret, and at least one
- * exact, HTTPS authorized party is required (HTTP is allowed only for localhost).
+ * A public frontend key is not accepted as the server secret. Exact authorized
+ * parties and an explicit JWT audience allowlist are both mandatory.
  */
 export const getClerkServerConfig = (env: ClerkEnvironment = process.env): ClerkConfigResult => {
   const secretKey = env.CLERK_SECRET_KEY;
   const publishableKey = env.CLERK_PUBLISHABLE_KEY ?? env.VITE_CLERK_PUBLISHABLE_KEY;
   const authorizedParties = parseAuthorizedParties(env.CLERK_AUTHORIZED_PARTIES);
+  const audience = parseAudience(env.CLERK_JWT_AUDIENCE);
   const missing: string[] = [];
 
   if (isPlaceholder(secretKey) || !secretKey?.startsWith('sk_')) missing.push('CLERK_SECRET_KEY');
   if (isPlaceholder(publishableKey) || !publishableKey?.startsWith('pk_')) missing.push('CLERK_PUBLISHABLE_KEY');
   if (!authorizedParties) missing.push('CLERK_AUTHORIZED_PARTIES');
+  if (!audience) missing.push('CLERK_JWT_AUDIENCE');
 
   if (missing.length > 0) return { configured: false, missing };
   return {
@@ -55,6 +64,7 @@ export const getClerkServerConfig = (env: ClerkEnvironment = process.env): Clerk
       secretKey: secretKey!,
       publishableKey: publishableKey!,
       authorizedParties: authorizedParties!,
+      audience: audience!,
     },
   };
 };

@@ -1,0 +1,145 @@
+-- P1 DRAFT ONLY — tenant columns, composite constraints and RLS preparation.
+-- Not included in Drizzle's executable migrations or any deployment command.
+-- Before any future reviewed conversion: re-introspect the exact target, restore-test
+-- backup, review lock/runtime impact, reconcile historical creator/audit mismatches,
+-- and agree on explicit organization mappings/backfills for tenant-child rows.
+-- Nullable child organization columns intentionally remain nullable in this phase;
+-- RLS hides unscoped legacy rows. This is not a completed tenant activation.
+-- Never run against Neon, staging, or production from this checkout.
+BEGIN;
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM users WHERE clerk_id IS NOT NULL GROUP BY clerk_id HAVING count(*) > 1
+  ) THEN
+    RAISE EXCEPTION 'P1 preflight: duplicate non-NULL users.clerk_id values require manual resolution';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM supplier_offers o
+    JOIN projects p ON p.id = o.project_id
+    JOIN suppliers s ON s.id = o.supplier_id
+    WHERE p.organization_id <> s.organization_id
+  ) THEN
+    RAISE EXCEPTION 'P1 preflight: offer project and supplier belong to different organizations';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM projects p JOIN users u ON u.id = p.created_by_user_id
+    WHERE p.organization_id <> u.organization_id
+  ) THEN
+    RAISE EXCEPTION 'P1 preflight: project creator belongs to another organization';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM audit_logs a JOIN users u ON u.id = a.user_id
+    WHERE a.organization_id <> u.organization_id
+  ) THEN
+    RAISE EXCEPTION 'P1 preflight: audit user belongs to another organization';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM audit_logs a JOIN projects p ON p.id = a.project_id
+    WHERE a.organization_id <> p.organization_id
+  ) THEN
+    RAISE EXCEPTION 'P1 preflight: audit project belongs to another organization';
+  END IF;
+END $$;
+--> statement-breakpoint
+DROP INDEX IF EXISTS "idx_users_clerk_id";
+--> statement-breakpoint
+ALTER TABLE "carbon_items" ADD COLUMN "organization_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "cost_items" ADD COLUMN "organization_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "risk_items" ADD COLUMN "organization_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "supplier_offers" ADD COLUMN "organization_id" uuid;
+--> statement-breakpoint
+ALTER TABLE "projects" ADD CONSTRAINT "uq_projects_org_id" UNIQUE("organization_id","id");
+--> statement-breakpoint
+ALTER TABLE "supplier_offers" ADD CONSTRAINT "uq_supplier_offers_org_id" UNIQUE("organization_id","id");
+--> statement-breakpoint
+ALTER TABLE "suppliers" ADD CONSTRAINT "uq_suppliers_org_id" UNIQUE("organization_id","id");
+--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "uq_users_org_id" UNIQUE("organization_id","id");
+--> statement-breakpoint
+CREATE UNIQUE INDEX "uq_users_clerk_id" ON "users" USING btree ("clerk_id") WHERE "clerk_id" IS NOT NULL;
+--> statement-breakpoint
+ALTER TABLE "audit_logs" ADD CONSTRAINT "fk_audit_logs_user_tenant" FOREIGN KEY ("organization_id","user_id") REFERENCES "public"."users"("organization_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "audit_logs" ADD CONSTRAINT "fk_audit_logs_project_tenant" FOREIGN KEY ("organization_id","project_id") REFERENCES "public"."projects"("organization_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "carbon_items" ADD CONSTRAINT "fk_carbon_items_offer_tenant" FOREIGN KEY ("organization_id","offer_id") REFERENCES "public"."supplier_offers"("organization_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "cost_items" ADD CONSTRAINT "fk_cost_items_offer_tenant" FOREIGN KEY ("organization_id","offer_id") REFERENCES "public"."supplier_offers"("organization_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "projects" ADD CONSTRAINT "fk_projects_creator_tenant" FOREIGN KEY ("organization_id","created_by_user_id") REFERENCES "public"."users"("organization_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "risk_items" ADD CONSTRAINT "fk_risk_items_offer_tenant" FOREIGN KEY ("organization_id","offer_id") REFERENCES "public"."supplier_offers"("organization_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "supplier_offers" ADD CONSTRAINT "fk_supplier_offers_project_tenant" FOREIGN KEY ("organization_id","project_id") REFERENCES "public"."projects"("organization_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+ALTER TABLE "supplier_offers" ADD CONSTRAINT "fk_supplier_offers_supplier_tenant" FOREIGN KEY ("organization_id","supplier_id") REFERENCES "public"."suppliers"("organization_id","id") ON DELETE no action ON UPDATE no action;
+--> statement-breakpoint
+CREATE INDEX "idx_carbon_items_org" ON "carbon_items" USING btree ("organization_id");
+--> statement-breakpoint
+CREATE INDEX "idx_cost_items_org" ON "cost_items" USING btree ("organization_id");
+--> statement-breakpoint
+CREATE INDEX "idx_risk_items_org" ON "risk_items" USING btree ("organization_id");
+--> statement-breakpoint
+CREATE INDEX "idx_offers_org" ON "supplier_offers" USING btree ("organization_id");
+--> statement-breakpoint
+DO $$
+DECLARE target_table text;
+BEGIN
+  FOREACH target_table IN ARRAY ARRAY[
+    'organizations', 'users', 'projects', 'suppliers', 'supplier_offers',
+    'cost_items', 'carbon_items', 'risk_items', 'reference_benchmarks', 'audit_logs'
+  ] LOOP
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target_table);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', target_table);
+  END LOOP;
+END $$;
+--> statement-breakpoint
+CREATE POLICY organizations_tenant_scope ON organizations
+  USING (id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY users_tenant_scope ON users
+  USING (
+    organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid
+    OR (NULLIF(current_setting('true_tco.organization_id', true), '') IS NULL
+        AND clerk_id = NULLIF(current_setting('true_tco.clerk_user_id', true), ''))
+  )
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY tenant_scope ON projects
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY tenant_scope ON suppliers
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY tenant_scope ON supplier_offers
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY tenant_scope ON cost_items
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY tenant_scope ON carbon_items
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY tenant_scope ON risk_items
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY tenant_scope ON reference_benchmarks
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY tenant_scope ON audit_logs
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+COMMIT;

@@ -4,6 +4,8 @@ import { createFailClosedApiGate } from './apiGate';
 
 export interface ApplicationOptions {
   clerkMiddleware?: RequestHandler;
+  /** Optional P1 middleware for tests/future assembly; never configured by server.ts yet. */
+  tenantIdentityMiddleware?: RequestHandler;
   apiGate?: RequestHandler;
   afterApiMiddleware?: RequestHandler;
 }
@@ -52,6 +54,7 @@ export const createApplication = (options: ApplicationOptions = {}) => {
   });
 
   app.use('/api', clerk);
+  if (options.tenantIdentityMiddleware) app.use('/api', options.tenantIdentityMiddleware);
   app.use('/api', gate);
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 

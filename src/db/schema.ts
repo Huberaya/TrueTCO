@@ -10,6 +10,8 @@ import {
   check,
   index,
   unique,
+  uniqueIndex,
+  foreignKey,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 
@@ -58,7 +60,8 @@ export const users = pgTable(
     unique('uq_users_org_email').on(table.organizationId, table.email),
     index('idx_users_org').on(table.organizationId),
     index('idx_users_role').on(table.role),
-    index('idx_users_clerk_id').on(table.clerkId),
+    uniqueIndex('uq_users_clerk_id').on(table.clerkId).where(sql`${table.clerkId} IS NOT NULL`),
+    unique('uq_users_org_id').on(table.organizationId, table.id),
     check('users_role_check', sql`${table.role} IN ('directeur_achats', 'acheteur', 'finance_controleur', 'rse_esg', 'direction_generale', 'admin')`),
   ]
 );
@@ -96,6 +99,8 @@ export const projects = pgTable(
   },
   (table) => [
     unique('uq_projects_org_ref').on(table.organizationId, table.reference),
+    unique('uq_projects_org_id').on(table.organizationId, table.id),
+    foreignKey({ name: 'fk_projects_creator_tenant', columns: [table.organizationId, table.createdByUserId], foreignColumns: [users.organizationId, users.id] }),
     index('idx_projects_org').on(table.organizationId),
     index('idx_projects_status').on(table.status),
     index('idx_projects_category').on(table.category),
@@ -137,6 +142,7 @@ export const suppliers = pgTable(
   },
   (table) => [
     unique('uq_suppliers_org_name').on(table.organizationId, table.name),
+    unique('uq_suppliers_org_id').on(table.organizationId, table.id),
     index('idx_suppliers_org').on(table.organizationId),
     check('suppliers_esg_score_check', sql`${table.esgScore} BETWEEN 0 AND 100`),
     check('suppliers_data_quality_score_check', sql`${table.dataQualityScore} BETWEEN 0 AND 100`),
@@ -152,6 +158,7 @@ export const supplierOffers = pgTable(
   'supplier_offers',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id'),
     projectId: uuid('project_id')
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
@@ -173,6 +180,10 @@ export const supplierOffers = pgTable(
   },
   (table) => [
     unique('uq_offers_project_ref').on(table.projectId, table.offerReference),
+    unique('uq_supplier_offers_org_id').on(table.organizationId, table.id),
+    index('idx_offers_org').on(table.organizationId),
+    foreignKey({ name: 'fk_supplier_offers_project_tenant', columns: [table.organizationId, table.projectId], foreignColumns: [projects.organizationId, projects.id] }),
+    foreignKey({ name: 'fk_supplier_offers_supplier_tenant', columns: [table.organizationId, table.supplierId], foreignColumns: [suppliers.organizationId, suppliers.id] }),
     index('idx_offers_project').on(table.projectId),
     index('idx_offers_supplier').on(table.supplierId),
     check('supplier_offers_apparent_total_check', sql`${table.apparentTotal} >= 0`),
@@ -189,6 +200,7 @@ export const costItems = pgTable(
   'cost_items',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id'),
     offerId: uuid('offer_id')
       .notNull()
       .references(() => supplierOffers.id, { onDelete: 'cascade' }),
@@ -207,6 +219,8 @@ export const costItems = pgTable(
   },
   (table) => [
     index('idx_cost_items_offer').on(table.offerId),
+    index('idx_cost_items_org').on(table.organizationId),
+    foreignKey({ name: 'fk_cost_items_offer_tenant', columns: [table.organizationId, table.offerId], foreignColumns: [supplierOffers.organizationId, supplierOffers.id] }),
     index('idx_cost_items_category').on(table.category),
     check('cost_items_source_type_check', sql`${table.sourceType} IN ('verifiee', 'calculee', 'estimee')`),
     check('cost_items_confidence_level_check', sql`${table.confidenceLevel} BETWEEN 0 AND 100`),
@@ -222,6 +236,7 @@ export const carbonItems = pgTable(
   'carbon_items',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id'),
     offerId: uuid('offer_id')
       .notNull()
       .references(() => supplierOffers.id, { onDelete: 'cascade' }),
@@ -235,6 +250,8 @@ export const carbonItems = pgTable(
   },
   (table) => [
     index('idx_carbon_items_offer').on(table.offerId),
+    index('idx_carbon_items_org').on(table.organizationId),
+    foreignKey({ name: 'fk_carbon_items_offer_tenant', columns: [table.organizationId, table.offerId], foreignColumns: [supplierOffers.organizationId, supplierOffers.id] }),
     check('carbon_items_scope_check', sql`${table.scope} IN ('Scope 1', 'Scope 2', 'Scope 3 Amont', 'Scope 3 Aval')`),
     check('carbon_items_confidence_level_check', sql`${table.confidenceLevel} BETWEEN 0 AND 100`),
   ]
@@ -249,6 +266,7 @@ export const riskItems = pgTable(
   'risk_items',
   {
     id: uuid('id').defaultRandom().primaryKey(),
+    organizationId: uuid('organization_id'),
     offerId: uuid('offer_id')
       .notNull()
       .references(() => supplierOffers.id, { onDelete: 'cascade' }),
@@ -260,6 +278,8 @@ export const riskItems = pgTable(
   },
   (table) => [
     index('idx_risk_items_offer').on(table.offerId),
+    index('idx_risk_items_org').on(table.organizationId),
+    foreignKey({ name: 'fk_risk_items_offer_tenant', columns: [table.organizationId, table.offerId], foreignColumns: [supplierOffers.organizationId, supplierOffers.id] }),
     check('risk_items_probability_check', sql`${table.probability} BETWEEN 0 AND 1`),
     check('risk_items_financial_impact_check', sql`${table.financialImpact} >= 0`),
   ]
@@ -324,6 +344,8 @@ export const auditLogs = pgTable(
   (table) => [
     index('idx_audit_logs_org_timestamp').on(table.organizationId, table.timestamp.desc()),
     index('idx_audit_logs_project').on(table.projectId),
+    foreignKey({ name: 'fk_audit_logs_user_tenant', columns: [table.organizationId, table.userId], foreignColumns: [users.organizationId, users.id] }),
+    foreignKey({ name: 'fk_audit_logs_project_tenant', columns: [table.organizationId, table.projectId], foreignColumns: [projects.organizationId, projects.id] }),
   ]
 );
 
@@ -369,6 +391,10 @@ export const suppliersRelations = relations(suppliers, ({ one, many }) => ({
 }));
 
 export const supplierOffersRelations = relations(supplierOffers, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [supplierOffers.organizationId],
+    references: [organizations.id],
+  }),
   project: one(projects, {
     fields: [supplierOffers.projectId],
     references: [projects.id],
@@ -383,6 +409,10 @@ export const supplierOffersRelations = relations(supplierOffers, ({ one, many })
 }));
 
 export const costItemsRelations = relations(costItems, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [costItems.organizationId],
+    references: [organizations.id],
+  }),
   offer: one(supplierOffers, {
     fields: [costItems.offerId],
     references: [supplierOffers.id],
@@ -390,6 +420,10 @@ export const costItemsRelations = relations(costItems, ({ one }) => ({
 }));
 
 export const carbonItemsRelations = relations(carbonItems, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [carbonItems.organizationId],
+    references: [organizations.id],
+  }),
   offer: one(supplierOffers, {
     fields: [carbonItems.offerId],
     references: [supplierOffers.id],
@@ -397,6 +431,10 @@ export const carbonItemsRelations = relations(carbonItems, ({ one }) => ({
 }));
 
 export const riskItemsRelations = relations(riskItems, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [riskItems.organizationId],
+    references: [organizations.id],
+  }),
   offer: one(supplierOffers, {
     fields: [riskItems.offerId],
     references: [supplierOffers.id],

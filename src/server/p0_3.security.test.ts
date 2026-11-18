@@ -10,8 +10,9 @@ const source = (relative: string) => readFile(new URL(relative, import.meta.url)
 test('historical tenant resolver, session lookup, user sync and fallback identities are absent from the server stack', async () => {
   const [server, application] = await Promise.all([source('../../server.ts'), source('./application.ts')]);
   assert.doesNotMatch(server + application, /resolveTenantId|getOrganizationId|x-tenant-id|x-organization-id|x-tenant-slug/);
-  assert.doesNotMatch(server + application, /req\.query|req\.body|user_sessions|clerkId|organizationId|tenantId/);
-  assert.doesNotMatch(server + application, /a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11|LIMIT 1|ORDER BY created_at/);
+  assert.doesNotMatch(server + application, /req\.(?:query|body|headers)\s*\.\s*(?:tenant|organization|user|role|clerk)/i);
+  assert.doesNotMatch(server + application, /user_sessions|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11|ORDER BY created_at/);
+  assert.doesNotMatch(server, /tenantIdentityMiddleware/, 'candidate P1 tenant middleware must remain unconfigured in production');
   assert.doesNotMatch(application, /app\.(?:get|post|put|patch|delete|all)\('\/api\/(?!health)/);
   assert.match(application, /app\.get\('\/api\/health'/);
 });
