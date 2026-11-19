@@ -7,6 +7,7 @@ const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 20
 const jwtKey = publicKey.export({ type: 'spki', format: 'pem' }).toString();
 const authorizedParties = ['https://truetco.test.invalid'];
 const audience = 'truetco-api';
+const issuer = 'https://local-test.clerk.accounts.dev';
 const SESSION_TOKEN_CATEGORY = 'cl_B7d4PD111AAA';
 
 function signSessionToken(claimOverrides: Record<string, unknown> = {}): string {
@@ -15,7 +16,7 @@ function signSessionToken(claimOverrides: Record<string, unknown> = {}): string 
   const header = encode({ alg: 'RS256', typ: 'JWT', kid: 'local-generated-p1-key', cat: SESSION_TOKEN_CATEGORY });
   const payload = encode({
     sub: 'user_local_generated_only',
-    iss: 'https://local-test.clerk.accounts.dev',
+    iss: issuer,
     azp: authorizedParties[0],
     aud: audience,
     iat: now,
@@ -27,7 +28,7 @@ function signSessionToken(claimOverrides: Record<string, unknown> = {}): string 
   return `${signed}.${sign('RSA-SHA256', Buffer.from(signed), privateKey).toString('base64url')}`;
 }
 
-const verify = (token: string) => verifyToken(token, { jwtKey, authorizedParties, audience });
+const verify = (token: string) => verifyToken(token, { jwtKey, authorizedParties, audience, issuer });
 
 test('official Clerk verifier accepts the local test-signed session token only for the pinned audience and party', async () => {
   const result = await verify(signSessionToken());
@@ -35,7 +36,7 @@ test('official Clerk verifier accepts the local test-signed session token only f
   assert.equal('sub' in result ? result.sub : undefined, 'user_local_generated_only');
 });
 
-test('official Clerk verifier rejects malformed, expired, wrong-audience and unauthorized-party tokens', async () => {
+test('official Clerk verifier rejects malformed, expired, wrong-issuer, wrong-audience and unauthorized-party tokens', async () => {
   const isRejected = async (token: string): Promise<boolean> => {
     try {
       const result = await verify(token);
@@ -50,6 +51,11 @@ test('official Clerk verifier rejects malformed, expired, wrong-audience and una
     await isRejected(signSessionToken({ exp: Math.floor(Date.now() / 1000) - 30 })),
     true,
     'expired tokens must fail verification',
+  );
+  assert.equal(
+    await isRejected(signSessionToken({ iss: 'https://attacker.test.invalid' })),
+    true,
+    'tokens from another issuer must fail verification',
   );
   assert.equal(
     await isRejected(signSessionToken({ aud: 'another-service' })),

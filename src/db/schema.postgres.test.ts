@@ -115,8 +115,18 @@ async function catalog(db: PGlite) {
       [applicationTables],
     )
   ).rows;
+  const rowSecurity = (
+    await db.query<Record<string, unknown>>(
+      `SELECT relname AS table_name, relrowsecurity AS enabled, relforcerowsecurity AS forced
+       FROM pg_class
+       WHERE relnamespace = 'public'::regnamespace AND relname = ANY($1::text[])
+         AND relkind = 'r'
+       ORDER BY relname`,
+      [applicationTables],
+    )
+  ).rows;
 
-  return { columns, constraints, indexes, policies, triggers };
+  return { columns, constraints, indexes, policies, triggers, rowSecurity };
 }
 
 async function insertValidFixture(db: PGlite) {
@@ -162,6 +172,32 @@ test('PostgreSQL 18 creates the SQL snapshot idempotently and enforces keys, che
       await db.query<Record<string, unknown>>("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name")
     ).rows.map((row) => row.table_name);
     assert.deepEqual(tableNames, applicationTables);
+    const rls = await db.query<Record<string, unknown>>(
+      `SELECT relname AS table_name, relrowsecurity AS enabled, relforcerowsecurity AS forced
+       FROM pg_class
+       WHERE relnamespace = 'public'::regnamespace AND relname = ANY($1::text[])
+         AND relkind = 'r'
+       ORDER BY relname`,
+      [applicationTables],
+    );
+    assert.equal(rls.rows.length, applicationTables.length, 'every application table must be present in the RLS catalog');
+    assert.ok(rls.rows.every((table) => table.enabled === true && table.forced === true), 'RLS must be ENABLED and FORCED on all ten application tables');
+    const tenantColumns = await db.query<Record<string, unknown>>(
+      `SELECT table_name, is_nullable FROM information_schema.columns
+       WHERE table_schema = 'public' AND column_name = 'organization_id'
+       ORDER BY table_name`,
+    );
+    assert.deepEqual(tenantColumns.rows, [
+      { table_name: 'audit_logs', is_nullable: 'NO' },
+      { table_name: 'carbon_items', is_nullable: 'YES' },
+      { table_name: 'cost_items', is_nullable: 'YES' },
+      { table_name: 'projects', is_nullable: 'NO' },
+      { table_name: 'reference_benchmarks', is_nullable: 'NO' },
+      { table_name: 'risk_items', is_nullable: 'YES' },
+      { table_name: 'supplier_offers', is_nullable: 'YES' },
+      { table_name: 'suppliers', is_nullable: 'NO' },
+      { table_name: 'users', is_nullable: 'NO' },
+    ], 'only legacy offer and child scopes remain nullable pending an approved mapping');
 
     const fixture = await insertValidFixture(db);
     await assert.rejects(
@@ -283,6 +319,15 @@ test('tenant RLS isolates A/B CRUD and relations as a LOGIN NOBYPASSRLS non-owne
       await db.exec('ROLLBACK TO SAVEPOINT expected_rls_denial');
       await db.exec('RELEASE SAVEPOINT expected_rls_denial');
     };
+
+    await db.exec('BEGIN');
+    await db.query("SELECT set_config('true_tco.organization_id', 'not-a-uuid', true)");
+    await assertRejectedAndRecover(
+      () => db.query('SELECT count(*)::int AS count FROM projects'),
+      /invalid input syntax for type uuid/,
+      'an invalid tenant GUC must raise an error rather than expose rows',
+    );
+    await db.exec('ROLLBACK');
 
     await db.exec('BEGIN');
     await db.query("SELECT set_config('true_tco.organization_id', '', true), set_config('true_tco.clerk_user_id', $1, true)", ['clerk-a']);
