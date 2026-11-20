@@ -1,71 +1,34 @@
-# Qualification du rôle runtime Neon
+# Qualification Neon Production et rôle runtime
 
-**État : rôle truetco_app qualifié en Neon Production (lecture seule) ; RLS démontrée sur branche clonée ; adaptateur runtime maintenant câblé dans server.ts mais variables Vercel et connexion réelle non vérifiées ; RLS Production NON APPLIQUÉE.**
+**État actuel : RLS Production appliquée et vérifiée au niveau PostgreSQL; rôle `truetco_app` qualifié; connexion runtime Vercel NON qualifiée.** Cette qualification Neon ne constitue pas une preuve que l'application Vercel se connecte sous ce rôle.
 
-## Environnement testé
+## Qualification effective en Production
 
-- Projet Neon TrueTCO : `frosty-haze-29622521`.
-- Branche isolée clonée depuis Production : `truetco-tenant-hardening-20261120` (`br-weathered-tree-b23t34vl`).
-- Rôle de test créé sur cette branche : `truetco_app`, accès `read_write`, base `neondb`, schéma `public`.
-- Le secret du rôle n'est pas reproduit ici et n'a pas été transmis à Vercel.
-- Aucun DDL de cette branche n'a été appliqué à Production.
+La migration P1 a été appliquée manuellement à Neon Production, après restauration vérifiée et contrôles de cohérence sur clone. Les vérifications post-commit établissent :
 
-## Identité et privilèges effectivement observés
+- **11 tables avec RLS et FORCE RLS**, et **11 policies** présentes : les dix tables canoniques (`organizations`, `users`, `projects`, `suppliers`, `supplier_offers`, `cost_items`, `carbon_items`, `risk_items`, `reference_benchmarks`, `audit_logs`) ainsi que la table historique `user_sessions`.
+- **9 clés étrangères composites** assurant les liens intra-tenant, y compris la relation de `user_sessions` à `users`.
+- Comptages des tables inchangés après DDL; aucune donnée n'a été supprimée ou backfillée.
+- Vérification sous le rôle `truetco_app` : `current_user = session_user = truetco_app`, `LOGIN`, `NOSUPERUSER`, `NOBYPASSRLS`, non propriétaire des tables. Le rôle a les droits DML nécessaires; il n'a pas les privilèges `TRUNCATE`, `REFERENCES` ou `TRIGGER`, et n'appartient pas à un autre rôle.
+- Sans contexte tenant, aucune ligne tenant n'est visible sous `truetco_app`. Les tests A/B et les contrôles d'écritures cross-tenant ont confirmé l'isolation; les insertions incohérentes sont rejetées par les FK composites.
 
-Connexion directe sous le rôle `truetco_app` sur la branche de test :
+La migration a été exécutée manuellement en transactions Neon. Le fichier candidat reste `db/migrations/proposed/0003_p1_tenant_scope.sql.draft`, hors du journal Drizzle. **Une réconciliation contrôlée du journal de migrations est requise avant toute prochaine migration**; cette PR ne l'effectue pas et aucun script distant ne doit relancer le draft.
 
-- `current_user = session_user = truetco_app`.
-- `rolsuper = false`, `rolbypassrls = false`.
-- `CONNECT` base et `USAGE` schéma public : vrais.
-- Droits `SELECT/INSERT/UPDATE/DELETE` testés sur les tables applicatives : effectifs.
-- Le rôle n'est pas le propriétaire des tables et n'est ni superuser ni BYPASSRLS.
+## Données historiques
 
-Cette preuve qualifie le rôle dédié sur la branche Neon clonée uniquement. Elle ne prouve pas que Vercel utilise ce rôle : l'adaptateur applicatif est maintenant raccordé à `server.ts`, mais les variables d'environnement Vercel n'ont pas été lues ni modifiées, et aucune connexion runtime Production n'a été observée.
+Les deux lignes historiques de `supplier_offers` conservent `organization_id IS NULL`. Elles n'ont pas été attribuées ni backfillées arbitrairement et restent invisibles au rôle `truetco_app` sous RLS. Une attribution nécessitera une source d'autorité et une décision explicite. Il n'y a pas d'ouverture métier en attendant.
 
-## Isolation RLS observée sur la branche de test
+## Rôle Neon et connexion applicative : preuves distinctes
 
-RLS + FORCE RLS et une policy tenant ont été installées sur les dix tables canoniques (`organizations`, `users`, `projects`, `suppliers`, `supplier_offers`, `cost_items`, `carbon_items`, `risk_items`, `reference_benchmarks`, `audit_logs`) et sur la table historique `user_sessions` présente dans Neon (absente du baseline P0 et du schéma applicatif local).
+La qualification ci-dessus prouve l'identité et les privilèges du rôle directement vérifié en Production. **Elle ne prouve pas que Vercel utilise `truetco_app`.**
 
-Sous `truetco_app` :
+- Le pool runtime code (`src/db/runtimeTenantPool.ts`) accepte exclusivement `DATABASE_URL_RUNTIME`; il ne retombe jamais sur `DATABASE_URL`, qui reste réservé aux usages de migration/Drizzle. Le pool vérifie le rôle, l'hôte Neon, la base `neondb` et TLS et s'ouvre paresseusement.
+- Le middleware d'identité tenant et l'adaptateur runtime sont maintenant montés dans `server.ts`; l'identité vient du middleware Clerk vérifié et l'accès aux autres API demeure derrière le gate fail-closed.
+- `DATABASE_URL_RUNTIME` n'existe pas dans Vercel Production. Aucune connexion Vercel runtime n'a été observée ou qualifiée. Il n'y a donc aucune preuve que la connexion effective utilise `truetco_app`.
+- Aucun secret n'a été affiché ou transmis dans cette documentation. Aucun paramètre Vercel/Neon n'est modifié par cette PR.
 
-- Sans contexte tenant, les tables tenant ne révèlent aucune ligne.
-- Le contexte Clerk de test `user_test_clerk_123` résout une seule adhésion active.
-- Le tenant A ne voit pas les projets ni les sessions du tenant B.
-- Le tenant A voit 6 sessions; le tenant B n'en voit aucune dans le contexte A.
-- Un INSERT utilisateur cross-tenant est refusé par RLS.
-- Tests complémentaires exécutés : UPDATE ciblant un utilisateur du tenant B depuis le contexte A affecte 0 ligne; DELETE ciblant les sessions du tenant B affecte 0 ligne.
-- Les catalogues confirment `ENABLE ROW LEVEL SECURITY` et `FORCE ROW LEVEL SECURITY` sur les 10 tables canoniques et `user_sessions`.
+## Tests et limites
 
-Les offres historiques ont `organization_id IS NULL` et restent invisibles sous RLS. Elles n'ont pas été backfillées. Les données observées indiquent des associations cohérentes entre projet et fournisseur pour les offres examinées, mais aucun mapping historique n'est appliqué sans décision explicite.
+Les tests PGlite/PostgreSQL locaux couvrent le draft, les policies, les FK composites, le rôle non privilégié simulé et l'isolation tenant. Ils ne remplacent pas les vérifications réelles Neon ci-dessus, et ne qualifient pas le transport applicatif Vercel → Neon. Les parcours applicatifs tenantés complets restent bloqués par l'absence de connexion runtime vérifiée et de Clerk Production qualifié.
 
-## Limites encore ouvertes
-
-1. **Runtime Vercel/Production : NON QUALIFIÉ.** Aucune preuve que la connexion réellement utilisée par l'application est `truetco_app`. L'adaptateur pool est monté dans `server.ts`, mais aucune variable Vercel ni connexion runtime n'a été inspectée.
-2. **Rôle de production : QUALIFIÉ, non raccordé.** Le rôle `truetco_app` existait déjà sur la branche Production et sa connexion/droits ont été vérifiés sous le rôle réel. Aucun secret n'a été lu ou affiché et aucune variable Vercel n'a été modifiée; l'application n'utilise donc pas encore ce rôle.
-3. **Schéma Production : NON MODIFIÉ.** Aucune migration distante, aucun GRANT/RLS ni backfill appliqué à Production.
-4. **RLS Production : NON QUALIFIÉ.** Les preuves Neon concernent la branche clonée, pas la branche Production.
-5. **Restauration et sauvegardes :** aucun exercice de restauration n'a été effectué.
-6. **Permissions minimales :** le rôle de test a été créé avec `read_write` pour éprouver les opérations; réduire les droits à la matrice de handlers avant tout usage runtime.
-7. **Relations composites :** les catalogues montrent les FK composites tenant sur la branche de test; un test négatif dédié des insertions cross-tenant sur chaque relation reste à compléter avant activation.
-8. **Données historiques :** les NULL de `supplier_offers.organization_id` restent préservés et cachés. Toute réconciliation/backfill exige une source d'autorité et une validation séparée.
-
-## Séquence obligatoire avant activation
-
-1. Corriger et valider le draft P1 sur le commit candidat; garder le fichier `.draft` hors du journal exécutable.
-2. Revoir et tester les FK composites et tous les cas CRUD sous un rôle `LOGIN/NOSUPERUSER/NOBYPASSRLS`.
-3. Identifier la connexion DB réelle prévue pour Vercel sans afficher ni déchiffrer de secret.
-4. L'adaptateur runtime fail-closed est câblé dans `server.ts`; vérifier de façon contrôlée l'identité réelle de la connexion Vercel sans révéler de secret. Ne pas créer/modifier une variable sans autorisation explicite; garder `DATABASE_URL` pour Drizzle/migrations.
-5. Tester le chemin transactionnel complet avec l'identité Clerk qualifiée en environnement approuvé, en gardant le gate fermé; ne pas ouvrir de route métier tant que Clerk réel, rôle runtime, RLS Production et parcours transactionnel ne sont pas qualifiés ensemble.
-6. Préparer backup, test de restauration, plan de retour arrière et procédure de migration approuvée avant toute modification de schéma Production.
-
-**Conclusion :** preuve réelle Neon obtenue sur une branche clonée et isolée; qualification du runtime applicatif et de la Production toujours NON ACQUISE.
-
-## Addendum — qualification Neon Production et préparation runtime (20 novembre 2026)
-
-- Branche Production br-bold-leaf-b2eclysi, base neondb, rôle existant truetco_app.
-- Connexion réelle sous current_user = session_user = truetco_app confirmée. rolcanlogin=true, rolsuper=false, rolbypassrls=false, rolcreatedb=false, rolcreaterole=false.
-- CONNECT et USAGE schema public confirmés; DML SELECT/INSERT/UPDATE/DELETE sur 11 tables business; TRUNCATE, REFERENCES et TRIGGER refusés; aucune appartenance à un autre rôle. Les 11 tables restent détenues par neondb_owner.
-- Aucune RLS Production n'est activée et aucune migration n'a été appliquée.
-- L'adaptateur runtime câblé dans `server.ts` attend exclusivement `DATABASE_URL_RUNTIME` et refuse tout fallback vers `DATABASE_URL`; il valide `truetco_app`, endpoint Neon, base `neondb` et TLS. Son appel est paresseux après validation Clerk et uniquement pour les API tenantées; aucune connexion Vercel réelle n'a été observée.
-- La variable Vercel n'a pas été créée : l'écriture du secret depuis Neon vers Vercel a été bloquée par le contrôle de sécurité de l'outil. Aucun contournement ni affichage de secret n'a été effectué.
-- L'état correct reste donc : rôle Production qualifié; isolation RLS Production et utilisation Vercel runtime non qualifiées.
+**Conclusion opérationnelle :** RLS Production et rôle Neon `truetco_app` sont qualifiés au niveau PostgreSQL; connexion runtime Vercel et parcours Clerk → Vercel → Neon NON qualifiés. Les routes métier restent fermées. Ne pas confondre la qualification du rôle avec l'identité réellement utilisée par l'application.

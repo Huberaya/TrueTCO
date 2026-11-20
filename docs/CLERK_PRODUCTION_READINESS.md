@@ -1,33 +1,27 @@
 # Préparation Clerk Production — état et limites
 
-**Décision : NON QUALIFIÉ pour une instance Clerk Production réelle.** Le code candidat et ses tests locaux sont revus; aucun projet/instance Clerk, clé Production, session JWT réelle, configuration Dashboard ni variables Vercel de production n’a été vérifié. Aucune valeur secrète n’a été lue, déchiffrée, affichée, copiée ou modifiée.
+**État : intégration logicielle préparée; Clerk Production et JWT réel NON qualifiés.** Aucun compte/instance Production, aucune clé Production ni aucun JWT émis par une instance réelle n'a été vérifié. Aucun secret n'a été lu, déchiffré, affiché, copié ou modifié.
 
-## Éléments logiciels vérifiés
+## Ce que le code prépare
 
-- `createClerkSessionMiddleware` utilise `@clerk/express` officiel. Il exige côté serveur une clé secrète `sk_`, une clé publishable `pk_`, une liste d’authorized parties exacte sans wildcard et une audience JWT non vide/sans espaces ni joker. Les clés d’exemple sont rejetées par la détection de placeholders. Une mauvaise configuration renvoie 503 pour les API et laisse uniquement la liveness `GET /api/health` accessible.
-- Le SDK reçoit la clé secrète côté serveur et applique sa vérification de signature/JWKS et de claims; l’audience et les authorized parties sont configurées explicitement. Le test `src/server/clerkTokenVerification.test.ts` utilise `verifyToken` officiel sur une paire RSA générée localement et vérifie le rejet du token malformé, expiré, du mauvais issuer, de la mauvaise audience et d’une authorized party non autorisée. La valeur `issuer` de ce test est un issuer local fictif : ce n’est ni une clé/JWT réelle ni une validation d’instance Production.
-- `parseAuthorizedParties` n’accepte que des origins exactes HTTPS (HTTP seulement pour localhost/127.0.0.1), sans chemin, wildcard ou autre protocole. `azp` est contrôlé par le vérificateur Clerk. Ce n’est pas une validation indépendante de l’en-tête HTTP `Origin` ni une politique CORS; aucune route métier n’est ouverte.
-- Le middleware d’identité lit seulement le résultat attaché à la requête par `getAuth` après Clerk. Il ignore les `organization_id`, rôles, identités, headers, query/body et claims d’organisation envoyés par le client.
-- `findActiveTenantMembership` utilise le sujet Clerk vérifié pour chercher les adhésions pré-provisionnées avec `LIMIT 2`; exactement une ligne active, UUID/tenant/rôle valides est requise. Zéro, doublon, ligne inactive ou invalide échoue fermé. L’index partiel unique sur `users.clerk_id` empêche une identité multi-organisation dans le modèle actuel; pas de sélection d’organisation par le client.
-- `withTenantSqlTransaction` pose `organization_id`, `user_id` et `clerk_user_id` avec `set_config(..., true)` dans la transaction, revalide l’adhésion active, puis commit/rollback et release. Le lookup préliminaire ne pose que le GUC Clerk pour la politique RLS de lecture étroite de l’utilisateur correspondant. Aucun mécanisme n’autorise une identité directement fournie par le client.
-- L’identité échoue en 401 sans session, 403 sans membership valide, 503 en cas d’échec du contrôle d’accès; les erreurs ne renvoient pas de secret. Le middleware d’identité tenant est désormais monté dans `server.ts`; RBAC reste candidat et non activé.
-- `createApplication` monte Clerk → middleware tenant runtime optionnel → gate global fail-closed; `server.ts` fournit désormais l’adaptateur runtime qui résout l’adhésion depuis le sujet vérifié par Clerk. Le pool est paresseux et exige `DATABASE_URL_RUNTIME` (aucun fallback `DATABASE_URL`). L’absence/configuration invalide ou l’échec de lookup renvoie un refus fermé; seul `GET /api/health` évite la résolution tenant. Le gate métier reste après ces contrôles et aucune route métier/API/session/tenant n’est ouverte. Les tests locaux couvrent cet ordre, les chemins encodés et l’absence d’accès aux anciens handlers.
+- `createClerkSessionMiddleware` utilise `@clerk/express` et exige les clés serveur/public correspondantes, une audience explicite et des authorized parties exactes, sans wildcard. Une mauvaise configuration échoue fermé; seul `GET /api/health` reste public.
+- La vérification de signature/JWKS et des claims est confiée au SDK Clerk. Les tests locaux signent des JWT avec une clé RSA de test et couvrent les cas invalides (expiration, issuer, audience et authorized party). Cela teste le chemin logiciel, pas une instance Clerk Production réelle.
+- Le middleware d'identité ne lit que l'état attaché par Clerk vérifié; il ignore les identités, organisations, rôles et claims fournis par le client. Il exige exactement une adhésion locale active correspondant au sujet Clerk vérifié.
+- L'adaptateur runtime est monté dans `server.ts` après Clerk. Il utilise exclusivement `DATABASE_URL_RUNTIME`, sans fallback vers `DATABASE_URL`, et effectue paresseusement la recherche d'adhésion. Le principal tenant ne peut provenir que de la ligne locale validée.
+- La recherche d'adhésion utilise une transaction et le contexte Clerk transaction-local. Le chemin SQL tenant complet pose les GUC d'organisation/utilisateur/Clerk, revalide l'adhésion et commit/rollback avant de libérer le client. Ces tests locaux ne qualifient pas à eux seuls la connexion Vercel ou Neon.
+- Le gate global fail-closed reste après Clerk et le middleware tenant. **Aucune route métier n'est activée**; seules les réponses explicitement prévues pour la liveness sont accessibles. RBAC reste candidat et non activé.
 
-## Non qualifié sur Production
+## Ce qui n'est pas qualifié en Production
 
-- Le dépôt ne contient que des exemples dans `.env.example`; ils ne sont pas des valeurs de déploiement.
-- L’accès Vercel en lecture de métadonnées projet/environnements a retourné **Access denied** pour l’intégration connectée. Le CLI Vercel et la configuration locale `.vercel` ne sont pas disponibles. Aucun nom/cible de variable de production, état de clé, authorized party configurée, audience ou issuer d’instance n’est donc attesté.
-- Aucun compte/projet Clerk, mode Production, domaine, origine, JWT signé par l’instance, cookie/session, JWKS, rotation de clés, template d’audience ou comportement de révocation n’a été vérifié. Les tests RSA locaux qualifient seulement le chemin de code de vérification Clerk.
-- L’application ne raccorde pas le pool Neon candidat et ne monte pas le middleware de résolution d’adhésion. La compatibilité de bout en bout Clerk → Vercel → Neon → transaction RLS reste donc non testée.
+- Aucune instance Clerk Production, aucun domaine/issuer Production, aucune clé associée ni aucun JWT/session réel n'a été qualifié.
+- Les tests cryptographiques utilisent une paire RSA locale et un issuer fictif; ils ne prouvent ni l'intégration au JWKS d'une instance réelle, ni ses cookies, domaines, rotation de clés, révocation ou configuration Dashboard.
+- `DATABASE_URL_RUNTIME` n'existe pas dans Vercel Production. Malgré le câblage du middleware et du pool dans `server.ts`, aucune connexion Vercel → Neon n'a donc été observée. La qualification indépendante du rôle Neon `truetco_app` ne prouve pas que Vercel utilise ce rôle (voir `NEON_RUNTIME_ROLE_QUALIFICATION.md`).
+- Aucune adhésion réelle n'a été créée ou testée avec un compte Clerk Production; aucune matrice RBAC n'est approuvée/activée.
 
-**Conclusion opérationnelle :** la préparation fail-closed est qualifiée par lecture du code et tests locaux seulement. La qualification **Clerk Production = NON QUALIFIÉE** faute d’accès/configuration et de JWT réel autorisé. Ne pas activer un fournisseur, modifier clé/variable, configurer un JWT template ou ouvrir de route sur la seule base de cette PR.
+## Garde-fous et conditions futures
 
-## Contrôles préalables futurs (à réaliser par le propriétaire Clerk/Vercel, sans communiquer les secrets)
+L'absence de configuration Clerk/runtime, une authentification invalide, une adhésion absente/ambiguë ou une panne DB échouent fermé. Aucun fallback tenant, aucune organisation par défaut ni aucun choix d'organisation fourni par le client n'est accepté.
 
-1. Confirmer dans le Dashboard l’instance **Production** et le domaine issuer attendu; vérifier que le domaine/API keys de Production sont distincts du mode Development.
-2. Confirmer que le serveur Vercel reçoit une secret key Production, la publishable key publique correspondante, les authorized parties exactes par environnement et l’audience convenue. Comparer uniquement noms/cibles/état de présence; ne pas imprimer les valeurs.
-3. Vérifier les domaines de cookies, redirect URLs, allowed origins/CORS et authorized parties; l’allowlist de `azp` n’est pas un substitut aux règles de navigateur.
-4. Tester avec un compte autorisé et un JWT de courte durée émis par l’instance Production dans un environnement de test approuvé; ne pas poster ni sauvegarder le token dans un ticket/log. Tester issuer, signature/JWKS, expiration, audience, authorized party, membership absent/inactif/doublon et révocation.
-5. Garder l’API métier fail-closed jusqu’à revue sécurité/métier de la résolution d’adhésion, transaction RLS réelle sous rôle non-owner `NOBYPASSRLS`, et approbation séparée des permissions RBAC.
+La qualification future nécessite une instance Production et un domaine autorisés, des clés correctement ciblées sans exposition des valeurs, un JWT réel de courte durée testé de façon contrôlée, une connexion Vercel sous `truetco_app`, puis des tests transactionnels/RLS de bout en bout. La mise en service métier et l'activation RBAC exigent une approbation distincte. Clerk Production, JWT live, memberships et RBAC restent différés jusqu'au choix et à l'achat du domaine.
 
-Aucun utilisateur Clerk ou membership n’a été créé/modifié et aucun test Production n’a été tenté.
+**Conclusion :** le code de préparation est testé localement; Clerk Production et le runtime Vercel ne sont pas qualifiés. Les routes métier demeurent fermées. Aucun secret ou paramètre Clerk/Vercel n'a été consulté ou changé dans le cadre de cette PR.
