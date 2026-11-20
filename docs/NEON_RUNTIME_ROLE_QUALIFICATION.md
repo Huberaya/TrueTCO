@@ -24,7 +24,7 @@ Cette preuve qualifie le rôle dédié sur la branche Neon clonée uniquement. E
 
 ## Isolation RLS observée sur la branche de test
 
-RLS + FORCE RLS et une policy tenant ont été installées sur les 11 tables suivantes : `organizations`, `users`, `projects`, `suppliers`, `supplier_offers`, `cost_items`, `carbon_items`, `risk_items`, `reference_benchmarks`, `audit_logs`, `user_sessions`.
+RLS + FORCE RLS et une policy tenant ont été installées sur les dix tables canoniques (`organizations`, `users`, `projects`, `suppliers`, `supplier_offers`, `cost_items`, `carbon_items`, `risk_items`, `reference_benchmarks`, `audit_logs`) et sur la table historique `user_sessions` présente dans Neon (absente du baseline P0 et du schéma applicatif local).
 
 Sous `truetco_app` :
 
@@ -34,7 +34,7 @@ Sous `truetco_app` :
 - Le tenant A voit 6 sessions; le tenant B n'en voit aucune dans le contexte A.
 - Un INSERT utilisateur cross-tenant est refusé par RLS.
 - Tests complémentaires exécutés : UPDATE ciblant un utilisateur du tenant B depuis le contexte A affecte 0 ligne; DELETE ciblant les sessions du tenant B affecte 0 ligne.
-- Les catalogues confirment `ENABLE ROW LEVEL SECURITY` et `FORCE ROW LEVEL SECURITY` sur les 11 tables.
+- Les catalogues confirment `ENABLE ROW LEVEL SECURITY` et `FORCE ROW LEVEL SECURITY` sur les 10 tables canoniques et `user_sessions`.
 
 Les offres historiques ont `organization_id IS NULL` et restent invisibles sous RLS. Elles n'ont pas été backfillées. Les données observées indiquent des associations cohérentes entre projet et fournisseur pour les offres examinées, mais aucun mapping historique n'est appliqué sans décision explicite.
 
