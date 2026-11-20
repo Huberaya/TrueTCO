@@ -40,11 +40,13 @@ BEGIN
   ) THEN
     RAISE EXCEPTION 'P1 preflight: audit project belongs to another organization';
   END IF;
-  IF to_regclass('public.user_sessions') IS NOT NULL AND EXISTS (
-    SELECT 1 FROM public.user_sessions us JOIN public.users u ON u.id = us.user_id
-    WHERE us.organization_id <> u.organization_id
-  ) THEN
-    RAISE EXCEPTION 'P1 preflight: session user belongs to another organization';
+  IF to_regclass('public.user_sessions') IS NOT NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM public.user_sessions us JOIN public.users u ON u.id = us.user_id
+      WHERE us.organization_id <> u.organization_id
+    ) THEN
+      RAISE EXCEPTION 'P1 preflight: session user belongs to another organization';
+    END IF;
   END IF;
 END $;
 --> statement-breakpoint
