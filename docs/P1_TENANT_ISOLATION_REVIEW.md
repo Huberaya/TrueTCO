@@ -8,7 +8,7 @@
 
 - Le gate P0 fail-closed reste actif. `server.ts` ne configure pas le middleware P1 d’identité tenant et aucune route métier n’est montée.
 - Seul `GET /api/health` est servi publiquement. Les appels API métier restent refusés par le gate global.
-- Les changements DDL P1 sont dans `db/migrations/proposed/0003_p1_tenant_scope.sql.draft`, hors du répertoire/journal Drizzle exécutable. Ils sont testés localement par PGlite. Une qualification complémentaire a depuis été exécutée sur une branche Neon clonée isolée (voir `docs/NEON_RUNTIME_ROLE_QUALIFICATION.md`) : rôle `truetco_app` non superuser/non-BYPASSRLS, RLS/FORCE sur les onze tables, isolation tenant et tests d’écriture cross-tenant négatifs. Aucun changement n’a été appliqué à Neon Production et aucune connexion Vercel runtime n’a été prouvée.
+- Les changements DDL P1 sont dans `db/migrations/proposed/0003_p1_tenant_scope.sql.draft`, hors du répertoire/journal Drizzle exécutable. Ils sont testés localement par PGlite. Une qualification complémentaire a depuis été exécutée sur une branche Neon clonée isolée (voir `docs/NEON_RUNTIME_ROLE_QUALIFICATION.md`) : rôle `truetco_app` non superuser/non-BYPASSRLS, RLS/FORCE sur les dix tables canoniques et la table historique `user_sessions`, isolation tenant et tests d’écriture cross-tenant négatifs. Aucun changement n’a été appliqué à Neon Production et aucune connexion Vercel runtime n’a été prouvée.
 - La migration ajoute des colonnes tenant nullable aux offres/lignes enfants pour permettre une phase préparatoire sans inventer de backfill. Les lignes héritées sans tenant restent invisibles sous RLS; cela ne constitue pas une activation ni un schéma prêt à servir les routes métier.
 - La matrice de rôles ci-dessous est une proposition testée, non une politique approuvée par les propriétaires métier.
 
@@ -52,7 +52,7 @@ Aucun résultat de recherche ne révèle de route métier supplémentaire monté
 
 ## Modèle relationnel préparé
 
-Le schéma porte onze tables protégées par RLS :
+Le schéma canonique porte dix tables applicatives protégées par RLS. La base Neon inspectée contient en plus une table historique `user_sessions`, absente de `schema.ts`, `schema.sql` et du baseline P0; le draft la protège conditionnellement lorsqu’elle existe :
 
 | Table | Portée organisation | Liens/contrôles tenant préparés |
 |---|---|---|
@@ -65,7 +65,7 @@ Le schéma porte onze tables protégées par RLS :
 | `carbon_items` | Colonne ajoutée, nullable en phase préparatoire | FK composite vers offre et index tenant. |
 | `risk_items` | Colonne ajoutée, nullable en phase préparatoire | FK composite vers offre et index tenant. |
 | `reference_benchmarks` | `organization_id` non nul | FK et unicité tenant/nom existantes; politique RLS tenant. |
-| `audit_logs` | `organization_id` non nul | FK composites vers utilisateur et projet de même tenant; politique RLS tenant. |\n| `user_sessions` | `organization_id` non nul | FK vers organisation/utilisateur; policy RLS tenant dédiée. |
+| `audit_logs` | `organization_id` non nul | FK composites vers utilisateur et projet de même tenant; politique RLS tenant. |\n| `user_sessions` (table historique Neon, hors schéma canonique) | `organization_id` non nul dans Neon | RLS/FORCE et policy tenant dédiées par bloc conditionnel si la table existe; le draft reste applicable au baseline P0 neuf où elle est absente. |
 
 Toutes les dix tables ont une politique RLS préparée avec `ENABLE` et `FORCE ROW LEVEL SECURITY`. Les politiques évaluent `current_setting('true_tco.organization_id', true)`; les écritures exigent `WITH CHECK`. L’application DB devra être un rôle `NOBYPASSRLS`, avec des droits minimaux, et les tests d’accès ne doivent pas être faits sous un rôle propriétaire ou `BYPASSRLS`.
 
