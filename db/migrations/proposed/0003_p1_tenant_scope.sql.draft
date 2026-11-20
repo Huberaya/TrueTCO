@@ -91,7 +91,8 @@ DECLARE target_table text;
 BEGIN
   FOREACH target_table IN ARRAY ARRAY[
     'organizations', 'users', 'projects', 'suppliers', 'supplier_offers',
-    'cost_items', 'carbon_items', 'risk_items', 'reference_benchmarks', 'audit_logs'
+    'cost_items', 'carbon_items', 'risk_items', 'reference_benchmarks', 'audit_logs',
+    'user_sessions'
   ] LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target_table);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', target_table);
@@ -139,6 +140,10 @@ CREATE POLICY tenant_scope ON reference_benchmarks
   WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
 --> statement-breakpoint
 CREATE POLICY tenant_scope ON audit_logs
+  USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+  WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+--> statement-breakpoint
+CREATE POLICY user_sessions_tenant_scope ON user_sessions
   USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
   WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
 --> statement-breakpoint
