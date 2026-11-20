@@ -96,18 +96,18 @@ BEGIN
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target_table);
     EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', target_table);
   END LOOP;
-END $;
+END $$;
 --> statement-breakpoint
 -- user_sessions exists in the inspected Neon database but is absent from the
 -- canonical P0 baseline/schema. Protect it when present without making a fresh
 -- database migration fail because the legacy table does not exist.
-DO $
+DO $$
 BEGIN
   IF to_regclass('public.user_sessions') IS NOT NULL THEN
     EXECUTE 'ALTER TABLE public.user_sessions ENABLE ROW LEVEL SECURITY';
     EXECUTE 'ALTER TABLE public.user_sessions FORCE ROW LEVEL SECURITY';
   END IF;
-END $;
+END $$;
 --> statement-breakpoint
 CREATE POLICY organizations_tenant_scope ON organizations
   USING (id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
@@ -153,7 +153,7 @@ CREATE POLICY tenant_scope ON audit_logs
   USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
   WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
 --> statement-breakpoint
-DO $
+DO $$
 BEGIN
   IF to_regclass('public.user_sessions') IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'user_sessions' AND policyname = 'user_sessions_tenant_scope') THEN
@@ -163,6 +163,6 @@ BEGIN
         WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
     $policy$;
   END IF;
-END $;
+END $$;
 --> statement-breakpoint
 COMMIT;
