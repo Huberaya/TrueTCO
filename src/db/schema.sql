@@ -54,12 +54,13 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_users_org_email UNIQUE (organization_id, email)
+    CONSTRAINT uq_users_org_email UNIQUE (organization_id, email),
+    CONSTRAINT uq_users_org_id UNIQUE (organization_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_users_org ON users(organization_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
-CREATE INDEX IF NOT EXISTS idx_users_clerk_id ON users(clerk_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_users_clerk_id ON users(clerk_id) WHERE clerk_id IS NOT NULL;
 
 DROP TRIGGER IF EXISTS trigger_update_users_updated_at ON users;
 CREATE TRIGGER trigger_update_users_updated_at
@@ -110,7 +111,9 @@ CREATE TABLE IF NOT EXISTS projects (
     created_by_user_id UUID CONSTRAINT projects_created_by_user_id_users_id_fk REFERENCES users(id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_projects_org_ref UNIQUE (organization_id, reference)
+    CONSTRAINT uq_projects_org_ref UNIQUE (organization_id, reference),
+    CONSTRAINT uq_projects_org_id UNIQUE (organization_id, id),
+    CONSTRAINT fk_projects_creator_tenant FOREIGN KEY (organization_id, created_by_user_id) REFERENCES users(organization_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(organization_id);
@@ -143,7 +146,8 @@ CREATE TABLE IF NOT EXISTS suppliers (
     data_quality_score INTEGER NOT NULL DEFAULT 85 CHECK (data_quality_score BETWEEN 0 AND 100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_suppliers_org_name UNIQUE (organization_id, name)
+    CONSTRAINT uq_suppliers_org_name UNIQUE (organization_id, name),
+    CONSTRAINT uq_suppliers_org_id UNIQUE (organization_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_suppliers_org ON suppliers(organization_id);
@@ -158,6 +162,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS supplier_offers (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID,
     project_id UUID NOT NULL CONSTRAINT supplier_offers_project_id_projects_id_fk REFERENCES projects(id) ON DELETE CASCADE,
     supplier_id UUID NOT NULL CONSTRAINT supplier_offers_supplier_id_suppliers_id_fk REFERENCES suppliers(id) ON DELETE RESTRICT,
     offer_reference VARCHAR(100) NOT NULL,
@@ -172,9 +177,13 @@ CREATE TABLE IF NOT EXISTS supplier_offers (
     confidence_score INTEGER NOT NULL DEFAULT 85 CHECK (confidence_score BETWEEN 0 AND 100),
     created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_offers_project_ref UNIQUE (project_id, offer_reference)
+    CONSTRAINT uq_offers_project_ref UNIQUE (project_id, offer_reference),
+    CONSTRAINT uq_supplier_offers_org_id UNIQUE (organization_id, id),
+    CONSTRAINT fk_supplier_offers_project_tenant FOREIGN KEY (organization_id, project_id) REFERENCES projects(organization_id, id),
+    CONSTRAINT fk_supplier_offers_supplier_tenant FOREIGN KEY (organization_id, supplier_id) REFERENCES suppliers(organization_id, id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_offers_org ON supplier_offers(organization_id);
 CREATE INDEX IF NOT EXISTS idx_offers_project ON supplier_offers(project_id);
 CREATE INDEX IF NOT EXISTS idx_offers_supplier ON supplier_offers(supplier_id);
 
@@ -188,6 +197,7 @@ FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS cost_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID,
     offer_id UUID NOT NULL CONSTRAINT cost_items_offer_id_supplier_offers_id_fk REFERENCES supplier_offers(id) ON DELETE CASCADE,
     category VARCHAR(100) NOT NULL,
     label VARCHAR(255) NOT NULL,
@@ -200,10 +210,12 @@ CREATE TABLE IF NOT EXISTS cost_items (
     is_recurring_yearly BOOLEAN NOT NULL DEFAULT FALSE,
     calculation_formula TEXT,
     explanation_notes TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_cost_items_offer_tenant FOREIGN KEY (organization_id, offer_id) REFERENCES supplier_offers(organization_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_cost_items_offer ON cost_items(offer_id);
+CREATE INDEX IF NOT EXISTS idx_cost_items_org ON cost_items(organization_id);
 CREATE INDEX IF NOT EXISTS idx_cost_items_category ON cost_items(category);
 
 -- -----------------------------------------------------------------------------
@@ -211,6 +223,7 @@ CREATE INDEX IF NOT EXISTS idx_cost_items_category ON cost_items(category);
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS carbon_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID,
     offer_id UUID NOT NULL CONSTRAINT carbon_items_offer_id_supplier_offers_id_fk REFERENCES supplier_offers(id) ON DELETE CASCADE,
     scope VARCHAR(20) NOT NULL CHECK (scope IN ('Scope 1', 'Scope 2', 'Scope 3 Amont', 'Scope 3 Aval')),
     lifecycle_phase VARCHAR(100) NOT NULL,
@@ -218,25 +231,30 @@ CREATE TABLE IF NOT EXISTS carbon_items (
     total_lifecycle_emissions NUMERIC(12, 3) NOT NULL,
     emission_factor_source VARCHAR(255) NOT NULL,
     confidence_level INTEGER NOT NULL CHECK (confidence_level BETWEEN 0 AND 100),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_carbon_items_offer_tenant FOREIGN KEY (organization_id, offer_id) REFERENCES supplier_offers(organization_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_carbon_items_offer ON carbon_items(offer_id);
+CREATE INDEX IF NOT EXISTS idx_carbon_items_org ON carbon_items(organization_id);
 
 -- -----------------------------------------------------------------------------
 -- 8. RISK ITEMS (Événements Risques Probabilisés P x I)
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS risk_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID,
     offer_id UUID NOT NULL CONSTRAINT risk_items_offer_id_supplier_offers_id_fk REFERENCES supplier_offers(id) ON DELETE CASCADE,
     description TEXT NOT NULL,
     probability NUMERIC(5, 4) NOT NULL CHECK (probability BETWEEN 0 AND 1),
     financial_impact NUMERIC(14, 2) NOT NULL CHECK (financial_impact >= 0),
     source_evidence TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_risk_items_offer_tenant FOREIGN KEY (organization_id, offer_id) REFERENCES supplier_offers(organization_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_risk_items_offer ON risk_items(offer_id);
+CREATE INDEX IF NOT EXISTS idx_risk_items_org ON risk_items(organization_id);
 
 -- -----------------------------------------------------------------------------
 -- 9. REFERENCE BENCHMARKS (Référentiel Institutionnel des Facteurs Externes)
@@ -281,10 +299,73 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     field_changed VARCHAR(255) NOT NULL,
     old_value TEXT NOT NULL,
     new_value TEXT NOT NULL,
-    justification TEXT NOT NULL
+    justification TEXT NOT NULL,
+    CONSTRAINT fk_audit_logs_user_tenant FOREIGN KEY (organization_id, user_id) REFERENCES users(organization_id, id),
+    CONSTRAINT fk_audit_logs_project_tenant FOREIGN KEY (organization_id, project_id) REFERENCES projects(organization_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_logs_org_timestamp ON audit_logs(organization_id, timestamp DESC NULLS LAST);
 CREATE INDEX IF NOT EXISTS idx_audit_logs_project ON audit_logs(project_id);
 
 -- Fin du Script DDL
+-- Defense-in-depth tenant RLS. Application role must be NOBYPASSRLS and use
+-- transaction-local set_config values set only after Clerk verification.
+DO $$
+DECLARE
+    target_table TEXT;
+BEGIN
+    FOREACH target_table IN ARRAY ARRAY[
+        'organizations', 'users', 'projects', 'suppliers', 'supplier_offers',
+        'cost_items', 'carbon_items', 'risk_items', 'reference_benchmarks', 'audit_logs'
+    ] LOOP
+        EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', target_table);
+        EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', target_table);
+    END LOOP;
+END $$;
+
+DROP POLICY IF EXISTS organizations_tenant_scope ON organizations;
+CREATE POLICY organizations_tenant_scope ON organizations
+    USING (id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+
+DROP POLICY IF EXISTS users_tenant_scope ON users;
+CREATE POLICY users_tenant_scope ON users
+    USING (
+        organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid
+        OR (NULLIF(current_setting('true_tco.organization_id', true), '') IS NULL
+            AND clerk_id = NULLIF(current_setting('true_tco.clerk_user_id', true), ''))
+    )
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+
+DROP POLICY IF EXISTS tenant_scope ON projects;
+CREATE POLICY tenant_scope ON projects
+    USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+DROP POLICY IF EXISTS tenant_scope ON suppliers;
+CREATE POLICY tenant_scope ON suppliers
+    USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+DROP POLICY IF EXISTS tenant_scope ON supplier_offers;
+CREATE POLICY tenant_scope ON supplier_offers
+    USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+DROP POLICY IF EXISTS tenant_scope ON cost_items;
+CREATE POLICY tenant_scope ON cost_items
+    USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+DROP POLICY IF EXISTS tenant_scope ON carbon_items;
+CREATE POLICY tenant_scope ON carbon_items
+    USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+DROP POLICY IF EXISTS tenant_scope ON risk_items;
+CREATE POLICY tenant_scope ON risk_items
+    USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+DROP POLICY IF EXISTS tenant_scope ON reference_benchmarks;
+CREATE POLICY tenant_scope ON reference_benchmarks
+    USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);
+DROP POLICY IF EXISTS tenant_scope ON audit_logs;
+CREATE POLICY tenant_scope ON audit_logs
+    USING (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)
+    WITH CHECK (organization_id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid);

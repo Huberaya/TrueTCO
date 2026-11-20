@@ -293,6 +293,8 @@ export interface ScenarioResult {
 
 export interface AuditLogEntry {
   id: string;
+  /** Required by tenant-scoped SQL export; absent in legacy browser-only logs. */
+  organizationId?: string;
   timestamp: string;
   userId: string;
   userName: string;
@@ -309,6 +311,10 @@ export interface AuditLogEntry {
 
 export interface ExternalityReferenceBenchmark {
   id: string;
+  /** Tenant and lifecycle dates are required for SQL export; legacy DTOs may omit them. */
+  organizationId?: string;
+  validUntil?: string;
+  lastAuditDate?: string;
   name: string;
   category: 'carbone' | 'wacc' | 'energie_kwh' | 'recyclage' | 'energie' | 'dechets' | 'pollution_locale';
   value: number;

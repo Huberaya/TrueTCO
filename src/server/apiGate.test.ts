@@ -37,26 +37,71 @@ const clerkTestEnv = {
   CLERK_SECRET_KEY: 'sk_test_only_for_injected_test_middleware',
   CLERK_PUBLISHABLE_KEY: 'pk_test_only_for_injected_test_middleware',
   CLERK_AUTHORIZED_PARTIES: 'https://app.example.invalid',
+  CLERK_JWT_AUDIENCE: 'truetco-api',
 };
 
 test('production app factory is mounted before every Vite/static fallback and registers only health', async () => {
   const applicationSource = await readFile(new URL('./application.ts', import.meta.url), 'utf8');
   const serverSource = await readFile(new URL('../../server.ts', import.meta.url), 'utf8');
   const clerkMount = applicationSource.indexOf("app.use('/api', clerk)");
+  const tenantMount = applicationSource.indexOf("app.use('/api', options.tenantIdentityMiddleware)");
   const gateMount = applicationSource.indexOf("app.use('/api', gate)");
   const healthRoute = applicationSource.indexOf("app.get('/api/health'");
-  const appFactory = serverSource.indexOf('const app = createApplication()');
+  const appFactory = serverSource.indexOf('const app = createApplication({');
   const viteFallback = serverSource.indexOf('app.use(vite.middlewares)');
   const staticFallback = serverSource.indexOf('app.use(express.static');
 
-  assert.ok(clerkMount >= 0 && gateMount > clerkMount, 'Clerk verification must precede the global gate');
+  assert.ok(clerkMount >= 0 && tenantMount > clerkMount && gateMount > tenantMount, 'Clerk verification must precede candidate tenant identity, which must precede the global gate');
   assert.ok(healthRoute > gateMount, 'health must be the only explicit API handler after the gate');
   assert.ok(appFactory >= 0 && viteFallback > appFactory && staticFallback > appFactory, 'Vite/static fallbacks must be mounted after the shared API stack');
+  assert.match(serverSource, /tenantIdentityMiddleware:\s*createRuntimeTenantIdentityMiddleware\(\)/, 'production wiring may resolve identity but must retain the gate');
 
   const routePattern = /app\.(get|post|put|patch|delete|all)\(\s*['"](\/api\/[^'"]+)['"]/g;
   const routes = [...applicationSource.matchAll(routePattern)].map((route) => `${route[1].toUpperCase()} ${route[2]}`);
   assert.deepEqual(routes, ['GET /api/health'], 'no business or session handler may be registered in the production app factory');
   assert.doesNotMatch(serverSource, /app\.(?:get|post|put|patch|delete|all)\(\s*['"]\/api\//, 'the server entry point must not add API routes after the gate');
+});
+
+test('optional tenant middleware runs after Clerk and before the unchanged fail-closed gate', async () => {
+  const order: string[] = [];
+  const app = createApplication({
+    clerkMiddleware: (_req, _res, next) => { order.push('clerk'); next(); },
+    tenantIdentityMiddleware: (_req, _res, next) => { order.push('tenant'); next(); },
+    apiGate: (req, res, next) => { order.push('gate'); return createFailClosedApiGate()(req, res, next); },
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/api/projects`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(order, ['clerk', 'tenant', 'gate']);
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
+});
+
+test('non-canonical API paths also pass through Clerk, tenant identity and the fail-closed gate', async () => {
+  const order: string[] = [];
+  const app = createApplication({
+    clerkMiddleware: (_req, _res, next) => { order.push('clerk'); next(); },
+    tenantIdentityMiddleware: (_req, _res, next) => { order.push('tenant'); next(); },
+    apiGate: (req, res, next) => { order.push('gate'); return createFailClosedApiGate()(req, res, next); },
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/%61pi/projects`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(order, ['clerk', 'tenant', 'gate']);
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
 });
 
 test('actual production app stack runs Clerk then the gate and blocks forged identities before legacy handlers and fallback', async () => {

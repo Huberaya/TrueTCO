@@ -156,9 +156,11 @@ test('shared app stack only registers health after Clerk verification and the gl
     readFile(new URL('../server/apiGate.ts', import.meta.url), 'utf8'),
   ]);
   const clerkMount = application.indexOf("app.use('/api', clerk)");
+  const tenantMount = application.indexOf("app.use('/api', options.tenantIdentityMiddleware)");
   const gateMount = application.indexOf("app.use('/api', gate)");
   const healthRoute = application.indexOf("app.get('/api/health'");
-  assert.ok(clerkMount >= 0 && gateMount > clerkMount && healthRoute > gateMount);
+  assert.ok(clerkMount >= 0 && tenantMount > clerkMount && gateMount > tenantMount && healthRoute > gateMount);
+  assert.match(server, /tenantIdentityMiddleware:\s*createRuntimeTenantIdentityMiddleware\(\)/);
   assert.doesNotMatch(application + server, /app\.(?:get|post|put|patch|delete|all)\('\/api\/(?!health)/);
   assert.match(gate, /req\.path === '\/health'/);
   assert.match(gate, /status\(503\)/);

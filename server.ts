@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApplication } from './src/server/application';
+import { createRuntimeTenantIdentityMiddleware } from './src/server/runtimeTenantIdentity';
 
 dotenv.config();
 
@@ -13,7 +14,9 @@ const PORT = 3000;
 
 async function startServer() {
   const isProd = process.env.NODE_ENV === 'production';
-  const app = createApplication();
+  const app = createApplication({
+    tenantIdentityMiddleware: createRuntimeTenantIdentityMiddleware(),
+  });
   const server = http.createServer(app);
 
   if (!isProd) {

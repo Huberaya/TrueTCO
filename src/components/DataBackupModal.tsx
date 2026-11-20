@@ -33,7 +33,7 @@ interface DataBackupModalProps {
 const SQL_TABLES_INFO = [
   {
     name: 'organizations',
-    role: 'Organisation de démonstration; aucune isolation n’est prouvée',
+    role: 'Scope organisationnel explicite requis; aucun tenant par défaut',
     fields: ['id UUID PK', 'name VARCHAR', 'legal_registration_number', 'default_currency', 'created_at', 'updated_at'],
   },
   {
@@ -44,37 +44,37 @@ const SQL_TABLES_INFO = [
   {
     name: 'projects',
     role: 'Projets de démonstration; champs et hypothèses non validés',
-    fields: ['id UUID PK', 'reference UNIQUE', 'name', 'budget_cap', 'planned_volume', 'horizon_years', 'discount_rate', 'status'],
+    fields: ['id UUID PK', 'organization_id FK', 'reference', 'name', 'budget_cap', 'planned_volume', 'horizon_years', 'status'],
   },
   {
     name: 'suppliers',
     role: 'Fournisseurs et scores déclaratifs; informations non vérifiées',
-    fields: ['id UUID PK', 'name', 'country_code', 'incoterm', 'historical_defect_rate', 'warranty_months', 'data_quality_score'],
+    fields: ['id UUID PK', 'organization_id FK', 'name', 'country_code', 'incoterm', 'historical_defect_rate', 'warranty_months', 'data_quality_score'],
   },
   {
     name: 'supplier_offers',
     role: 'Offres de démonstration; résultats TCO/LCC non validés',
-    fields: ['id UUID PK', 'project_id FK', 'supplier_id FK', 'apparent_total', 'economic_tco_nominal', 'lifecycle_cost_lcc', 'total_comprehensive_tco'],
+    fields: ['id UUID PK', 'organization_id FK', 'project_id FK', 'supplier_id FK', 'apparent_total', 'economic_tco_nominal', 'lifecycle_cost_lcc', 'total_comprehensive_tco'],
   },
   {
     name: 'cost_items',
     role: 'Postes de coûts déclarés; unités et provenance à vérifier',
-    fields: ['id UUID PK', 'offer_id FK', 'category', 'label', 'amount', 'unit', 'source_name', 'source_type', 'confidence_level'],
+    fields: ['id UUID PK', 'organization_id FK', 'offer_id FK composite', 'category', 'label', 'amount', 'unit', 'source_name', 'source_type'],
   },
   {
     name: 'carbon_items',
     role: 'Émissions déclarées; périmètre et facteurs non vérifiés',
-    fields: ['id UUID PK', 'offer_id FK', 'scope CHECK', 'lifecycle_phase', 'emissions_per_unit_tonne_co2e', 'total_lifecycle_emissions'],
+    fields: ['id UUID PK', 'organization_id FK', 'offer_id FK composite', 'scope CHECK', 'lifecycle_phase', 'emissions_per_unit_tonne_co2e', 'total_lifecycle_emissions'],
   },
   {
     name: 'risk_items',
     role: 'Hypothèses de risques de démonstration; non vérifiées',
-    fields: ['id UUID PK', 'offer_id FK', 'description', 'probability NUMERIC', 'financial_impact NUMERIC', 'source_evidence'],
+    fields: ['id UUID PK', 'organization_id FK', 'offer_id FK composite', 'description', 'probability NUMERIC', 'financial_impact NUMERIC', 'source_evidence'],
   },
   {
     name: 'reference_benchmarks',
     role: 'Exemples de facteurs; sources et valeurs non vérifiées',
-    fields: ['id UUID PK', 'name', 'category', 'source', 'value NUMERIC', 'unit', 'valid_until', 'confidence_score'],
+    fields: ['id UUID PK', 'organization_id FK', 'name', 'category', 'source', 'value NUMERIC', 'unit', 'valid_until', 'confidence_score'],
   },
   {
     name: 'audit_logs',
@@ -111,11 +111,19 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
   };
 
   const handleDownloadSql = () => {
-    StorageService.downloadSqlMigrationDump(projects, offers, suppliers, benchmarks, auditLogs);
-    setFeedback({
-      type: 'success',
-      msg: 'Modèle SQL téléchargé. Non testé contre votre schéma : ne pas exécuter sans revue et adaptation.',
-    });
+    try {
+      // No server-verified organization context is currently available in this browser-only screen.
+      StorageService.downloadSqlMigrationDump(projects, offers, suppliers, benchmarks, auditLogs);
+      setFeedback({
+        type: 'success',
+        msg: 'Export SQL téléchargé pour un tenant explicite. Non testé contre une base cible : ne pas exécuter sans revue.',
+      });
+    } catch (error) {
+      setFeedback({
+        type: 'error',
+        msg: error instanceof Error ? error.message : 'Export SQL refusé : contexte organisationnel indisponible.',
+      });
+    }
   };
 
   const handleRunZodValidation = () => {
@@ -410,10 +418,10 @@ export const DataBackupModal: React.FC<DataBackupModalProps> = ({
                 <div>
                   <div className="font-semibold text-white flex items-center gap-1.5">
                     <Terminal className="w-4 h-4 text-emerald-400" />
-                    Dump SQL de Migration PostgreSQL (DDL & DML)
+                    Export SQL PostgreSQL par organisation
                   </div>
                   <div className="text-slate-400 text-[11px] mt-0.5">
-                    Télécharge un export SQL indicatif des données locales; ce n’est pas une migration complète ou testée.
+                    Sans contexte d’organisation vérifié, aucune génération n’est possible. Aucun tenant par défaut n’est utilisé.
                   </div>
                 </div>
                 <button

@@ -4,6 +4,8 @@ import { createFailClosedApiGate } from './apiGate';
 
 export interface ApplicationOptions {
   clerkMiddleware?: RequestHandler;
+  /** Server-derived identity/membership lookup. The global fail-closed API gate remains after it. */
+  tenantIdentityMiddleware?: RequestHandler;
   apiGate?: RequestHandler;
   afterApiMiddleware?: RequestHandler;
 }
@@ -13,7 +15,7 @@ const rawPathOf = (originalUrl: string): string => originalUrl.split(/[?#]/, 1)[
 /**
  * Detect encoded/non-canonical spellings of the API prefix that would otherwise
  * miss Express's `/api` mount and reach a later SPA/static fallback. They still
- * pass through Clerk and the exact same fail-closed gate, in that order.
+ * pass through Clerk, optional tenant identity, and the same fail-closed gate in order.
  */
 const isNonCanonicalApiPath = (originalUrl: string): boolean => {
   const rawPath = rawPathOf(originalUrl);
@@ -42,16 +44,21 @@ export const createApplication = (options: ApplicationOptions = {}) => {
 
   app.use(express.json({ limit: '10mb' }));
 
-  // Encoded API-prefix bypasses must still run the ordered Clerk → gate chain.
+  // Encoded API-prefix variants run the same Clerk → tenant → gate chain.
   app.use((req, res, next) => {
     if (!isNonCanonicalApiPath(req.originalUrl)) return next();
     return clerk(req, res, (error) => {
       if (error) return next(error);
-      return gate(req, res, next);
+      if (!options.tenantIdentityMiddleware) return gate(req, res, next);
+      return options.tenantIdentityMiddleware(req, res, (tenantError) => {
+        if (tenantError) return next(tenantError);
+        return gate(req, res, next);
+      });
     });
   });
 
   app.use('/api', clerk);
+  if (options.tenantIdentityMiddleware) app.use('/api', options.tenantIdentityMiddleware);
   app.use('/api', gate);
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
