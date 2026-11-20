@@ -35,7 +35,7 @@ La structure testée correspond au draft P1 `db/migrations/proposed/0003_p1_tena
 Résultats :
 - 10 tables canoniques + `user_sessions` : RLS activée et FORCE RLS activée (11/11).
 - 11 policies attendues présentes.
-- 8 FK composites tenant validées.
+- 9 FK composites tenant validées, dont la FK conditionnelle `user_sessions(organization_id,user_id) → users(organization_id,id)`.
 - Volumétrie intacte après DDL; aucune donnée supprimée ou backfillée.
 - Sous `truetco_app`, sans contexte : 0 organisation, 0 utilisateur, 0 projet, 0 fournisseur, 0 offre, 0 session.
 - Sous contexte tenant A : 1 organisation, 7 utilisateurs, 2 projets, 2 fournisseurs, 6 sessions, 0 offre visible.
@@ -48,7 +48,7 @@ Résultats :
 La même séquence SQL a été exécutée sur Production via une transaction Neon unique (36 statements). Contrôles post-commit :
 - 11/11 tables avec `relrowsecurity=true` et `relforcerowsecurity=true`.
 - 11/11 policies attendues présentes.
-- 8/8 FK composites tenant validées.
+- 9/9 FK composites tenant validées, dont la FK composite des sessions historiques.
 - Comptages des 11 tables inchangés.
 - Sous `truetco_app`, sans contexte : zéro ligne visible dans les tables contrôlées.
 - Sous tenant A : 1 organisation, 7 utilisateurs, 2 projets, 2 fournisseurs, 6 sessions; 0 offre visible.
