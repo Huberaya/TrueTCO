@@ -210,3 +210,11 @@ Le code/tests locaux couvrent vérification via SDK Clerk, signature RSA locale,
 ## Garde-fou de fusion sans déploiement production
 
 La PR dispose de checks Vercel de preview; ils ne prouvent pas le comportement de déploiement de `main`. L’API GitHub en lecture seule signale un déploiement `Production` sur le SHA de base/main `2ec57388047ca33acd8c8d7f90fdb9c77b498bc3`, ce qui rend plausible un déploiement automatique sur fusion. L’accès Vercel nécessaire pour consulter la branche de production/les paramètres de déploiement a été refusé et aucun CLI/configuration locale n’est disponible. Comme le mandat interdit tout déploiement de production, la fusion vers `main` est suspendue tant qu’il est impossible d’établir, en lecture seule, que cette fusion ne déclenchera pas un déploiement de production. Aucun réglage Vercel n’a été changé pour contourner ce blocage.
+
+
+## Addendum — rôle Neon Production et pool runtime (20 novembre 2026)
+
+- Le rôle truetco_app existait déjà sur la branche Neon Production. Connexion réelle vérifiée sous ce rôle; LOGIN/NOSUPERUSER/NOBYPASSRLS/NOCREATEDB/NOCREATEROLE, CONNECT/USAGE et DML sur 11 tables business; aucun TRUNCATE/REFERENCES/TRIGGER, aucune appartenance à un autre rôle. Aucun DDL ni changement de privilège Production n'a été appliqué.
+- Le nouveau module src/db/runtimeTenantPool.ts construit un pool uniquement à partir de DATABASE_URL_RUNTIME et refuse explicitement le fallback vers DATABASE_URL (réservée à la configuration Drizzle/migrations). Validation stricte du rôle truetco_app, de l'endpoint Neon, de la base neondb et de sslmode=require; tests dédiés ajoutés à npm test.
+- Ce pool n'est pas encore câblé à server.ts et ne peut donc pas être présenté comme un runtime Vercel qualifié. La variable Vercel DATABASE_URL_RUNTIME n'a pas été créée : le transfert secret Neon → Vercel a été bloqué par le contrôle de sécurité de l'outil. Aucun secret n'a été affiché ni contourné.
+- Aucune RLS Production, migration, activation métier, modification de Clerk ou déploiement Production n'a eu lieu. Le gate P0 reste fermé.
