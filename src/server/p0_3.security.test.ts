@@ -12,7 +12,8 @@ test('historical tenant resolver, session lookup, user sync and fallback identit
   assert.doesNotMatch(server + application, /resolveTenantId|getOrganizationId|x-tenant-id|x-organization-id|x-tenant-slug/);
   assert.doesNotMatch(server + application, /req\.(?:query|body|headers)\s*\.\s*(?:tenant|organization|user|role|clerk)/i);
   assert.doesNotMatch(server + application, /user_sessions|a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11|ORDER BY created_at/);
-  assert.doesNotMatch(server, /tenantIdentityMiddleware/, 'candidate P1 tenant middleware must remain unconfigured in production');
+  assert.match(server, /tenantIdentityMiddleware:\s*createRuntimeTenantIdentityMiddleware\(\)/, 'tenant identity may be wired, but the unchanged API gate must remain after it');
+  assert.match(application, /app\.use\('\/api', gate\)/, 'the fail-closed gate must stay mounted after tenant identity');
   assert.doesNotMatch(application, /app\.(?:get|post|put|patch|delete|all)\('\/api\/(?!health)/);
   assert.match(application, /app\.get\('\/api\/health'/);
 });

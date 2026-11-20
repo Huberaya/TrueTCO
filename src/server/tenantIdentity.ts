@@ -42,6 +42,8 @@ export function createTenantIdentityMiddleware(options: {
   const readAuth = options.readAuth ?? readClerkAuth;
 
   return async (request, response, next) => {
+    if (request.method === 'GET' && request.path === '/health') return next();
+
     let auth: VerifiedClerkAuth;
     try {
       auth = readAuth(request);

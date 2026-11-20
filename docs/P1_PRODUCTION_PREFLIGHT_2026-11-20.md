@@ -4,7 +4,7 @@
 
 **Migration P1 RLS appliquée sur Neon Production après restauration vérifiée et qualification sur clone.** Aucun backfill n'a été effectué. La migration a été exécutée manuellement dans une transaction Neon unique de 36 statements, sur la branche Production `br-bold-leaf-b2eclysi`.
 
-Cette opération base de données ne signifie pas que l'application est déjà protégée de bout en bout : `neondb_owner` possède `BYPASSRLS`, `DATABASE_URL_RUNTIME` n'est pas configurée sur Vercel Production et `server.ts` n'assemble pas encore le middleware d'identité tenant ni le pool `truetco_app`. Le gate P0 reste fermé et seule la route `GET /api/health` est exposée.
+Cette opération base de données ne signifie pas que l'application est déjà protégée de bout en bout : `neondb_owner` possède `BYPASSRLS`, `DATABASE_URL_RUNTIME` n'est pas configurée sur Vercel Production et aucune connexion runtime réelle n'a été qualifiée. Depuis la rédaction initiale de ce rapport, `server.ts` assemble l'adaptateur du pool `truetco_app` et le middleware d'identité tenant, mais ces contrôles restent bloqués par l'absence de configuration runtime/Clerk qualifiée. Le gate P0 reste fermé et seule la route `GET /api/health` est exposée.
 
 ## Sauvegarde et restauration
 
@@ -66,11 +66,11 @@ Les tables `cost_items`, `carbon_items` et `risk_items` sont vides; leurs nouvel
 ## Limites opérationnelles restantes — blocantes avant ouverture métier
 
 1. Vercel Production ne contient toujours pas `DATABASE_URL_RUNTIME`; seuls `DATABASE_URL` et `DATABASE_URL_UNPOOLED` sont configurées. Ne pas remplacer ces variables : Drizzle les utilise pour les tâches existantes.
-2. `createRuntimeTenantSqlPool` existe et valide le rôle `truetco_app`, mais n'est pas monté dans `server.ts`.
-3. `createApplication` accepte un `tenantIdentityMiddleware` optionnel, mais `server.ts` appelle actuellement `createApplication()` sans ce middleware.
+2. `createRuntimeTenantSqlPool` valide le rôle `truetco_app` et est maintenant monté dans `server.ts` via un adaptateur paresseux; aucune connexion Vercel réelle n'a encore été établie/qualifiée.
+3. `createApplication` reçoit maintenant le `tenantIdentityMiddleware` qui résout l'adhésion après Clerk; son gate fail-closed reste monté ensuite et aucune route métier n'est ouverte.
 4. `neondb_owner` a `BYPASSRLS`; toute connexion applicative future doit impérativement utiliser `truetco_app`, pas `DATABASE_URL`.
 5. Clerk Production reste différé jusqu'au choix/achat du domaine. Aucun JWT Clerk réel, membership Clerk ou RBAC runtime n'est qualifié.
 6. Les deux offres historiques nécessitent une attribution tenant validée avant qu'elles soient accessibles sous le rôle runtime.
 7. Le draft reste un fichier `.sql.draft`; l'opération Production a été exécutée comme SQL transactionnel manuel et n'a pas été inscrite dans un journal de migrations Drizzle. Une procédure de baseline/reconciliation doit être décidée avant le prochain déploiement de migrations.
 
-**Conclusion :** RLS Production est en place et qualifiée au niveau PostgreSQL sous le rôle non-BYPASSRLS. L'isolation de l'application n'est pas encore activée : gate P0 fermé, runtime pool non câblé, Clerk différé, et données d'offres historiques non attribuées. Aucun changement Vercel, Clerk, aucune route métier activée et aucune fusion PR n'ont été effectués.
+**Conclusion :** RLS Production est en place et qualifiée au niveau PostgreSQL sous le rôle non-BYPASSRLS. Le middleware d'identité tenant et l'adaptateur runtime sont câblés dans le serveur, mais l'application reste bloquée en fail-closed : aucune connexion runtime Vercel ni instance Clerk réelle n'est qualifiée, le gate métier demeure fermé, et les offres historiques ne sont pas attribuées. Aucun changement Vercel/Clerk, aucune route métier activée et aucune fusion PR n'ont été effectués.

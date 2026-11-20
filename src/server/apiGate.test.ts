@@ -47,13 +47,14 @@ test('production app factory is mounted before every Vite/static fallback and re
   const tenantMount = applicationSource.indexOf("app.use('/api', options.tenantIdentityMiddleware)");
   const gateMount = applicationSource.indexOf("app.use('/api', gate)");
   const healthRoute = applicationSource.indexOf("app.get('/api/health'");
-  const appFactory = serverSource.indexOf('const app = createApplication()');
+  const appFactory = serverSource.indexOf('const app = createApplication({');
   const viteFallback = serverSource.indexOf('app.use(vite.middlewares)');
   const staticFallback = serverSource.indexOf('app.use(express.static');
 
   assert.ok(clerkMount >= 0 && tenantMount > clerkMount && gateMount > tenantMount, 'Clerk verification must precede candidate tenant identity, which must precede the global gate');
   assert.ok(healthRoute > gateMount, 'health must be the only explicit API handler after the gate');
   assert.ok(appFactory >= 0 && viteFallback > appFactory && staticFallback > appFactory, 'Vite/static fallbacks must be mounted after the shared API stack');
+  assert.match(serverSource, /tenantIdentityMiddleware:\s*createRuntimeTenantIdentityMiddleware\(\)/, 'production wiring may resolve identity but must retain the gate');
 
   const routePattern = /app\.(get|post|put|patch|delete|all)\(\s*['"](\/api\/[^'"]+)['"]/g;
   const routes = [...applicationSource.matchAll(routePattern)].map((route) => `${route[1].toUpperCase()} ${route[2]}`);
@@ -74,6 +75,27 @@ test('optional tenant middleware runs after Clerk and before the unchanged fail-
   assert.ok(address && typeof address !== 'string');
   try {
     const response = await fetch(`http://127.0.0.1:${address.port}/api/projects`);
+    assert.equal(response.status, 503);
+    assert.deepEqual(order, ['clerk', 'tenant', 'gate']);
+  } finally {
+    server.close();
+    await once(server, 'close');
+  }
+});
+
+test('non-canonical API paths also pass through Clerk, tenant identity and the fail-closed gate', async () => {
+  const order: string[] = [];
+  const app = createApplication({
+    clerkMiddleware: (_req, _res, next) => { order.push('clerk'); next(); },
+    tenantIdentityMiddleware: (_req, _res, next) => { order.push('tenant'); next(); },
+    apiGate: (req, res, next) => { order.push('gate'); return createFailClosedApiGate()(req, res, next); },
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  try {
+    const response = await fetch(`http://127.0.0.1:${address.port}/%61pi/projects`);
     assert.equal(response.status, 503);
     assert.deepEqual(order, ['clerk', 'tenant', 'gate']);
   } finally {

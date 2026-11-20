@@ -71,9 +71,9 @@ export const getClerkServerConfig = (env: ClerkEnvironment = process.env): Clerk
 
 /**
  * Clerk token verification layer, deliberately separate from authorization.
- * It never opens a route: server.ts mounts the global fail-closed API gate after
- * this middleware, until membership mapping, RBAC and tenant-safe DB access have
- * passed integration tests. Liveness remains public and contains no internals.
+ * It never opens a route: server.ts mounts the tenant identity check and then
+ * the global fail-closed API gate after this middleware. Liveness remains public
+ * and contains no internals.
  */
 export const createClerkSessionMiddleware = (
   env: ClerkEnvironment = process.env,

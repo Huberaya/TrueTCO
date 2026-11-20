@@ -48,7 +48,7 @@ BEGIN
       RAISE EXCEPTION 'P1 preflight: session user belongs to another organization';
     END IF;
   END IF;
-END $;
+END $$;
 --> statement-breakpoint
 DROP INDEX IF EXISTS "idx_users_clerk_id";
 --> statement-breakpoint
@@ -110,7 +110,7 @@ END $$;
 -- canonical P0 baseline/schema. Protect it when present without making a fresh
 -- database migration fail because the legacy table does not exist. Its legacy
 -- single-column user FK is not tenant-safe, so add a composite tenant FK too.
-DO $
+DO $$
 BEGIN
   IF to_regclass('public.user_sessions') IS NOT NULL THEN
     EXECUTE 'ALTER TABLE public.user_sessions ENABLE ROW LEVEL SECURITY';
@@ -123,7 +123,7 @@ BEGIN
       EXECUTE 'ALTER TABLE public.user_sessions ADD CONSTRAINT fk_user_sessions_user_tenant FOREIGN KEY (organization_id, user_id) REFERENCES public.users (organization_id, id)';
     END IF;
   END IF;
-END $;
+END $$;
 --> statement-breakpoint
 CREATE POLICY organizations_tenant_scope ON organizations
   USING (id = NULLIF(current_setting('true_tco.organization_id', true), '')::uuid)

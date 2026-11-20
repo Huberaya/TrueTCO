@@ -1,6 +1,6 @@
 # Qualification du rôle runtime Neon
 
-**État : rôle truetco_app qualifié en Neon Production (lecture seule) ; RLS démontrée sur branche clonée ; runtime Vercel NON raccordé ; RLS Production NON APPLIQUÉE.**
+**État : rôle truetco_app qualifié en Neon Production (lecture seule) ; RLS démontrée sur branche clonée ; adaptateur runtime maintenant câblé dans server.ts mais variables Vercel et connexion réelle non vérifiées ; RLS Production NON APPLIQUÉE.**
 
 ## Environnement testé
 
@@ -20,7 +20,7 @@ Connexion directe sous le rôle `truetco_app` sur la branche de test :
 - Droits `SELECT/INSERT/UPDATE/DELETE` testés sur les tables applicatives : effectifs.
 - Le rôle n'est pas le propriétaire des tables et n'est ni superuser ni BYPASSRLS.
 
-Cette preuve qualifie le rôle dédié sur la branche Neon clonée uniquement. Elle ne prouve pas que Vercel utilise ce rôle : le pool applicatif candidat n'est pas raccordé à `server.ts`, les variables d'environnement Vercel n'ont pas été lues ni modifiées, et aucune connexion runtime Production n'a été observée.
+Cette preuve qualifie le rôle dédié sur la branche Neon clonée uniquement. Elle ne prouve pas que Vercel utilise ce rôle : l'adaptateur applicatif est maintenant raccordé à `server.ts`, mais les variables d'environnement Vercel n'ont pas été lues ni modifiées, et aucune connexion runtime Production n'a été observée.
 
 ## Isolation RLS observée sur la branche de test
 
@@ -40,7 +40,7 @@ Les offres historiques ont `organization_id IS NULL` et restent invisibles sous 
 
 ## Limites encore ouvertes
 
-1. **Runtime Vercel/Production : NON QUALIFIÉ.** Aucune preuve que la connexion réellement utilisée par l'application est `truetco_app`. Le chemin pool Neon candidat n'est pas monté.
+1. **Runtime Vercel/Production : NON QUALIFIÉ.** Aucune preuve que la connexion réellement utilisée par l'application est `truetco_app`. L'adaptateur pool est monté dans `server.ts`, mais aucune variable Vercel ni connexion runtime n'a été inspectée.
 2. **Rôle de production : QUALIFIÉ, non raccordé.** Le rôle `truetco_app` existait déjà sur la branche Production et sa connexion/droits ont été vérifiés sous le rôle réel. Aucun secret n'a été lu ou affiché et aucune variable Vercel n'a été modifiée; l'application n'utilise donc pas encore ce rôle.
 3. **Schéma Production : NON MODIFIÉ.** Aucune migration distante, aucun GRANT/RLS ni backfill appliqué à Production.
 4. **RLS Production : NON QUALIFIÉ.** Les preuves Neon concernent la branche clonée, pas la branche Production.
@@ -54,8 +54,8 @@ Les offres historiques ont `organization_id IS NULL` et restent invisibles sous 
 1. Corriger et valider le draft P1 sur le commit candidat; garder le fichier `.draft` hors du journal exécutable.
 2. Revoir et tester les FK composites et tous les cas CRUD sous un rôle `LOGIN/NOSUPERUSER/NOBYPASSRLS`.
 3. Identifier la connexion DB réelle prévue pour Vercel sans afficher ni déchiffrer de secret.
-4. Le rôle Production étant déjà qualifié, faire le raccordement contrôlé de DATABASE_URL_RUNTIME dans Vercel après validation du transfert secret; garder DATABASE_URL pour Drizzle/migrations.
-5. Déployer le code compatible en gardant le gate fermé; ne pas ouvrir de route métier tant que Clerk réel, rôle runtime, RLS Production et parcours transactionnel ne sont pas qualifiés ensemble.
+4. L'adaptateur runtime fail-closed est câblé dans `server.ts`; vérifier de façon contrôlée l'identité réelle de la connexion Vercel sans révéler de secret. Ne pas créer/modifier une variable sans autorisation explicite; garder `DATABASE_URL` pour Drizzle/migrations.
+5. Tester le chemin transactionnel complet avec l'identité Clerk qualifiée en environnement approuvé, en gardant le gate fermé; ne pas ouvrir de route métier tant que Clerk réel, rôle runtime, RLS Production et parcours transactionnel ne sont pas qualifiés ensemble.
 6. Préparer backup, test de restauration, plan de retour arrière et procédure de migration approuvée avant toute modification de schéma Production.
 
 **Conclusion :** preuve réelle Neon obtenue sur une branche clonée et isolée; qualification du runtime applicatif et de la Production toujours NON ACQUISE.
@@ -66,6 +66,6 @@ Les offres historiques ont `organization_id IS NULL` et restent invisibles sous 
 - Connexion réelle sous current_user = session_user = truetco_app confirmée. rolcanlogin=true, rolsuper=false, rolbypassrls=false, rolcreatedb=false, rolcreaterole=false.
 - CONNECT et USAGE schema public confirmés; DML SELECT/INSERT/UPDATE/DELETE sur 11 tables business; TRUNCATE, REFERENCES et TRIGGER refusés; aucune appartenance à un autre rôle. Les 11 tables restent détenues par neondb_owner.
 - Aucune RLS Production n'est activée et aucune migration n'a été appliquée.
-- L'adaptateur runtime préparé dans le code attend exclusivement DATABASE_URL_RUNTIME et refuse toute fallback vers DATABASE_URL; il valide truetco_app, endpoint Neon, base neondb et TLS. Il n'est pas encore monté dans server.ts.
+- L'adaptateur runtime câblé dans `server.ts` attend exclusivement `DATABASE_URL_RUNTIME` et refuse tout fallback vers `DATABASE_URL`; il valide `truetco_app`, endpoint Neon, base `neondb` et TLS. Son appel est paresseux après validation Clerk et uniquement pour les API tenantées; aucune connexion Vercel réelle n'a été observée.
 - La variable Vercel n'a pas été créée : l'écriture du secret depuis Neon vers Vercel a été bloquée par le contrôle de sécurité de l'outil. Aucun contournement ni affichage de secret n'a été effectué.
 - L'état correct reste donc : rôle Production qualifié; isolation RLS Production et utilisation Vercel runtime non qualifiées.
