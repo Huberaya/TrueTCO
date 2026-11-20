@@ -30,12 +30,12 @@ Cette opération base de données ne signifie pas que l'application est déjà p
 
 ## Migration testée sur le clone restauré
 
-La structure testée correspond au draft P1 `db/migrations/proposed/0003_p1_tenant_scope.sql.draft`, y compris le traitement conditionnel de `user_sessions` (table historique absente du schéma canonique P0 mais présente dans Neon).
+La migration P1 de base a été testée sur le clone restauré. Après cette première validation, un complément a été identifié pour la table historique `user_sessions` : sa policy RLS seule ne liait pas encore sa clé `user_id` au même tenant. Le contrôle de cohérence et la FK composite conditionnelle ont été testés sur la branche de qualification existante `br-weathered-tree-b23t34vl`, puis appliqués à Production. Le draft a été mis à jour pour inclure ce contrôle et cette FK.
 
 Résultats :
 - 10 tables canoniques + `user_sessions` : RLS activée et FORCE RLS activée (11/11).
 - 11 policies attendues présentes.
-- 9 FK composites tenant validées, dont la FK conditionnelle `user_sessions(organization_id,user_id) → users(organization_id,id)`.
+- 8 FK composites tenant validées sur le clone restauré. La neuvième, conditionnelle à la présence de `user_sessions`, a été testée sur la branche de qualification existante.
 - Volumétrie intacte après DDL; aucune donnée supprimée ou backfillée.
 - Sous `truetco_app`, sans contexte : 0 organisation, 0 utilisateur, 0 projet, 0 fournisseur, 0 offre, 0 session.
 - Sous contexte tenant A : 1 organisation, 7 utilisateurs, 2 projets, 2 fournisseurs, 6 sessions, 0 offre visible.
@@ -45,7 +45,7 @@ Résultats :
 
 ## Application Production
 
-La même séquence SQL a été exécutée sur Production via une transaction Neon unique (36 statements). Contrôles post-commit :
+La migration de base a été exécutée sur Production via une transaction Neon unique (36 statements), puis le complément FK `user_sessions` a été appliqué dans une seconde transaction après préflight de cohérence. Contrôles post-commit :
 - 11/11 tables avec `relrowsecurity=true` et `relforcerowsecurity=true`.
 - 11/11 policies attendues présentes.
 - 9/9 FK composites tenant validées, dont la FK composite des sessions historiques.
